@@ -1,65 +1,94 @@
-import Image from "next/image";
+import Box from "@mui/material/Box";
+import Card from "@mui/material/Card";
+import CardActionArea from "@mui/material/CardActionArea";
+import CardContent from "@mui/material/CardContent";
+import Container from "@mui/material/Container";
+import Stack from "@mui/material/Stack";
+import Typography from "@mui/material/Typography";
+import { alpha } from "@mui/material/styles";
+import Link from "next/link";
+import { auth0 } from "@/lib/auth0";
+import { navLinks } from "@/lib/nav-links";
 
-export default function Home() {
-  return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
+// Wrapped in withPageAuthRequired so the landing page itself requires a
+// session — visiting "/" while logged out redirects straight to Auth0
+// login instead of showing a public page with a login button.
+const Home = auth0.withPageAuthRequired(
+  async function Home() {
+    const session = await auth0.getSession();
+
+    return (
+      <Box sx={{ flex: 1, bgcolor: "background.default", py: { xs: 6, sm: 8 } }}>
+        <Container maxWidth="lg">
+          <Stack spacing={1} sx={{ alignItems: "flex-start", mb: 5 }}>
+            <Typography variant="h3" component="h1">
+              LND Housing Dashboard
+            </Typography>
+            <Typography variant="body1" color="text.secondary" sx={{ maxWidth: 560 }}>
+              Ett samlat verktyg för att hantera och överblicka hyresgäster i
+              fastighetsbeståndet.
+            </Typography>
+            <Typography variant="body1" sx={{ pt: 1 }}>
+              Välkommen tillbaka, {session?.user.name}.
+            </Typography>
+          </Stack>
+
+          <Box
+            sx={{
+              display: "grid",
+              gap: 2.5,
+              gridTemplateColumns: {
+                xs: "1fr",
+                sm: "repeat(2, 1fr)",
+                md: "repeat(3, 1fr)",
+              },
+            }}
           >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
-    </div>
-  );
-}
+            {navLinks.map((link) => (
+              <Card
+                key={link.href}
+                variant="outlined"
+                sx={{
+                  borderColor: (theme) => alpha(theme.palette.primary.main, 0.12),
+                  transition: "border-color 150ms ease, transform 150ms ease",
+                  "&:hover": {
+                    borderColor: "primary.main",
+                    transform: "translateY(-2px)",
+                  },
+                }}
+              >
+                <CardActionArea component={Link} href={link.href} sx={{ height: "100%" }}>
+                  <CardContent>
+                    <Stack spacing={1.5}>
+                      <Box
+                        sx={{
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          width: 44,
+                          height: 44,
+                          borderRadius: 2,
+                          bgcolor: (theme) => alpha(theme.palette.secondary.main, 0.3),
+                          color: "primary.main",
+                        }}
+                      >
+                        <link.icon />
+                      </Box>
+                      <Typography variant="h6">{link.label}</Typography>
+                      <Typography variant="body2" color="text.secondary">
+                        {link.description}
+                      </Typography>
+                    </Stack>
+                  </CardContent>
+                </CardActionArea>
+              </Card>
+            ))}
+          </Box>
+        </Container>
+      </Box>
+    );
+  },
+  { returnTo: "/" }
+);
+
+export default Home;
