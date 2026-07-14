@@ -91,8 +91,8 @@ export default function UppsagningTable({ uppsagningar, tenants }: Props) {
   function handleExport() {
     exportRowsToXlsx(
       `uppsagning-${new Date().toISOString().slice(0, 10)}.xlsx`,
-      columns.map((c) => c.label),
-      visible.map((u) => columns.map((c) => u[c.key]))
+      [...columns.map((c) => c.label), "Bekräftad av"],
+      visible.map((u) => [...columns.map((c) => u[c.key]), u.bekraftadAv])
     );
   }
 
@@ -165,7 +165,14 @@ export default function UppsagningTable({ uppsagningar, tenants }: Props) {
                   <TableCell>{u.lagenhetsnummer}</TableCell>
                   <TableCell>{u.fastighet}</TableCell>
                   <TableCell>{u.hyresgastNamn}</TableCell>
-                  <TableCell>{u.bekraftelsedatum}</TableCell>
+                  <TableCell>
+                    {u.bekraftelsedatum}
+                    {u.bekraftadAv && (
+                      <Typography variant="caption" color="text.secondary" sx={{ display: "block" }}>
+                        av {u.bekraftadAv}
+                      </Typography>
+                    )}
+                  </TableCell>
                   <TableCell>{u.flyttdatum}</TableCell>
                 </TableRow>
               ))

@@ -109,8 +109,12 @@ export default function ArkivBesiktningarTable({ besiktningar }: Props) {
   function handleExport() {
     exportRowsToXlsx(
       `besiktningar-arkiv-${new Date().toISOString().slice(0, 10)}.xlsx`,
-      columns.map((c) => c.label),
-      visibleRows.map((row) => columns.map((c) => columnValue[c.key](row)))
+      [...columns.map((c) => c.label), "Klar för betalning av", "Betalning gjord av"],
+      visibleRows.map((row) => [
+        ...columns.map((c) => columnValue[c.key](row)),
+        row.klarForBetalningAv ?? "",
+        row.betalningGjordAv ?? "",
+      ])
     );
   }
 
@@ -186,8 +190,22 @@ export default function ArkivBesiktningarTable({ besiktningar }: Props) {
                       {row.husformanAnteckning}
                     </TableCell>
                     <TableCell align="right">{currency.format(row.totaltAvdrag)}</TableCell>
-                    <TableCell>{row.klarForBetalningDatum}</TableCell>
-                    <TableCell>{row.betalningGjordDatum}</TableCell>
+                    <TableCell>
+                      {row.klarForBetalningDatum}
+                      {row.klarForBetalningAv && (
+                        <Typography variant="caption" color="text.secondary" sx={{ display: "block" }}>
+                          av {row.klarForBetalningAv}
+                        </Typography>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      {row.betalningGjordDatum}
+                      {row.betalningGjordAv && (
+                        <Typography variant="caption" color="text.secondary" sx={{ display: "block" }}>
+                          av {row.betalningGjordAv}
+                        </Typography>
+                      )}
+                    </TableCell>
                   </TableRow>
                 ))
             )}

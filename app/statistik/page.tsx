@@ -1,7 +1,7 @@
 import Container from "@mui/material/Container";
 import { auth0 } from "@/lib/auth0";
 import { getLedigaLagenheter } from "@/lib/apartments";
-import { getMissedRentRows, syncMissedRent } from "@/lib/missed-rent";
+import { getApartmentsAvailableForManualEntry, getMissedRentRows, syncMissedRent } from "@/lib/missed-rent";
 import { requireNationsIdOrRedirect } from "@/lib/nations";
 import { getRentalObjects } from "@/lib/rentalobjects";
 import {
@@ -19,10 +19,11 @@ const StatistikPage = auth0.withPageAuthRequired(
     const nationsId = requireNationsIdOrRedirect(session?.user);
     await syncMissedRent(nationsId);
 
-    const [rows, rentalObjects, vacantApartments] = await Promise.all([
+    const [rows, rentalObjects, vacantApartments, availableApartments] = await Promise.all([
       getMissedRentRows(nationsId),
       getRentalObjects(nationsId),
       getLedigaLagenheter(nationsId),
+      getApartmentsAvailableForManualEntry(nationsId),
     ]);
 
     return (
@@ -33,7 +34,7 @@ const StatistikPage = auth0.withPageAuthRequired(
           uthyrningsgrad={getUthyrningsgrad(rentalObjects, vacantApartments, rows)}
           missedIncomeByYear={getMissedIncomeByYear(rows)}
         />
-        <MissedRentTable rows={rows} />
+        <MissedRentTable rows={rows} availableApartments={availableApartments} />
       </Container>
     );
   },

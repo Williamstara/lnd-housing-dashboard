@@ -95,12 +95,14 @@ export type MissedIncomeByYear = {
 };
 
 // Grouped by the year the vacancy started (ledig fr.o.m.) — a vacancy that
-// straddles a year boundary is attributed to the year it began in.
+// straddles a year boundary is attributed to the year it began in. Uses
+// totalMissat (missed rent + övriga missade kostnader), not just the
+// vacancy-gap calculation, since a case can lose more than the missed month.
 export function getMissedIncomeByYear(missedRent: MissedRentRow[]): MissedIncomeByYear {
   const totals = new Map<string, number>();
   for (const row of missedRent) {
     const year = row.ledigFrom.slice(0, 4);
-    totals.set(year, (totals.get(year) ?? 0) + row.missadIntakt);
+    totals.set(year, (totals.get(year) ?? 0) + row.totalMissat);
   }
   const byYear = Array.from(totals.entries())
     .map(([year, total]) => ({ year, total }))

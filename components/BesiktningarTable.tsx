@@ -25,6 +25,7 @@ import TablePagination from "@mui/material/TablePagination";
 import TableRow from "@mui/material/TableRow";
 import TableSortLabel from "@mui/material/TableSortLabel";
 import TextField from "@mui/material/TextField";
+import Tooltip from "@mui/material/Tooltip";
 import Typography from "@mui/material/Typography";
 import {
   archiveBesiktningAction,
@@ -132,6 +133,7 @@ export default function BesiktningarTable({ besiktningar }: Props) {
   const [isSaving, startSaveTransition] = useTransition();
 
   const [archivingRow, setArchivingRow] = useState<Besiktning | null>(null);
+  const [archiveError, setArchiveError] = useState<string | null>(null);
   const [isArchiving, startArchiveTransition] = useTransition();
 
   const visibleRows = useMemo(() => {
@@ -155,11 +157,19 @@ export default function BesiktningarTable({ besiktningar }: Props) {
   function handleExport() {
     exportRowsToXlsx(
       `besiktningar-${new Date().toISOString().slice(0, 10)}.xlsx`,
-      [...columns.map((c) => c.label), "Klar för betalning", "Betalning gjord"],
+      [
+        ...columns.map((c) => c.label),
+        "Klar för betalning",
+        "Klar för betalning av",
+        "Betalning gjord",
+        "Betalning gjord av",
+      ],
       visibleRows.map((row) => [
         ...columns.map((c) => columnValue[c.key](row)),
         row.klarForBetalningDatum ?? "",
+        row.klarForBetalningAv ?? "",
         row.betalningGjordDatum ?? "",
+        row.betalningGjordAv ?? "",
       ])
     );
   }
@@ -204,12 +214,22 @@ export default function BesiktningarTable({ besiktningar }: Props) {
     });
   }
 
+  function openArchive(row: Besiktning) {
+    setArchiveError(null);
+    setArchivingRow(row);
+  }
+
   function confirmArchive() {
     if (!archivingRow) return;
     const id = archivingRow.id;
+    setArchiveError(null);
     startArchiveTransition(async () => {
-      await archiveBesiktningAction(id);
-      setArchivingRow(null);
+      try {
+        await archiveBesiktningAction(id);
+        setArchivingRow(null);
+      } catch (err) {
+        setArchiveError(err instanceof Error ? err.message : "Något gick fel.");
+      }
     });
   }
 
@@ -309,7 +329,14 @@ export default function BesiktningarTable({ besiktningar }: Props) {
                     <TableCell align="right">{currency.format(row.totaltAvdrag)}</TableCell>
                     <TableCell>
                       {row.klarForBetalningDatum ? (
-                        row.klarForBetalningDatum
+                        <>
+                          {row.klarForBetalningDatum}
+                          {row.klarForBetalningAv && (
+                            <Typography variant="caption" color="text.secondary" sx={{ display: "block" }}>
+                              av {row.klarForBetalningAv}
+                            </Typography>
+                          )}
+                        </>
                       ) : canManagePayment ? (
                         <Button
                           size="small"
@@ -325,7 +352,14 @@ export default function BesiktningarTable({ besiktningar }: Props) {
                     </TableCell>
                     <TableCell>
                       {row.betalningGjordDatum ? (
-                        row.betalningGjordDatum
+                        <>
+                          {row.betalningGjordDatum}
+                          {row.betalningGjordAv && (
+                            <Typography variant="caption" color="text.secondary" sx={{ display: "block" }}>
+                              av {row.betalningGjordAv}
+                            </Typography>
+                          )}
+                        </>
                       ) : canManagePayment ? (
                         <Button
                           size="small"
@@ -349,13 +383,24 @@ export default function BesiktningarTable({ besiktningar }: Props) {
                           <EditIcon fontSize="small" />
                         </IconButton>
                         {canArchive && (
-                          <IconButton
-                            aria-label="Arkivera"
-                            size="small"
-                            onClick={() => setArchivingRow(row)}
+                          <Tooltip
+                            title={
+                              row.betalningGjordDatum
+                                ? "Arkivera"
+                                : "Kan inte arkiveras förrän betalning är gjord"
+                            }
                           >
-                            <ArchiveIcon fontSize="small" />
-                          </IconButton>
+                            <span>
+                              <IconButton
+                                aria-label="Arkivera"
+                                size="small"
+                                disabled={!row.betalningGjordDatum}
+                                onClick={() => openArchive(row)}
+                              >
+                                <ArchiveIcon fontSize="small" />
+                              </IconButton>
+                            </span>
+                          </Tooltip>
                         )}
                       </Stack>
                     </TableCell>
@@ -456,6 +501,7 @@ export default function BesiktningarTable({ besiktningar }: Props) {
       <Dialog open={!!archivingRow} onClose={() => setArchivingRow(null)}>
         <DialogTitle>Arkivera besiktning</DialogTitle>
         <DialogContent>
+          {archiveError && <Alert severity="error" sx={{ mb: 2 }}>{archiveError}</Alert>}
           <DialogContentText>
             Är du säker på att du vill arkivera besiktningen för{" "}
             {archivingRow?.lagenhetsnummer}? Den visas därefter i Arkiv istället

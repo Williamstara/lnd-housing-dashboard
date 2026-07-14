@@ -48,7 +48,9 @@ export type Apartment = ApartmentInput & {
   kontonummer?: string;
   klartFranHusfmDatum?: string;
   kontraktSkickatDatum?: string;
+  kontraktSkickatAv?: string;
   kontraktSigneratDatum?: string;
+  kontraktSigneratAv?: string;
   tillagdIHyresgastlistaDatum?: string;
 };
 
@@ -84,7 +86,9 @@ function mapDoc(doc: ApartmentDoc & { _id: ObjectId }): Apartment {
     kontonummer: doc.kontonummer,
     klartFranHusfmDatum: doc.klartFranHusfmDatum,
     kontraktSkickatDatum: doc.kontraktSkickatDatum,
+    kontraktSkickatAv: doc.kontraktSkickatAv,
     kontraktSigneratDatum: doc.kontraktSigneratDatum,
+    kontraktSigneratAv: doc.kontraktSigneratAv,
     tillagdIHyresgastlistaDatum: doc.tillagdIHyresgastlistaDatum,
   };
 }
@@ -110,6 +114,17 @@ export async function getRedoForKontrakt(nationsId: string): Promise<Apartment[]
   const docs = await col
     .find({ nationsID: nationsId, status: "redo_for_kontrakt" })
     .sort({ ledigFrom: 1 })
+    .toArray();
+  return docs.map((d) => mapDoc(d as ApartmentDoc & { _id: ObjectId }));
+}
+
+// Every apartment for the nation, any status — used where a full pick-list
+// is needed (e.g. manually adding a missed-rent row for any unit).
+export async function getAllApartments(nationsId: string): Promise<Apartment[]> {
+  const col = await getCollection();
+  const docs = await col
+    .find({ nationsID: nationsId })
+    .sort({ ledigFrom: -1 })
     .toArray();
   return docs.map((d) => mapDoc(d as ApartmentDoc & { _id: ObjectId }));
 }
@@ -193,19 +208,19 @@ export async function assignTenantAndSendToContract(
   );
 }
 
-export async function markContractSent(nationsId: string, id: string): Promise<void> {
+export async function markContractSent(nationsId: string, id: string, utfordAv: string): Promise<void> {
   const col = await getCollection();
   await col.updateOne(
     { _id: new ObjectId(id), nationsID: nationsId },
-    { $set: { kontraktSkickatDatum: new Date().toISOString().slice(0, 10) } }
+    { $set: { kontraktSkickatDatum: new Date().toISOString().slice(0, 10), kontraktSkickatAv: utfordAv } }
   );
 }
 
-export async function markContractSigned(nationsId: string, id: string): Promise<void> {
+export async function markContractSigned(nationsId: string, id: string, utfordAv: string): Promise<void> {
   const col = await getCollection();
   await col.updateOne(
     { _id: new ObjectId(id), nationsID: nationsId },
-    { $set: { kontraktSigneratDatum: new Date().toISOString().slice(0, 10) } }
+    { $set: { kontraktSigneratDatum: new Date().toISOString().slice(0, 10), kontraktSigneratAv: utfordAv } }
   );
 }
 
@@ -249,7 +264,9 @@ export async function removeFromKontrakt(nationsId: string, id: string): Promise
         kontonummer: "",
         klartFranHusfmDatum: "",
         kontraktSkickatDatum: "",
+        kontraktSkickatAv: "",
         kontraktSigneratDatum: "",
+        kontraktSigneratAv: "",
       },
     }
   );

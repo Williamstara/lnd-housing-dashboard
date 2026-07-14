@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { auth0 } from "@/lib/auth0";
 import { getFastighetNamn } from "@/lib/fastigheter";
 import { requireNationsId } from "@/lib/nations";
-import { ARCHIVE_ROLES, ROLES, hasAnyRole, hasRole } from "@/lib/roles";
+import { ARCHIVE_ROLES, ROLES, getUserDisplayName, hasAnyRole, hasRole } from "@/lib/roles";
 import {
   archiveByLedigFrom,
   assignTenantAndSendToContract,
@@ -22,36 +22,38 @@ import {
 } from "@/lib/apartments";
 import { findRentalObjectForApartment, updateRentalObjectPricing } from "@/lib/rentalobjects";
 
-async function requireUser(): Promise<string> {
+type Actor = { nationsId: string; userName: string };
+
+async function requireUser(): Promise<Actor> {
   const session = await auth0.getSession();
   if (!session?.user) {
     throw new Error("Unauthorized");
   }
-  return requireNationsId(session.user);
+  return { nationsId: requireNationsId(session.user), userName: getUserDisplayName(session.user) };
 }
 
-async function requireEkonomiRole(): Promise<string> {
+async function requireEkonomiRole(): Promise<Actor> {
   const session = await auth0.getSession();
   if (!session?.user || !hasRole(session.user, ROLES.EKONOMI)) {
     throw new Error("Endast användare med rollen ekonomi har åtkomst.");
   }
-  return requireNationsId(session.user);
+  return { nationsId: requireNationsId(session.user), userName: getUserDisplayName(session.user) };
 }
 
-async function requireAdminRole(): Promise<string> {
+async function requireHusformanRole(): Promise<Actor> {
   const session = await auth0.getSession();
-  if (!session?.user || !hasRole(session.user, ROLES.ADMIN)) {
-    throw new Error("Endast användare med rollen admin har åtkomst.");
+  if (!session?.user || !hasRole(session.user, ROLES.HUSFORMAN)) {
+    throw new Error("Endast användare med rollen husförman har åtkomst.");
   }
-  return requireNationsId(session.user);
+  return { nationsId: requireNationsId(session.user), userName: getUserDisplayName(session.user) };
 }
 
-async function requireArchiveRole(): Promise<string> {
+async function requireArchiveRole(): Promise<Actor> {
   const session = await auth0.getSession();
   if (!session?.user || !hasAnyRole(session.user, ARCHIVE_ROLES)) {
     throw new Error("Endast användare med rollen ekonomi, husvd eller admin har åtkomst.");
   }
-  return requireNationsId(session.user);
+  return { nationsId: requireNationsId(session.user), userName: getUserDisplayName(session.user) };
 }
 
 async function sanitizeApartmentInput(nationsId: string, input: ApartmentInput): Promise<ApartmentInput> {
@@ -153,7 +155,7 @@ async function syncPricingToDatabas(nationsId: string, input: ApartmentInput) {
 }
 
 export async function createApartmentAction(input: ApartmentInput) {
-  const nationsId = await requireUser();
+  const { nationsId } = await requireUser();
   const sanitized = await sanitizeApartmentInput(nationsId, input);
   await createApartment(nationsId, sanitized);
   await syncPricingToDatabas(nationsId, sanitized);
@@ -164,7 +166,7 @@ export async function updateApartmentAction(
   id: string,
   input: ApartmentInput
 ) {
-  const nationsId = await requireUser();
+  const { nationsId } = await requireUser();
   const sanitized = await sanitizeApartmentInput(nationsId, input);
   await updateApartment(nationsId, id, sanitized);
   await syncPricingToDatabas(nationsId, sanitized);
@@ -172,49 +174,50 @@ export async function updateApartmentAction(
 }
 
 export async function deleteApartmentAction(id: string) {
-  const nationsId = await requireUser();
+  const { nationsId } = await requireUser();
   await deleteApartment(nationsId, id);
   revalidateApartmentPages();
 }
 
 export async function markContactedAction(id: string, input: ContactInput) {
-  const nationsId = await requireUser();
+  const { nationsId } = await requireUser();
   await markContacted(nationsId, id, sanitizeContactInput(input));
   revalidateApartmentPages();
 }
 
-// Only admins may send a contacted tenant's info over to Redo för kontrakt.
+// Only husförman may send a contacted tenant's info over to Redo för kontrakt.
 export async function assignTenantAction(
   id: string,
   input: TenantAssignmentInput
 ) {
-  const nationsId = await requireAdminRole();
+  const { nationsId } = await requireHusformanRole();
   await assignTenantAndSendToContract(nationsId, id, sanitizeTenantInput(input));
   revalidateApartmentPages();
 }
 
 // Only ekonomi may mark a contract as sent.
 export async function markContractSentAction(id: string) {
-  const nationsId = await requireEkonomiRole();
-  await markContractSent(nationsId, id);
+  const { nationsId, userName } = await requireEkonomiRole();
+  await markContractSent(nationsId, id, userName);
   revalidateApartmentPages();
 }
 
-// Only admins may undo a "skicka till kontrakt" (mirrors assignTenantAction).
+// Only husförman may undo a "skicka till kontrakt" (mirrors assignTenantAction).
 export async function removeFromKontraktAction(id: string) {
-  const nationsId = await requireAdminRole();
+  const { nationsId } = await requireHusformanRole();
   await removeFromKontrakt(nationsId, id);
   revalidateApartmentPages();
 }
 
+// Only ekonomi may mark a contract as signed.
 export async function markContractSignedAction(id: string) {
-  const nationsId = await requireUser();
-  await markContractSigned(nationsId, id);
+  const { nationsId, userName } = await requireEkonomiRole();
+  await markContractSigned(nationsId, id, userName);
   revalidateApartmentPages();
 }
 
 export async function setHiddenAction(id: string, hidden: boolean) {
-  const nationsId = await requireUser();
+  const { nationsId } = await requireUser();
   await setHidden(nationsId, id, hidden);
   revalidateApartmentPages();
 }
@@ -222,7 +225,7 @@ export async function setHiddenAction(id: string, hidden: boolean) {
 export async function archiveByLedigFromAction(
   ledigFrom: string
 ): Promise<{ archived: number; skipped: number }> {
-  const nationsId = await requireArchiveRole();
+  const { nationsId } = await requireArchiveRole();
   const result = await archiveByLedigFrom(nationsId, ledigFrom);
   revalidateApartmentPages();
   return result;

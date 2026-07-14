@@ -6,16 +6,16 @@ import { createFastighet, deleteFastighet, updateFastighet } from "@/lib/fastigh
 import { requireNationsId } from "@/lib/nations";
 import { ROLES, hasRole } from "@/lib/roles";
 
-async function requireAdminRole(): Promise<string> {
+async function requireHusformanRole(): Promise<string> {
   const session = await auth0.getSession();
-  if (!session?.user || !hasRole(session.user, ROLES.ADMIN)) {
-    throw new Error("Endast användare med rollen admin har åtkomst.");
+  if (!session?.user || !hasRole(session.user, ROLES.HUSFORMAN)) {
+    throw new Error("Endast användare med rollen husförman har åtkomst.");
   }
   return requireNationsId(session.user);
 }
 
 export async function createFastighetAction(namn: string) {
-  const nationsId = await requireAdminRole();
+  const nationsId = await requireHusformanRole();
   const trimmed = namn.trim();
   if (!trimmed) throw new Error("Namn krävs.");
   await createFastighet(nationsId, trimmed);
@@ -23,7 +23,7 @@ export async function createFastighetAction(namn: string) {
 }
 
 export async function updateFastighetAction(id: string, namn: string) {
-  const nationsId = await requireAdminRole();
+  const nationsId = await requireHusformanRole();
   const trimmed = namn.trim();
   if (!trimmed) throw new Error("Namn krävs.");
   await updateFastighet(nationsId, id, trimmed);
@@ -31,7 +31,7 @@ export async function updateFastighetAction(id: string, namn: string) {
 }
 
 export async function deleteFastighetAction(id: string) {
-  const nationsId = await requireAdminRole();
+  const nationsId = await requireHusformanRole();
   await deleteFastighet(nationsId, id);
   revalidatePath("/fastigheter");
 }

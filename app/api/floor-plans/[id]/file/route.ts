@@ -13,7 +13,7 @@ export async function GET(_request: NextRequest, { params }: RouteContext) {
     const { id } = await params;
     const file = await getFloorPlanFile(nationsId, id);
     if (!file) return Response.json({ error: "Not found" }, { status: 404 });
-    return new Response(new Blob([file.data], { type: file.contentType }), {
+    return new Response(new Blob([file.data as unknown as BlobPart], { type: file.contentType }), {
       headers: {
         "Content-Disposition": `inline; filename="${file.aptName}.pdf"`,
         "Content-Type": file.contentType,

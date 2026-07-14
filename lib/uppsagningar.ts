@@ -8,6 +8,7 @@ export type Uppsagning = {
   fastighet: string;
   hyresgastNamn: string;
   bekraftelsedatum: string;
+  bekraftadAv: string;
   flyttdatum: string;
 };
 
@@ -32,6 +33,7 @@ export async function getUppsagningar(nationsId: string): Promise<Uppsagning[]> 
     fastighet: doc.fastighet,
     hyresgastNamn: doc.hyresgastNamn,
     bekraftelsedatum: doc.bekraftelsedatum,
+    bekraftadAv: doc.bekraftadAv ?? "",
     flyttdatum: doc.flyttdatum,
   }));
 }

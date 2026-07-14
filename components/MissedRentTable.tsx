@@ -2,6 +2,7 @@
 
 import { useUser } from "@auth0/nextjs-auth0";
 import { useMemo, useState, useTransition, type ChangeEvent } from "react";
+import AddIcon from "@mui/icons-material/Add";
 import DeleteIcon from "@mui/icons-material/Delete";
 import EditIcon from "@mui/icons-material/Edit";
 import FileDownloadIcon from "@mui/icons-material/FileDownload";
@@ -27,15 +28,18 @@ import TableSortLabel from "@mui/material/TableSortLabel";
 import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
 import {
+  createManualMissedRentAction,
   deleteMissedRentAction,
   updateMissedRentAction,
 } from "@/app/statistik/actions";
+import type { Apartment } from "@/lib/apartments";
 import { exportRowsToXlsx } from "@/lib/export-xlsx";
 import type { MissedRentRow } from "@/lib/missed-rent";
 import { ROLES, hasRole } from "@/lib/roles";
 
 type Props = {
   rows: MissedRentRow[];
+  availableApartments: Apartment[];
 };
 
 type ColumnKey =
@@ -48,6 +52,8 @@ type ColumnKey =
   | "arshyraMedRed"
   | "manadshyra"
   | "missadIntakt"
+  | "ovrigaMissadeKostnader"
+  | "totalMissat"
   | "kommentar"
   | "ansvarig";
 
@@ -63,6 +69,8 @@ const columns: Array<{ key: ColumnKey; label: string; align?: "right" }> = [
   { key: "arshyraMedRed", label: "Individuell årshyra", align: "right" },
   { key: "manadshyra", label: "Månadshyra", align: "right" },
   { key: "missadIntakt", label: "Missad intäkt", align: "right" },
+  { key: "ovrigaMissadeKostnader", label: "Övriga missade kostnader", align: "right" },
+  { key: "totalMissat", label: "Totalt", align: "right" },
   { key: "kommentar", label: "Kommentar" },
   { key: "ansvarig", label: "Ansvarig" },
 ];
@@ -77,6 +85,8 @@ const columnValue: Record<ColumnKey, (r: MissedRentRow) => string | number> = {
   arshyraMedRed: (r) => r.arshyraMedRed,
   manadshyra: (r) => r.manadshyra,
   missadIntakt: (r) => r.missadIntakt,
+  ovrigaMissadeKostnader: (r) => r.ovrigaMissadeKostnader,
+  totalMissat: (r) => r.totalMissat,
   kommentar: (r) => r.kommentar,
   ansvarig: (r) => r.ansvarig,
 };
@@ -99,13 +109,14 @@ function matchesSearch(row: MissedRentRow, query: string): boolean {
 
 type EditForm = {
   faktisktInflyttDatum: string;
+  ovrigaMissadeKostnader: string;
   kommentar: string;
   ansvarig: string;
 };
 
-export default function MissedRentTable({ rows }: Props) {
+export default function MissedRentTable({ rows, availableApartments }: Props) {
   const { user } = useUser();
-  const isAdmin = hasRole(user, ROLES.ADMIN);
+  const isHusforman = hasRole(user, ROLES.HUSFORMAN);
 
   const [search, setSearch] = useState("");
   const [orderBy, setOrderBy] = useState<ColumnKey>("ledigFrom");
@@ -116,6 +127,7 @@ export default function MissedRentTable({ rows }: Props) {
   const [editingRow, setEditingRow] = useState<MissedRentRow | null>(null);
   const [editForm, setEditForm] = useState<EditForm>({
     faktisktInflyttDatum: "",
+    ovrigaMissadeKostnader: "0",
     kommentar: "",
     ansvarig: "",
   });
@@ -124,6 +136,11 @@ export default function MissedRentTable({ rows }: Props) {
 
   const [deletingRow, setDeletingRow] = useState<MissedRentRow | null>(null);
   const [isDeleting, startDeleteTransition] = useTransition();
+
+  const [addOpen, setAddOpen] = useState(false);
+  const [addApartment, setAddApartment] = useState<Apartment | null>(null);
+  const [addError, setAddError] = useState<string | null>(null);
+  const [isAdding, startAddTransition] = useTransition();
 
   const ansvarigOptions = useMemo(
     () => Array.from(new Set(rows.map((r) => r.ansvarig).filter(Boolean))).sort(),
@@ -168,6 +185,7 @@ export default function MissedRentTable({ rows }: Props) {
     setEditingRow(row);
     setEditForm({
       faktisktInflyttDatum: row.faktisktInflyttDatum ?? "",
+      ovrigaMissadeKostnader: String(row.ovrigaMissadeKostnader),
       kommentar: row.kommentar,
       ansvarig: row.ansvarig,
     });
@@ -181,6 +199,7 @@ export default function MissedRentTable({ rows }: Props) {
       try {
         await updateMissedRentAction(id, {
           faktisktInflyttDatum: editForm.faktisktInflyttDatum || null,
+          ovrigaMissadeKostnader: Number(editForm.ovrigaMissadeKostnader) || 0,
           kommentar: editForm.kommentar.trim(),
           ansvarig: editForm.ansvarig.trim(),
         });
@@ -200,6 +219,25 @@ export default function MissedRentTable({ rows }: Props) {
     });
   }
 
+  function openAdd() {
+    setAddError(null);
+    setAddApartment(null);
+    setAddOpen(true);
+  }
+
+  function handleAdd() {
+    if (!addApartment) return;
+    setAddError(null);
+    startAddTransition(async () => {
+      try {
+        await createManualMissedRentAction(addApartment.id);
+        setAddOpen(false);
+      } catch (err) {
+        setAddError(err instanceof Error ? err.message : "Något gick fel.");
+      }
+    });
+  }
+
   return (
     <>
       <Stack
@@ -209,13 +247,18 @@ export default function MissedRentTable({ rows }: Props) {
         <Typography variant="h4" component="h1" sx={{ fontWeight: 600 }}>
           Missade hyror
         </Typography>
-        <Button
-          variant="outlined"
-          startIcon={<FileDownloadIcon />}
-          onClick={handleExport}
-        >
-          Exportera
-        </Button>
+        <Stack direction="row" sx={{ gap: 1 }}>
+          <Button
+            variant="outlined"
+            startIcon={<FileDownloadIcon />}
+            onClick={handleExport}
+          >
+            Exportera
+          </Button>
+          <Button variant="contained" startIcon={<AddIcon />} onClick={openAdd}>
+            Lägg till
+          </Button>
+        </Stack>
       </Stack>
 
       <TextField
@@ -230,7 +273,7 @@ export default function MissedRentTable({ rows }: Props) {
         fullWidth
       />
 
-      <TableContainer component={Paper}>
+      <TableContainer component={Paper} sx={{ overflowX: "auto" }}>
         <Table aria-label="Missade hyror" size="small">
           <TableHead>
             <TableRow>
@@ -275,6 +318,10 @@ export default function MissedRentTable({ rows }: Props) {
                     <TableCell align="right">{currency.format(row.arshyraMedRed)}</TableCell>
                     <TableCell align="right">{currency.format(row.manadshyra)}</TableCell>
                     <TableCell align="right">{currency.format(row.missadIntakt)}</TableCell>
+                    <TableCell align="right">{currency.format(row.ovrigaMissadeKostnader)}</TableCell>
+                    <TableCell align="right">
+                      <strong>{currency.format(row.totalMissat)}</strong>
+                    </TableCell>
                     <TableCell sx={{ maxWidth: 200, whiteSpace: "normal" }}>
                       {row.kommentar}
                     </TableCell>
@@ -288,7 +335,7 @@ export default function MissedRentTable({ rows }: Props) {
                         >
                           <EditIcon fontSize="small" />
                         </IconButton>
-                        {isAdmin && (
+                        {isHusforman && (
                           <IconButton
                             aria-label="Ta bort"
                             size="small"
@@ -317,6 +364,39 @@ export default function MissedRentTable({ rows }: Props) {
         labelDisplayedRows={({ from, to, count }) => `${from}–${to} av ${count}`}
       />
 
+      <Dialog open={addOpen} onClose={() => setAddOpen(false)} fullWidth maxWidth="xs">
+        <DialogTitle>Lägg till missad hyra</DialogTitle>
+        <DialogContent>
+          <Stack spacing={2} sx={{ mt: 1 }}>
+            {addError && <Alert severity="error">{addError}</Alert>}
+            <Typography variant="body2" color="text.secondary">
+              Välj en lägenhet som ännu inte finns i listan. Övriga fält
+              (faktiskt inflytt, kommentar, ansvarig, övriga kostnader) fylls
+              i genom att redigera raden efteråt.
+            </Typography>
+            <Autocomplete
+              options={availableApartments}
+              getOptionLabel={(a) => `${a.lagenhetsnummer} · ${a.fastighet} (ledig ${a.ledigFrom})`}
+              value={addApartment}
+              onChange={(_, value) => setAddApartment(value)}
+              disabled={isAdding}
+              renderInput={(params) => (
+                <TextField {...params} label="Lägenhet" fullWidth />
+              )}
+              noOptionsText="Inga lägenheter att välja — alla finns redan i listan."
+            />
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setAddOpen(false)} disabled={isAdding}>
+            Avbryt
+          </Button>
+          <Button onClick={handleAdd} variant="contained" disabled={isAdding || !addApartment}>
+            Lägg till
+          </Button>
+        </DialogActions>
+      </Dialog>
+
       <Dialog
         open={!!editingRow}
         onClose={() => setEditingRow(null)}
@@ -338,6 +418,17 @@ export default function MissedRentTable({ rows }: Props) {
               }
               disabled={isSaving}
               slotProps={{ inputLabel: { shrink: true } }}
+              fullWidth
+            />
+            <TextField
+              label="Övriga missade kostnader (kr)"
+              type="number"
+              value={editForm.ovrigaMissadeKostnader}
+              onChange={(e) =>
+                setEditForm((prev) => ({ ...prev, ovrigaMissadeKostnader: e.target.value }))
+              }
+              disabled={isSaving}
+              helperText="Läggs till missad intäkt i totalsumman, t.ex. fel belopp i kontraktet."
               fullWidth
             />
             <TextField

@@ -14,7 +14,9 @@ export type Besiktning = {
   husformanAnteckning: string;
   totaltAvdrag: number;
   klarForBetalningDatum: string | null;
+  klarForBetalningAv: string | null;
   betalningGjordDatum: string | null;
+  betalningGjordAv: string | null;
   status: BesiktningStatus;
 };
 
@@ -45,7 +47,9 @@ function mapDoc(doc: BesiktningDoc & { _id: ObjectId }): Besiktning {
     husformanAnteckning: doc.husformanAnteckning,
     totaltAvdrag: doc.totaltAvdrag,
     klarForBetalningDatum: doc.klarForBetalningDatum,
+    klarForBetalningAv: doc.klarForBetalningAv ?? null,
     betalningGjordDatum: doc.betalningGjordDatum,
+    betalningGjordAv: doc.betalningGjordAv ?? null,
     status: doc.status,
   };
 }
@@ -99,7 +103,9 @@ export async function createBesiktning(
     husformanAnteckning: "",
     totaltAvdrag: 0,
     klarForBetalningDatum: null,
+    klarForBetalningAv: null,
     betalningGjordDatum: null,
+    betalningGjordAv: null,
     status: "aktiv",
   };
   await col.insertOne(doc);
@@ -114,24 +120,29 @@ export async function updateBesiktning(
   await col.updateOne({ _id: new ObjectId(id), nationsID: nationsId }, { $set: input });
 }
 
-export async function markKlarForBetalning(nationsId: string, id: string): Promise<void> {
+export async function markKlarForBetalning(nationsId: string, id: string, utfordAv: string): Promise<void> {
   const col = await getCollection();
   await col.updateOne(
     { _id: new ObjectId(id), nationsID: nationsId },
-    { $set: { klarForBetalningDatum: new Date().toISOString().slice(0, 10) } }
+    { $set: { klarForBetalningDatum: new Date().toISOString().slice(0, 10), klarForBetalningAv: utfordAv } }
   );
 }
 
-export async function markBetalningGjord(nationsId: string, id: string): Promise<void> {
+export async function markBetalningGjord(nationsId: string, id: string, utfordAv: string): Promise<void> {
   const col = await getCollection();
   await col.updateOne(
     { _id: new ObjectId(id), nationsID: nationsId },
-    { $set: { betalningGjordDatum: new Date().toISOString().slice(0, 10) } }
+    { $set: { betalningGjordDatum: new Date().toISOString().slice(0, 10), betalningGjordAv: utfordAv } }
   );
 }
 
 export async function archiveBesiktning(nationsId: string, id: string): Promise<void> {
   const col = await getCollection();
+  const doc = await col.findOne({ _id: new ObjectId(id), nationsID: nationsId });
+  if (!doc) throw new Error("Besiktningen hittades inte.");
+  if (!doc.betalningGjordDatum) {
+    throw new Error("Besiktningen kan inte arkiveras förrän betalning är gjord.");
+  }
   await col.updateOne(
     { _id: new ObjectId(id), nationsID: nationsId },
     { $set: { status: "arkiverad" as BesiktningStatus } }

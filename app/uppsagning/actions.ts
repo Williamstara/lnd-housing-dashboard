@@ -5,17 +5,17 @@ import { auth0 } from "@/lib/auth0";
 import { createApartment, findLatestApartmentSpecs, type ApartmentInput } from "@/lib/apartments";
 import { createBesiktning } from "@/lib/besiktningar";
 import { requireNationsId } from "@/lib/nations";
-import { ROLES, hasRole } from "@/lib/roles";
+import { ROLES, getUserDisplayName, hasRole } from "@/lib/roles";
 import { getTenants } from "@/lib/tenants";
 import { createUppsagning } from "@/lib/uppsagningar";
 import { findRentalObjectForApartment, type RentalObject } from "@/lib/rentalobjects";
 
-async function requireEkonomiRole(): Promise<string> {
+async function requireEkonomiRole(): Promise<{ nationsId: string; userName: string }> {
   const session = await auth0.getSession();
   if (!session?.user || !hasRole(session.user, ROLES.EKONOMI)) {
     throw new Error("Endast användare med rollen ekonomi har åtkomst.");
   }
-  return requireNationsId(session.user);
+  return { nationsId: requireNationsId(session.user), userName: getUserDisplayName(session.user) };
 }
 
 function rentalObjectToApartmentInput(
@@ -48,7 +48,7 @@ export async function confirmUppsagningAction(
   lagenhetsnummer: string,
   flyttdatum: string
 ) {
-  const nationsId = await requireEkonomiRole();
+  const { nationsId, userName } = await requireEkonomiRole();
 
   const trimmedNummer = lagenhetsnummer.trim();
   const trimmedDatum = flyttdatum.trim();
@@ -71,6 +71,7 @@ export async function confirmUppsagningAction(
     fastighet: tenant.fastighet,
     hyresgastNamn: tenant.namn,
     bekraftelsedatum,
+    bekraftadAv: userName,
     flyttdatum: trimmedDatum,
   });
 

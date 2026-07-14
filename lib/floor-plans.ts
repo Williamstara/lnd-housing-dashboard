@@ -82,7 +82,7 @@ export async function getFloorPlanFile(
   const doc = await col.findOne({ _id: new ObjectId(id), nationsID: nationsId });
   if (!doc) return null;
   return {
-    data: Buffer.from(doc.floorplanning.data.buffer as ArrayBuffer),
+    data: Buffer.from(doc.floorplanning.data.buffer as unknown as ArrayBuffer),
     contentType: doc.floorplanning.contentType,
     aptName: doc.aptName,
   };
@@ -99,7 +99,7 @@ export async function getFloorPlanByAptName(
   });
   if (!doc) return null;
   return {
-    data: Buffer.from(doc.floorplanning.data.buffer as ArrayBuffer),
+    data: Buffer.from(doc.floorplanning.data.buffer as unknown as ArrayBuffer),
     contentType: doc.floorplanning.contentType,
   };
 }

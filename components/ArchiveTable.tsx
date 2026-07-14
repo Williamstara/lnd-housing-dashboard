@@ -159,10 +159,12 @@ export default function ArchiveTable({ apartments }: Props) {
   function handleExport() {
     exportRowsToXlsx(
       `arkiv-${new Date().toISOString().slice(0, 10)}.xlsx`,
-      columns.map((c) => c.label),
-      visibleApartments.map((apartment) =>
-        columns.map((c) => columnValue[c.key](apartment))
-      )
+      [...columns.map((c) => c.label), "Kontrakt skickat av", "Kontrakt signerat av"],
+      visibleApartments.map((apartment) => [
+        ...columns.map((c) => columnValue[c.key](apartment)),
+        apartment.kontraktSkickatAv ?? "",
+        apartment.kontraktSigneratAv ?? "",
+      ])
     );
   }
 
@@ -262,8 +264,22 @@ export default function ArchiveTable({ apartments }: Props) {
                   <TableCell>{apartment.epost}</TableCell>
                   <TableCell>{apartment.telefonnummer}</TableCell>
                   <TableCell>{apartment.kontonummer}</TableCell>
-                  <TableCell>{apartment.kontraktSkickatDatum}</TableCell>
-                  <TableCell>{apartment.kontraktSigneratDatum}</TableCell>
+                  <TableCell>
+                    {apartment.kontraktSkickatDatum}
+                    {apartment.kontraktSkickatAv && (
+                      <Typography variant="caption" color="text.secondary" sx={{ display: "block" }}>
+                        av {apartment.kontraktSkickatAv}
+                      </Typography>
+                    )}
+                  </TableCell>
+                  <TableCell>
+                    {apartment.kontraktSigneratDatum}
+                    {apartment.kontraktSigneratAv && (
+                      <Typography variant="caption" color="text.secondary" sx={{ display: "block" }}>
+                        av {apartment.kontraktSigneratAv}
+                      </Typography>
+                    )}
+                  </TableCell>
                   <TableCell align="right">
                     {apartment.tillagdIHyresgastlistaDatum ? (
                       <Chip

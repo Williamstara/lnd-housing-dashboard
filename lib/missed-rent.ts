@@ -1,12 +1,18 @@
 import "server-only";
 import { ObjectId } from "mongodb";
 import { getDb } from "@/lib/mongodb";
-import { getApartmentsByIds, getApartmentsWithPastLedigFrom } from "@/lib/apartments";
+import {
+  getAllApartments,
+  getApartmentsByIds,
+  getApartmentsWithPastLedigFrom,
+  type Apartment,
+} from "@/lib/apartments";
 
 type MissedRentDoc = {
   nationsID: string;
   apartmentId: string;
   faktisktInflyttDatum: string | null;
+  ovrigaMissadeKostnader: number;
   kommentar: string;
   ansvarig: string;
 };
@@ -24,12 +30,15 @@ export type MissedRentRow = {
   arshyraMedRed: number;
   manadshyra: number;
   missadIntakt: number;
+  ovrigaMissadeKostnader: number;
+  totalMissat: number;
   kommentar: string;
   ansvarig: string;
 };
 
 export type MissedRentUpdateInput = {
   faktisktInflyttDatum?: string | null;
+  ovrigaMissadeKostnader?: number;
   kommentar?: string;
   ansvarig?: string;
 };
@@ -92,10 +101,40 @@ export async function syncMissedRent(nationsId: string): Promise<void> {
       nationsID: nationsId,
       apartmentId: a.id,
       faktisktInflyttDatum: null,
+      ovrigaMissadeKostnader: 0,
       kommentar: "",
       ansvarig: "",
     }))
   );
+}
+
+// Apartments that don't already have a missed-rent row — the pick-list for
+// manually adding one.
+export async function getApartmentsAvailableForManualEntry(nationsId: string): Promise<Apartment[]> {
+  const [apartments, col] = await Promise.all([getAllApartments(nationsId), getCollection()]);
+  const tracked = await col
+    .find({ nationsID: nationsId }, { projection: { apartmentId: 1 } })
+    .toArray();
+  const trackedIds = new Set(tracked.map((d) => d.apartmentId));
+  return apartments.filter((a) => !trackedIds.has(a.id));
+}
+
+// Manually flags an apartment as a missed-rent case — e.g. a contract with
+// wrong numbers, discovered outside the automatic ledig-fr.o.m.-passed sync.
+export async function createManualMissedRent(nationsId: string, apartmentId: string): Promise<void> {
+  const col = await getCollection();
+  const existing = await col.findOne({ nationsID: nationsId, apartmentId });
+  if (existing) {
+    throw new Error("Den här lägenheten finns redan i listan över missade hyror.");
+  }
+  await col.insertOne({
+    nationsID: nationsId,
+    apartmentId,
+    faktisktInflyttDatum: null,
+    ovrigaMissadeKostnader: 0,
+    kommentar: "",
+    ansvarig: "",
+  });
 }
 
 export async function getMissedRentRows(nationsId: string): Promise<MissedRentRow[]> {
@@ -117,6 +156,7 @@ export async function getMissedRentRows(nationsId: string): Promise<MissedRentRo
     const endDate = doc.faktisktInflyttDatum ?? today();
     const missedMonths = monthsBetween(apartment.ledigFrom, endDate);
     const missadIntakt = Math.round(apartment.manadshyra * missedMonths);
+    const ovrigaMissadeKostnader = doc.ovrigaMissadeKostnader ?? 0;
 
     rows.push({
       id: doc._id.toString(),
@@ -131,6 +171,8 @@ export async function getMissedRentRows(nationsId: string): Promise<MissedRentRo
       arshyraMedRed: apartment.arshyraMedRed,
       manadshyra: apartment.manadshyra,
       missadIntakt,
+      ovrigaMissadeKostnader,
+      totalMissat: missadIntakt + ovrigaMissadeKostnader,
       kommentar: doc.kommentar,
       ansvarig: doc.ansvarig,
     });

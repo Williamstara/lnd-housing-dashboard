@@ -18,6 +18,7 @@ export const ROLES = {
   EKONOMI: "ekonomi",
   ADMIN: "admin",
   HUSVD: "husvd",
+  HUSFORMAN: "husforman",
 } as const;
 
 // Shared by every "archive" action (Redo för kontrakt, Besiktningar, ...) —
@@ -27,24 +28,19 @@ export const ARCHIVE_ROLES: string[] = [ROLES.EKONOMI, ROLES.HUSVD, ROLES.ADMIN]
 export function getUserRoles(user: User | null | undefined): string[] {
   if (!user) return [];
   const roles = user[ROLES_CLAIM];
-  const result = Array.isArray(roles)
+  return Array.isArray(roles)
     ? roles.filter((role): role is string => typeof role === "string")
     : [];
-  console.log("[roles debug]", {
-    sub: user.sub,
-    claimKey: ROLES_CLAIM,
-    rawClaimValue: roles,
-    resolvedRoles: result,
-    userKeys: Object.keys(user),
-  });
-  return result;
 }
 
+// Admin is a superuser: it satisfies every role check, not just its own —
+// this is how a single "admin" grant gives access to everything else too.
 export function hasRole(
   user: User | null | undefined,
   role: string
 ): boolean {
-  return getUserRoles(user).includes(role);
+  const roles = getUserRoles(user);
+  return roles.includes(role) || roles.includes(ROLES.ADMIN);
 }
 
 export function hasAnyRole(
@@ -52,4 +48,13 @@ export function hasAnyRole(
   roles: string[]
 ): boolean {
   return roles.some((role) => hasRole(user, role));
+}
+
+// Human-readable identifier for audit trails (e.g. "who pressed this
+// button") — prefers name, then falls back to something always present.
+export function getUserDisplayName(user: User | null | undefined): string {
+  if (!user) return "Okänd användare";
+  if (typeof user.name === "string" && user.name) return user.name;
+  if (typeof user.email === "string" && user.email) return user.email;
+  return user.sub ?? "Okänd användare";
 }

@@ -24,7 +24,6 @@ import TableRow from "@mui/material/TableRow";
 import TableSortLabel from "@mui/material/TableSortLabel";
 import TextField from "@mui/material/TextField";
 import Tooltip from "@mui/material/Tooltip";
-import Box from "@mui/material/Box";
 import Typography from "@mui/material/Typography";
 import {
   archiveByLedigFromAction,
@@ -137,7 +136,7 @@ function matchesSearch(apartment: Apartment, query: string): boolean {
 export default function ContractsReadyTable({ apartments }: Props) {
   const { user } = useUser();
   const isEkonomi = hasRole(user, ROLES.EKONOMI);
-  const isAdmin = hasRole(user, ROLES.ADMIN);
+  const isHusforman = hasRole(user, ROLES.HUSFORMAN);
   const canArchive = hasAnyRole(user, ARCHIVE_ROLES);
 
   const [isPending, startTransition] = useTransition();
@@ -224,10 +223,12 @@ export default function ContractsReadyTable({ apartments }: Props) {
   function handleExport() {
     exportRowsToXlsx(
       `redo-for-kontrakt-${new Date().toISOString().slice(0, 10)}.xlsx`,
-      columns.map((c) => c.label),
-      visibleApartments.map((apartment) =>
-        columns.map((c) => columnValue[c.key](apartment))
-      )
+      [...columns.map((c) => c.label), "Kontrakt skickat av", "Kontrakt signerat av"],
+      visibleApartments.map((apartment) => [
+        ...columns.map((c) => columnValue[c.key](apartment)),
+        apartment.kontraktSkickatAv ?? "",
+        apartment.kontraktSigneratAv ?? "",
+      ])
     );
   }
 
@@ -316,14 +317,14 @@ export default function ContractsReadyTable({ apartments }: Props) {
                   </TableSortLabel>
                 </TableCell>
               ))}
-              {isAdmin && <TableCell align="right">Åtgärder</TableCell>}
+              {isHusforman && <TableCell align="right">Åtgärder</TableCell>}
             </TableRow>
           </TableHead>
           <TableBody>
             {visibleApartments.length === 0 ? (
               <TableRow>
                 <TableCell
-                  colSpan={columns.length + (isAdmin ? 1 : 0)}
+                  colSpan={columns.length + (isHusforman ? 1 : 0)}
                   align="center"
                 >
                   {apartments.length === 0
@@ -363,7 +364,14 @@ export default function ContractsReadyTable({ apartments }: Props) {
                   <TableCell>{apartment.klartFranHusfmDatum}</TableCell>
                   <TableCell>
                     {apartment.kontraktSkickatDatum ? (
-                      apartment.kontraktSkickatDatum
+                      <>
+                        {apartment.kontraktSkickatDatum}
+                        {apartment.kontraktSkickatAv && (
+                          <Typography variant="caption" color="text.secondary" sx={{ display: "block" }}>
+                            av {apartment.kontraktSkickatAv}
+                          </Typography>
+                        )}
+                      </>
                     ) : isEkonomi ? (
                       <Button
                         size="small"
@@ -378,7 +386,16 @@ export default function ContractsReadyTable({ apartments }: Props) {
                     )}
                   </TableCell>
                   <TableCell>
-                    {apartment.kontraktSigneratDatum ?? (
+                    {apartment.kontraktSigneratDatum ? (
+                      <>
+                        {apartment.kontraktSigneratDatum}
+                        {apartment.kontraktSigneratAv && (
+                          <Typography variant="caption" color="text.secondary" sx={{ display: "block" }}>
+                            av {apartment.kontraktSigneratAv}
+                          </Typography>
+                        )}
+                      </>
+                    ) : isEkonomi ? (
                       <Button
                         size="small"
                         variant="contained"
@@ -387,9 +404,11 @@ export default function ContractsReadyTable({ apartments }: Props) {
                       >
                         Kontrakt signerat
                       </Button>
+                    ) : (
+                      "Ej signerat"
                     )}
                   </TableCell>
-                  {isAdmin && (
+                  {isHusforman && (
                     <TableCell align="right">
                       <Tooltip
                         title={

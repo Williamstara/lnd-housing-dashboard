@@ -81,7 +81,7 @@ export async function getTemplateAttachment(
   if (!doc?.attachment) return null;
   return {
     filename: doc.attachment.filename,
-    data: Buffer.from(doc.attachment.data.buffer as ArrayBuffer),
+    data: Buffer.from(doc.attachment.data.buffer as unknown as ArrayBuffer),
     contentType: doc.attachment.contentType,
   };
 }

@@ -32,7 +32,7 @@ type Props = { fastigheter: Fastighet[] };
 
 export default function FastigheterTable({ fastigheter }: Props) {
   const { user } = useUser();
-  const isAdmin = hasRole(user, ROLES.ADMIN);
+  const isHusforman = hasRole(user, ROLES.HUSFORMAN);
 
   const [newNamn, setNewNamn] = useState("");
   const [editing, setEditing] = useState<Fastighet | null>(null);
@@ -113,7 +113,7 @@ export default function FastigheterTable({ fastigheter }: Props) {
                 key={f.id}
                 divider
                 secondaryAction={
-                  isAdmin ? (
+                  isHusforman ? (
                     <Stack direction="row">
                       <IconButton
                         aria-label="Byt namn"
@@ -140,7 +140,7 @@ export default function FastigheterTable({ fastigheter }: Props) {
         </List>
       </Paper>
 
-      {isAdmin && (
+      {isHusforman && (
         <Stack direction="row" sx={{ gap: 1, mt: 2 }}>
           <TextField
             placeholder="Namn på ny fastighet"

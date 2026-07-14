@@ -158,7 +158,7 @@ function matchesSearch(apartment: Apartment, query: string): boolean {
 
 export default function ApartmentsTable({ apartments, fastigheter, missedRentApartmentIds }: Props) {
   const { user } = useUser();
-  const isAdmin = hasRole(user, ROLES.ADMIN);
+  const isHusforman = hasRole(user, ROLES.HUSFORMAN);
   const missedRentIds = useMemo(() => new Set(missedRentApartmentIds), [missedRentApartmentIds]);
 
   const [formOpen, setFormOpen] = useState(false);
@@ -461,7 +461,7 @@ export default function ApartmentsTable({ apartments, fastigheter, missedRentApa
                           </IconButton>
                         </Tooltip>
                       )}
-                      {apartment.status === "kontaktad" && isAdmin && (
+                      {apartment.status === "kontaktad" && isHusforman && (
                         <Tooltip title="Fyll i hyresgästinfo (skickar till Redo för kontrakt)">
                           <IconButton
                             aria-label="Fyll i hyresgästinfo"
