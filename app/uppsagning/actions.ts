@@ -3,16 +3,19 @@
 import { revalidatePath } from "next/cache";
 import { auth0 } from "@/lib/auth0";
 import { createApartment, findLatestApartmentSpecs, type ApartmentInput } from "@/lib/apartments";
+import { createBesiktning } from "@/lib/besiktningar";
+import { requireNationsId } from "@/lib/nations";
 import { ROLES, hasRole } from "@/lib/roles";
 import { getTenants } from "@/lib/tenants";
 import { createUppsagning } from "@/lib/uppsagningar";
 import { findRentalObjectForApartment, type RentalObject } from "@/lib/rentalobjects";
 
-async function requireEkonomiRole() {
+async function requireEkonomiRole(): Promise<string> {
   const session = await auth0.getSession();
   if (!session?.user || !hasRole(session.user, ROLES.EKONOMI)) {
     throw new Error("Endast användare med rollen ekonomi har åtkomst.");
   }
+  return requireNationsId(session.user);
 }
 
 function rentalObjectToApartmentInput(
@@ -30,6 +33,7 @@ function rentalObjectToApartmentInput(
     antalRum: 0,
     ledigFrom,
     arshyra: ro.malbildshyra ?? 0,
+    hyresrabatt: ro.hyresrabatt ?? 0,
     hyresreduktion: ro.hyresred ?? 0,
     arshyraMedRed: ro.individuellArshyra ?? 0,
     manadshyra: ro.manadshyra ?? 0,
@@ -44,7 +48,7 @@ export async function confirmUppsagningAction(
   lagenhetsnummer: string,
   flyttdatum: string
 ) {
-  await requireEkonomiRole();
+  const nationsId = await requireEkonomiRole();
 
   const trimmedNummer = lagenhetsnummer.trim();
   const trimmedDatum = flyttdatum.trim();
@@ -52,7 +56,7 @@ export async function confirmUppsagningAction(
     throw new Error("Alla fält måste fyllas i.");
   }
 
-  const tenants = await getTenants();
+  const tenants = await getTenants(nationsId);
   const tenant = tenants.find((t) => t.lagenhetsnummer === trimmedNummer);
   if (!tenant) {
     throw new Error(
@@ -62,7 +66,7 @@ export async function confirmUppsagningAction(
 
   const bekraftelsedatum = new Date().toISOString().slice(0, 10);
 
-  await createUppsagning({
+  await createUppsagning(nationsId, {
     lagenhetsnummer: trimmedNummer,
     fastighet: tenant.fastighet,
     hyresgastNamn: tenant.namn,
@@ -70,7 +74,7 @@ export async function confirmUppsagningAction(
     flyttdatum: trimmedDatum,
   });
 
-  const rentalObject = await findRentalObjectForApartment(trimmedNummer, tenant.fastighet);
+  const rentalObject = await findRentalObjectForApartment(nationsId, trimmedNummer, tenant.fastighet);
 
   let apartmentInput: ApartmentInput;
   if (rentalObject) {
@@ -81,7 +85,7 @@ export async function confirmUppsagningAction(
       trimmedDatum
     );
   } else {
-    const existingSpecs = await findLatestApartmentSpecs(trimmedNummer);
+    const existingSpecs = await findLatestApartmentSpecs(nationsId, trimmedNummer);
     apartmentInput = {
       lagenhetsnummer: trimmedNummer,
       fastighet: tenant.fastighet,
@@ -90,14 +94,17 @@ export async function confirmUppsagningAction(
       antalRum: existingSpecs?.antalRum ?? 0,
       ledigFrom: trimmedDatum,
       arshyra: existingSpecs?.arshyra ?? 0,
+      hyresrabatt: existingSpecs?.hyresrabatt ?? 0,
       hyresreduktion: existingSpecs?.hyresreduktion ?? 0,
       arshyraMedRed: existingSpecs?.arshyraMedRed ?? 0,
       manadshyra: existingSpecs?.manadshyra ?? 0,
     };
   }
 
-  await createApartment(apartmentInput);
+  await createApartment(nationsId, apartmentInput);
+  await createBesiktning(nationsId, trimmedNummer, trimmedDatum);
 
   revalidatePath("/uppsagning");
   revalidatePath("/lediga-lagenheter");
+  revalidatePath("/besiktningar");
 }

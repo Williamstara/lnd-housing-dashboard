@@ -16,6 +16,7 @@ export type ApartmentInput = {
   antalRum: number;
   ledigFrom: string;
   arshyra: number;
+  hyresrabatt: number;
   hyresreduktion: number;
   arshyraMedRed: number;
   manadshyra: number;
@@ -45,12 +46,13 @@ export type Apartment = ApartmentInput & {
   epost?: string;
   telefonnummer?: string;
   kontonummer?: string;
+  klartFranHusfmDatum?: string;
   kontraktSkickatDatum?: string;
   kontraktSigneratDatum?: string;
   tillagdIHyresgastlistaDatum?: string;
 };
 
-type ApartmentDoc = Omit<Apartment, "id">;
+type ApartmentDoc = Omit<Apartment, "id"> & { nationsID: string };
 
 async function getCollection() {
   const db = await getDb();
@@ -67,6 +69,7 @@ function mapDoc(doc: ApartmentDoc & { _id: ObjectId }): Apartment {
     antalRum: doc.antalRum,
     ledigFrom: doc.ledigFrom,
     arshyra: doc.arshyra,
+    hyresrabatt: doc.hyresrabatt ?? 0,
     hyresreduktion: doc.hyresreduktion,
     arshyraMedRed: doc.arshyraMedRed,
     manadshyra: doc.manadshyra,
@@ -79,109 +82,140 @@ function mapDoc(doc: ApartmentDoc & { _id: ObjectId }): Apartment {
     epost: doc.epost,
     telefonnummer: doc.telefonnummer,
     kontonummer: doc.kontonummer,
+    klartFranHusfmDatum: doc.klartFranHusfmDatum,
     kontraktSkickatDatum: doc.kontraktSkickatDatum,
     kontraktSigneratDatum: doc.kontraktSigneratDatum,
     tillagdIHyresgastlistaDatum: doc.tillagdIHyresgastlistaDatum,
   };
 }
 
-export async function getApartmentById(id: string): Promise<Apartment> {
+export async function getApartmentById(nationsId: string, id: string): Promise<Apartment> {
   const col = await getCollection();
-  const doc = await col.findOne({ _id: new ObjectId(id) });
+  const doc = await col.findOne({ _id: new ObjectId(id), nationsID: nationsId });
   if (!doc) throw new Error("Lägenheten hittades inte.");
   return mapDoc(doc as ApartmentDoc & { _id: ObjectId });
 }
 
-export async function getLedigaLagenheter(): Promise<Apartment[]> {
+export async function getLedigaLagenheter(nationsId: string): Promise<Apartment[]> {
   const col = await getCollection();
   const docs = await col
-    .find({ status: { $ne: "arkiverad" } })
+    .find({ nationsID: nationsId, status: { $ne: "arkiverad" } })
     .sort({ ledigFrom: 1 })
     .toArray();
   return docs.map((d) => mapDoc(d as ApartmentDoc & { _id: ObjectId }));
 }
 
-export async function getRedoForKontrakt(): Promise<Apartment[]> {
+export async function getRedoForKontrakt(nationsId: string): Promise<Apartment[]> {
   const col = await getCollection();
   const docs = await col
-    .find({ status: "redo_for_kontrakt" })
+    .find({ nationsID: nationsId, status: "redo_for_kontrakt" })
     .sort({ ledigFrom: 1 })
     .toArray();
   return docs.map((d) => mapDoc(d as ApartmentDoc & { _id: ObjectId }));
 }
 
-export async function getArkiv(): Promise<Apartment[]> {
+// Any status — a missed-rent tracking row must survive the apartment
+// later being archived.
+export async function getApartmentsWithPastLedigFrom(
+  nationsId: string,
+  today: string
+): Promise<Apartment[]> {
   const col = await getCollection();
   const docs = await col
-    .find({ status: "arkiverad" })
+    .find({ nationsID: nationsId, ledigFrom: { $lt: today } })
+    .toArray();
+  return docs.map((d) => mapDoc(d as ApartmentDoc & { _id: ObjectId }));
+}
+
+export async function getApartmentsByIds(nationsId: string, ids: string[]): Promise<Apartment[]> {
+  if (ids.length === 0) return [];
+  const col = await getCollection();
+  const docs = await col
+    .find({ nationsID: nationsId, _id: { $in: ids.map((id) => new ObjectId(id)) } })
+    .toArray();
+  return docs.map((d) => mapDoc(d as ApartmentDoc & { _id: ObjectId }));
+}
+
+export async function getArkiv(nationsId: string): Promise<Apartment[]> {
+  const col = await getCollection();
+  const docs = await col
+    .find({ nationsID: nationsId, status: "arkiverad" })
     .sort({ kontraktSigneratDatum: -1 })
     .toArray();
   return docs.map((d) => mapDoc(d as ApartmentDoc & { _id: ObjectId }));
 }
 
-export async function createApartment(input: ApartmentInput): Promise<Apartment> {
+export async function createApartment(nationsId: string, input: ApartmentInput): Promise<Apartment> {
   const col = await getCollection();
-  const doc: ApartmentDoc = { ...input, status: "ledig", hidden: false };
+  const doc: ApartmentDoc = { ...input, nationsID: nationsId, status: "ledig", hidden: false };
   const result = await col.insertOne(doc);
   return { ...doc, id: result.insertedId.toString() };
 }
 
-export async function updateApartment(id: string, input: ApartmentInput): Promise<void> {
+export async function updateApartment(nationsId: string, id: string, input: ApartmentInput): Promise<void> {
   const col = await getCollection();
-  await col.updateOne({ _id: new ObjectId(id) }, { $set: input });
+  await col.updateOne({ _id: new ObjectId(id), nationsID: nationsId }, { $set: input });
 }
 
-export async function deleteApartment(id: string): Promise<void> {
+export async function deleteApartment(nationsId: string, id: string): Promise<void> {
   const col = await getCollection();
-  await col.deleteOne({ _id: new ObjectId(id) });
+  await col.deleteOne({ _id: new ObjectId(id), nationsID: nationsId });
 }
 
-export async function setHidden(id: string, hidden: boolean): Promise<void> {
+export async function setHidden(nationsId: string, id: string, hidden: boolean): Promise<void> {
   const col = await getCollection();
-  await col.updateOne({ _id: new ObjectId(id) }, { $set: { hidden } });
+  await col.updateOne({ _id: new ObjectId(id), nationsID: nationsId }, { $set: { hidden } });
 }
 
-export async function markContacted(id: string, input: ContactInput): Promise<void> {
+export async function markContacted(nationsId: string, id: string, input: ContactInput): Promise<void> {
   const col = await getCollection();
   await col.updateOne(
-    { _id: new ObjectId(id) },
+    { _id: new ObjectId(id), nationsID: nationsId },
     { $set: { status: "kontaktad", kontaktperson: input.kontaktperson, svarSenast: input.svarSenast } }
   );
 }
 
 export async function assignTenantAndSendToContract(
+  nationsId: string,
   id: string,
   input: TenantAssignmentInput
 ): Promise<void> {
   const col = await getCollection();
   await col.updateOne(
-    { _id: new ObjectId(id) },
-    { $set: { ...input, status: "redo_for_kontrakt" } }
+    { _id: new ObjectId(id), nationsID: nationsId },
+    {
+      $set: {
+        ...input,
+        status: "redo_for_kontrakt",
+        klartFranHusfmDatum: new Date().toISOString().slice(0, 10),
+      },
+    }
   );
 }
 
-export async function markContractSent(id: string): Promise<void> {
+export async function markContractSent(nationsId: string, id: string): Promise<void> {
   const col = await getCollection();
   await col.updateOne(
-    { _id: new ObjectId(id) },
+    { _id: new ObjectId(id), nationsID: nationsId },
     { $set: { kontraktSkickatDatum: new Date().toISOString().slice(0, 10) } }
   );
 }
 
-export async function markContractSigned(id: string): Promise<void> {
+export async function markContractSigned(nationsId: string, id: string): Promise<void> {
   const col = await getCollection();
   await col.updateOne(
-    { _id: new ObjectId(id) },
+    { _id: new ObjectId(id), nationsID: nationsId },
     { $set: { kontraktSigneratDatum: new Date().toISOString().slice(0, 10) } }
   );
 }
 
 export async function archiveByLedigFrom(
+  nationsId: string,
   ledigFrom: string
 ): Promise<{ archived: number; skipped: number }> {
   const col = await getCollection();
   const candidates = await col
-    .find({ status: "redo_for_kontrakt", ledigFrom })
+    .find({ nationsID: nationsId, status: "redo_for_kontrakt", ledigFrom })
     .toArray();
   const toArchive = candidates.filter((a) => a.kontraktSigneratDatum);
   if (toArchive.length > 0) {
@@ -193,16 +227,16 @@ export async function archiveByLedigFrom(
   return { archived: toArchive.length, skipped: candidates.length - toArchive.length };
 }
 
-export async function removeFromKontrakt(id: string): Promise<void> {
+export async function removeFromKontrakt(nationsId: string, id: string): Promise<void> {
   const col = await getCollection();
-  const doc = await col.findOne({ _id: new ObjectId(id) });
+  const doc = await col.findOne({ _id: new ObjectId(id), nationsID: nationsId });
   if (!doc) throw new Error("Lägenheten hittades inte.");
   if (doc.status !== "redo_for_kontrakt") throw new Error("Lägenheten är inte redo för kontrakt.");
   if (doc.kontraktSigneratDatum) {
     throw new Error("Kontraktet är redan signerat och kan inte tas bort härifrån.");
   }
   await col.updateOne(
-    { _id: new ObjectId(id) },
+    { _id: new ObjectId(id), nationsID: nationsId },
     {
       $set: { status: "ledig" as ApartmentStatus },
       $unset: {
@@ -213,6 +247,7 @@ export async function removeFromKontrakt(id: string): Promise<void> {
         epost: "",
         telefonnummer: "",
         kontonummer: "",
+        klartFranHusfmDatum: "",
         kontraktSkickatDatum: "",
         kontraktSigneratDatum: "",
       },
@@ -220,20 +255,21 @@ export async function removeFromKontrakt(id: string): Promise<void> {
   );
 }
 
-export async function markAddedToHyresgastlista(id: string): Promise<void> {
+export async function markAddedToHyresgastlista(nationsId: string, id: string): Promise<void> {
   const col = await getCollection();
   await col.updateOne(
-    { _id: new ObjectId(id) },
+    { _id: new ObjectId(id), nationsID: nationsId },
     { $set: { tillagdIHyresgastlistaDatum: new Date().toISOString().slice(0, 10) } }
   );
 }
 
 export async function findLatestApartmentSpecs(
+  nationsId: string,
   lagenhetsnummer: string
 ): Promise<ApartmentInput | null> {
   const col = await getCollection();
   const docs = await col
-    .find({ lagenhetsnummer })
+    .find({ nationsID: nationsId, lagenhetsnummer })
     .sort({ ledigFrom: -1 })
     .limit(1)
     .toArray();
@@ -247,6 +283,7 @@ export async function findLatestApartmentSpecs(
     antalRum: d.antalRum,
     ledigFrom: d.ledigFrom,
     arshyra: d.arshyra,
+    hyresrabatt: d.hyresrabatt ?? 0,
     hyresreduktion: d.hyresreduktion,
     arshyraMedRed: d.arshyraMedRed,
     manadshyra: d.manadshyra,
@@ -256,12 +293,13 @@ export async function findLatestApartmentSpecs(
 // Updates pricing on all non-archived apartments matching the lagenhetsnummer.
 // Called automatically when a rentalobject is updated in the Databas.
 export async function syncApartmentPricingFromRentalObject(
+  nationsId: string,
   lagenhetsnummer: string,
-  updates: Pick<ApartmentInput, "storlek" | "objekttyp" | "arshyra" | "hyresreduktion" | "arshyraMedRed" | "manadshyra">
+  updates: Pick<ApartmentInput, "storlek" | "objekttyp" | "arshyra" | "hyresrabatt" | "hyresreduktion" | "arshyraMedRed" | "manadshyra">
 ): Promise<void> {
   const col = await getCollection();
   await col.updateMany(
-    { lagenhetsnummer, status: { $ne: "arkiverad" } },
+    { nationsID: nationsId, lagenhetsnummer, status: { $ne: "arkiverad" } },
     { $set: updates }
   );
 }

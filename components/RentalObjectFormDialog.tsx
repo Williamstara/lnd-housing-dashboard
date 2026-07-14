@@ -12,7 +12,6 @@ import MenuItem from "@mui/material/MenuItem";
 import Stack from "@mui/material/Stack";
 import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
-import { FASTIGHETER } from "@/lib/fastigheter";
 import type { RentalObject, RentalObjectInput } from "@/lib/rentalobjects";
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
@@ -108,11 +107,12 @@ function toInput(form: Form): RentalObjectInput {
 type Props = {
   open: boolean;
   object: RentalObject | null;
+  fastigheter: string[];
   onClose: () => void;
   onSubmit: (input: RentalObjectInput) => Promise<void>;
 };
 
-export default function RentalObjectFormDialog({ open, object, onClose, onSubmit }: Props) {
+export default function RentalObjectFormDialog({ open, object, fastigheter, onClose, onSubmit }: Props) {
   const [form, setForm] = useState<Form>(() => toForm(object));
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
@@ -182,7 +182,7 @@ export default function RentalObjectFormDialog({ open, object, onClose, onSubmit
             disabled={isPending}
             fullWidth
           >
-            {FASTIGHETER.map((f) => (
+            {fastigheter.map((f) => (
               <MenuItem key={f} value={f}>{f}</MenuItem>
             ))}
           </TextField>

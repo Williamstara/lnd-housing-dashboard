@@ -56,6 +56,13 @@ function renovToRabatt(renov: number | null, malbild: number | null): number | n
   return Math.round(malbild * pct);
 }
 
+// Any row without a valid renoveringsbehov (missing column, blank cell, or
+// something outside 1-4) defaults to 1 ("OK") — applies across every tab,
+// not just Arkivet, so imports never leave the field silently empty.
+function normalizeRenoveringsbehov(renov: number | null): number {
+  return renov != null && [1, 2, 3, 4].includes(renov) ? renov : 1;
+}
+
 // ─── tab detection ───────────────────────────────────────────────────────────
 
 type TabType = "GH" | "NH" | "FH" | "ArkivetB" | "ArkivetC" | "ArkivetD";
@@ -84,7 +91,7 @@ function parseGHNH(rows: unknown[][], prefix: "GH" | "NH"): RentalObjectInput[] 
   const out: RentalObjectInput[] = [];
   for (const row of rows) {
     const lgh = str(row, 1);
-    if (!lgh || isNaN(Number(lgh))) continue; // skip header / empty
+    if (!lgh || !/\d/.test(lgh)) continue; // only rows that actually have a lägenhetsnummer
     const malbild = num(row, 5);
     const renov = num(row, 9);
     // K (col 10) = hyresrabatt amount from Excel; fall back to calculation
@@ -103,7 +110,7 @@ function parseGHNH(rows: unknown[][], prefix: "GH" | "NH"): RentalObjectInput[] 
       areaInkKorr: num(row, 3),
       typ: str(row, 4),
       malbildshyra: malbild,
-      renoveringsbehov: renov,
+      renoveringsbehov: normalizeRenoveringsbehov(renov),
       hyresrabatt,
       hyresred: hyresredAbs,
       individuellArshyra: individuell,
@@ -118,7 +125,7 @@ function parseFinn(rows: unknown[][]): RentalObjectInput[] {
   const out: RentalObjectInput[] = [];
   for (const row of rows) {
     const lgh = str(row, 1);
-    if (!lgh || isNaN(Number(lgh))) continue;
+    if (!lgh || !/\d/.test(lgh)) continue; // only rows that actually have a lägenhetsnummer
     const malbild = num(row, 3);
     const individuell = malbild;
     out.push({
@@ -128,7 +135,7 @@ function parseFinn(rows: unknown[][]): RentalObjectInput[] {
       areaInkKorr: null,
       typ: str(row, 8),
       malbildshyra: malbild,
-      renoveringsbehov: null,
+      renoveringsbehov: normalizeRenoveringsbehov(null),
       hyresrabatt: null,
       hyresred: null,
       individuellArshyra: individuell,
@@ -143,7 +150,7 @@ function parseArkivet(rows: unknown[][], suffix: "B" | "C" | "D"): RentalObjectI
   const out: RentalObjectInput[] = [];
   for (const row of rows) {
     const lgh = str(row, 1);
-    if (!lgh || isNaN(Number(lgh))) continue;
+    if (!lgh || !/\d/.test(lgh)) continue; // only rows that actually have a lägenhetsnummer
     const malbild = num(row, 6);
     const renov = num(row, 11);
     const rabattRaw = num(row, 12);
@@ -153,10 +160,10 @@ function parseArkivet(rows: unknown[][], suffix: "B" | "C" | "D"): RentalObjectI
       fastighet: mapFastighet(str(row, 0)),
       lagenhetsnummer: suffix + lgh,
       area: num(row, 2),
-      areaInkKorr: null,
+      areaInkKorr: num(row, 3),
       typ: str(row, 4),
       malbildshyra: malbild,
-      renoveringsbehov: renov,
+      renoveringsbehov: normalizeRenoveringsbehov(renov),
       hyresrabatt,
       hyresred: null,
       individuellArshyra: individuell,

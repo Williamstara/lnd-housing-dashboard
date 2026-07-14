@@ -19,7 +19,6 @@ import TableRow from "@mui/material/TableRow";
 import Typography from "@mui/material/Typography";
 import { read, utils } from "xlsx";
 import { importTenantsFromExcelAction } from "@/app/hyresgastlista/actions";
-import { FASTIGHETER } from "@/lib/fastigheter";
 import type { TenantInput } from "@/lib/tenants";
 
 const FASTIGHET_MAP: Record<string, string> = {
@@ -38,7 +37,10 @@ function cellStr(row: unknown[], index: number): string {
   return val == null ? "" : String(val).trim();
 }
 
-function parseRows(data: ArrayBuffer): { rows: TenantInput[]; skipped: number } {
+function parseRows(
+  data: ArrayBuffer,
+  fastigheter: string[]
+): { rows: TenantInput[]; skipped: number } {
   const wb = read(data, { type: "array" });
   const ws = wb.Sheets[wb.SheetNames[0]];
   const raw = utils.sheet_to_json<unknown[]>(ws, { header: 1, defval: "" });
@@ -57,7 +59,7 @@ function parseRows(data: ArrayBuffer): { rows: TenantInput[]; skipped: number } 
     if (!namn || !lagenhetsnummer) { skipped++; continue; }
 
     const fastighet = mapFastighet(fastighetsRaw);
-    if (!FASTIGHETER.includes(fastighet as (typeof FASTIGHETER)[number])) {
+    if (!fastigheter.includes(fastighet)) {
       skipped++;
       continue;
     }
@@ -70,12 +72,13 @@ function parseRows(data: ArrayBuffer): { rows: TenantInput[]; skipped: number } 
 
 type Props = {
   open: boolean;
+  fastigheter: string[];
   onClose: () => void;
 };
 
 type Stage = "pick" | "preview" | "done";
 
-export default function ExcelImportDialog({ open, onClose }: Props) {
+export default function ExcelImportDialog({ open, fastigheter, onClose }: Props) {
   const fileRef = useRef<HTMLInputElement>(null);
   const [stage, setStage] = useState<Stage>("pick");
   const [rows, setRows] = useState<TenantInput[]>([]);
@@ -105,7 +108,7 @@ export default function ExcelImportDialog({ open, onClose }: Props) {
     const reader = new FileReader();
     reader.onload = (ev) => {
       try {
-        const { rows: parsed, skipped: sk } = parseRows(ev.target!.result as ArrayBuffer);
+        const { rows: parsed, skipped: sk } = parseRows(ev.target!.result as ArrayBuffer, fastigheter);
         if (parsed.length === 0) {
           setError("Inga giltiga rader hittades i filen. Kontrollera kolumnerna B, D–H.");
           return;

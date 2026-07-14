@@ -2,8 +2,9 @@
 
 import { revalidatePath } from "next/cache";
 import { auth0 } from "@/lib/auth0";
-import { FASTIGHETER } from "@/lib/fastigheter";
-import { ROLES, hasRole } from "@/lib/roles";
+import { getFastighetNamn } from "@/lib/fastigheter";
+import { requireNationsId } from "@/lib/nations";
+import { ARCHIVE_ROLES, ROLES, hasAnyRole, hasRole } from "@/lib/roles";
 import {
   archiveByLedigFrom,
   assignTenantAndSendToContract,
@@ -19,30 +20,41 @@ import {
   type ContactInput,
   type TenantAssignmentInput,
 } from "@/lib/apartments";
+import { findRentalObjectForApartment, updateRentalObjectPricing } from "@/lib/rentalobjects";
 
-async function requireUser() {
+async function requireUser(): Promise<string> {
   const session = await auth0.getSession();
   if (!session?.user) {
     throw new Error("Unauthorized");
   }
-  return session.user;
+  return requireNationsId(session.user);
 }
 
-async function requireEkonomiRole() {
-  const user = await requireUser();
-  if (!hasRole(user, ROLES.EKONOMI)) {
+async function requireEkonomiRole(): Promise<string> {
+  const session = await auth0.getSession();
+  if (!session?.user || !hasRole(session.user, ROLES.EKONOMI)) {
     throw new Error("Endast användare med rollen ekonomi har åtkomst.");
   }
+  return requireNationsId(session.user);
 }
 
-async function requireAdminRole() {
-  const user = await requireUser();
-  if (!hasRole(user, ROLES.ADMIN)) {
+async function requireAdminRole(): Promise<string> {
+  const session = await auth0.getSession();
+  if (!session?.user || !hasRole(session.user, ROLES.ADMIN)) {
     throw new Error("Endast användare med rollen admin har åtkomst.");
   }
+  return requireNationsId(session.user);
 }
 
-function sanitizeApartmentInput(input: ApartmentInput): ApartmentInput {
+async function requireArchiveRole(): Promise<string> {
+  const session = await auth0.getSession();
+  if (!session?.user || !hasAnyRole(session.user, ARCHIVE_ROLES)) {
+    throw new Error("Endast användare med rollen ekonomi, husvd eller admin har åtkomst.");
+  }
+  return requireNationsId(session.user);
+}
+
+async function sanitizeApartmentInput(nationsId: string, input: ApartmentInput): Promise<ApartmentInput> {
   const trimmed: ApartmentInput = {
     lagenhetsnummer: input.lagenhetsnummer.trim(),
     fastighet: input.fastighet.trim(),
@@ -51,6 +63,7 @@ function sanitizeApartmentInput(input: ApartmentInput): ApartmentInput {
     antalRum: Number(input.antalRum),
     ledigFrom: input.ledigFrom.trim(),
     arshyra: Number(input.arshyra),
+    hyresrabatt: Number(input.hyresrabatt),
     hyresreduktion: Number(input.hyresreduktion),
     arshyraMedRed: Number(input.arshyraMedRed),
     manadshyra: Number(input.manadshyra),
@@ -65,7 +78,8 @@ function sanitizeApartmentInput(input: ApartmentInput): ApartmentInput {
     throw new Error("Alla fält måste fyllas i.");
   }
 
-  if (!FASTIGHETER.includes(trimmed.fastighet as (typeof FASTIGHETER)[number])) {
+  const fastigheter = await getFastighetNamn(nationsId);
+  if (!fastigheter.includes(trimmed.fastighet)) {
     throw new Error("Ogiltig fastighet.");
   }
 
@@ -73,6 +87,7 @@ function sanitizeApartmentInput(input: ApartmentInput): ApartmentInput {
     [
       trimmed.antalRum,
       trimmed.arshyra,
+      trimmed.hyresrabatt,
       trimmed.hyresreduktion,
       trimmed.arshyraMedRed,
       trimmed.manadshyra,
@@ -117,9 +132,31 @@ function revalidateApartmentPages() {
   revalidatePath("/arkiv");
 }
 
+// Reverse direction of syncApartmentPricingFromRentalObject: when an
+// apartment's pricing is edited directly from Lediga lägenheter, push the
+// same numbers onto its matching databas entry so the two never drift apart.
+async function syncPricingToDatabas(nationsId: string, input: ApartmentInput) {
+  const rentalObject = await findRentalObjectForApartment(
+    nationsId,
+    input.lagenhetsnummer,
+    input.fastighet
+  );
+  if (!rentalObject) return;
+  await updateRentalObjectPricing(nationsId, rentalObject.id, {
+    malbildshyra: input.arshyra,
+    hyresrabatt: input.hyresrabatt,
+    hyresred: input.hyresreduktion,
+    individuellArshyra: input.arshyraMedRed,
+    manadshyra: input.manadshyra,
+  });
+  revalidatePath("/databas");
+}
+
 export async function createApartmentAction(input: ApartmentInput) {
-  await requireUser();
-  await createApartment(sanitizeApartmentInput(input));
+  const nationsId = await requireUser();
+  const sanitized = await sanitizeApartmentInput(nationsId, input);
+  await createApartment(nationsId, sanitized);
+  await syncPricingToDatabas(nationsId, sanitized);
   revalidateApartmentPages();
 }
 
@@ -127,20 +164,22 @@ export async function updateApartmentAction(
   id: string,
   input: ApartmentInput
 ) {
-  await requireUser();
-  await updateApartment(id, sanitizeApartmentInput(input));
+  const nationsId = await requireUser();
+  const sanitized = await sanitizeApartmentInput(nationsId, input);
+  await updateApartment(nationsId, id, sanitized);
+  await syncPricingToDatabas(nationsId, sanitized);
   revalidateApartmentPages();
 }
 
 export async function deleteApartmentAction(id: string) {
-  await requireUser();
-  await deleteApartment(id);
+  const nationsId = await requireUser();
+  await deleteApartment(nationsId, id);
   revalidateApartmentPages();
 }
 
 export async function markContactedAction(id: string, input: ContactInput) {
-  await requireUser();
-  await markContacted(id, sanitizeContactInput(input));
+  const nationsId = await requireUser();
+  await markContacted(nationsId, id, sanitizeContactInput(input));
   revalidateApartmentPages();
 }
 
@@ -149,42 +188,42 @@ export async function assignTenantAction(
   id: string,
   input: TenantAssignmentInput
 ) {
-  await requireAdminRole();
-  await assignTenantAndSendToContract(id, sanitizeTenantInput(input));
+  const nationsId = await requireAdminRole();
+  await assignTenantAndSendToContract(nationsId, id, sanitizeTenantInput(input));
   revalidateApartmentPages();
 }
 
 // Only ekonomi may mark a contract as sent.
 export async function markContractSentAction(id: string) {
-  await requireEkonomiRole();
-  await markContractSent(id);
+  const nationsId = await requireEkonomiRole();
+  await markContractSent(nationsId, id);
   revalidateApartmentPages();
 }
 
 // Only admins may undo a "skicka till kontrakt" (mirrors assignTenantAction).
 export async function removeFromKontraktAction(id: string) {
-  await requireAdminRole();
-  await removeFromKontrakt(id);
+  const nationsId = await requireAdminRole();
+  await removeFromKontrakt(nationsId, id);
   revalidateApartmentPages();
 }
 
 export async function markContractSignedAction(id: string) {
-  await requireUser();
-  await markContractSigned(id);
+  const nationsId = await requireUser();
+  await markContractSigned(nationsId, id);
   revalidateApartmentPages();
 }
 
 export async function setHiddenAction(id: string, hidden: boolean) {
-  await requireUser();
-  await setHidden(id, hidden);
+  const nationsId = await requireUser();
+  await setHidden(nationsId, id, hidden);
   revalidateApartmentPages();
 }
 
 export async function archiveByLedigFromAction(
   ledigFrom: string
 ): Promise<{ archived: number; skipped: number }> {
-  await requireUser();
-  const result = await archiveByLedigFrom(ledigFrom);
+  const nationsId = await requireArchiveRole();
+  const result = await archiveByLedigFrom(nationsId, ledigFrom);
   revalidateApartmentPages();
   return result;
 }

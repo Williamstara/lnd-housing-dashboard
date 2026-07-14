@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server";
 import { auth0 } from "@/lib/auth0";
+import { requireNationsId } from "@/lib/nations";
 import {
   getAllTenantRecipients,
   getInflyttningRecipients,
@@ -10,7 +11,11 @@ import {
 async function requireAuth() {
   const session = await auth0.getSession();
   if (!session?.user) return Response.json({ error: "Unauthorized" }, { status: 401 });
-  return true;
+  try {
+    return { nationsId: requireNationsId(session.user) };
+  } catch (err) {
+    return Response.json({ error: err instanceof Error ? err.message : "Unauthorized" }, { status: 403 });
+  }
 }
 
 export async function GET(request: NextRequest) {
@@ -26,19 +31,19 @@ export async function GET(request: NextRequest) {
     let recipients;
     switch (type) {
       case "all":
-        recipients = await getAllTenantRecipients();
+        recipients = await getAllTenantRecipients(auth.nationsId);
         break;
       case "fastighet":
         if (!fastighet) return Response.json({ error: "fastighet required" }, { status: 400 });
-        recipients = await getTenantRecipientsByFastighet(fastighet);
+        recipients = await getTenantRecipientsByFastighet(auth.nationsId, fastighet);
         break;
       case "inflyttning":
         if (!datum) return Response.json({ error: "datum required" }, { status: 400 });
-        recipients = await getInflyttningRecipients(datum);
+        recipients = await getInflyttningRecipients(auth.nationsId, datum);
         break;
       case "utflyttning":
         if (!datum) return Response.json({ error: "datum required" }, { status: 400 });
-        recipients = await getUtflyttningRecipients(datum);
+        recipients = await getUtflyttningRecipients(auth.nationsId, datum);
         break;
       default:
         return Response.json({ error: "Invalid type" }, { status: 400 });

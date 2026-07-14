@@ -1,4 +1,5 @@
 import { Auth0Client, filterDefaultIdTokenClaims } from "@auth0/nextjs-auth0/server";
+import { NATIONS_ID_CLAIM } from "./nations";
 import { ROLES_CLAIM } from "./roles";
 
 // Reads AUTH0_DOMAIN, AUTH0_CLIENT_ID, AUTH0_CLIENT_SECRET, AUTH0_SECRET and
@@ -14,6 +15,7 @@ export const auth0 = new Auth0Client({
       user: {
         ...filterDefaultIdTokenClaims(session.user),
         [ROLES_CLAIM]: session.user[ROLES_CLAIM],
+        [NATIONS_ID_CLAIM]: session.user[NATIONS_ID_CLAIM],
       },
     };
   },

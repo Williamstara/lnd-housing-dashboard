@@ -1,12 +1,14 @@
 import Alert from "@mui/material/Alert";
 import Container from "@mui/material/Container";
 import { auth0 } from "@/lib/auth0";
+import { getFastighetNamn } from "@/lib/fastigheter";
+import { requireNationsIdOrRedirect } from "@/lib/nations";
 import { getRentalObjects, type RentalObject } from "@/lib/rentalobjects";
 import RentalObjectsTable from "@/components/RentalObjectsTable";
 
-async function loadObjects(): Promise<{ objects: RentalObject[]; error?: string }> {
+async function loadObjects(nationsId: string): Promise<{ objects: RentalObject[]; error?: string }> {
   try {
-    return { objects: await getRentalObjects() };
+    return { objects: await getRentalObjects(nationsId) };
   } catch {
     return {
       objects: [],
@@ -17,7 +19,12 @@ async function loadObjects(): Promise<{ objects: RentalObject[]; error?: string 
 
 const DatabасPage = auth0.withPageAuthRequired(
   async function DatabасPage() {
-    const { objects, error } = await loadObjects();
+    const session = await auth0.getSession();
+    const nationsId = requireNationsIdOrRedirect(session?.user);
+    const [{ objects, error }, fastigheter] = await Promise.all([
+      loadObjects(nationsId),
+      getFastighetNamn(nationsId),
+    ]);
 
     return (
       <Container maxWidth="xl" sx={{ py: 6 }}>
@@ -26,7 +33,7 @@ const DatabасPage = auth0.withPageAuthRequired(
             {error}
           </Alert>
         )}
-        <RentalObjectsTable objects={objects} />
+        <RentalObjectsTable objects={objects} fastigheter={fastigheter} />
       </Container>
     );
   },

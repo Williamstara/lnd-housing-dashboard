@@ -4,6 +4,7 @@ import { useMemo, useState, useTransition } from "react";
 import AddIcon from "@mui/icons-material/Add";
 import DeleteIcon from "@mui/icons-material/Delete";
 import EditIcon from "@mui/icons-material/Edit";
+import FileDownloadIcon from "@mui/icons-material/FileDownload";
 import LocalLaundryServiceIcon from "@mui/icons-material/LocalLaundryService";
 import SearchIcon from "@mui/icons-material/Search";
 import UploadFileIcon from "@mui/icons-material/UploadFile";
@@ -32,6 +33,7 @@ import {
   deleteTenantAction,
   updateTenantAction,
 } from "@/app/hyresgastlista/actions";
+import { exportRowsToXlsx } from "@/lib/export-xlsx";
 import type { Tenant, TenantInput } from "@/lib/tenants";
 import ExcelImportDialog from "@/components/ExcelImportDialog";
 import LaundryAccountDialog from "@/components/LaundryAccountDialog";
@@ -39,6 +41,7 @@ import TenantFormDialog from "@/components/TenantFormDialog";
 
 type Props = {
   tenants: Tenant[];
+  fastigheter: string[];
 };
 
 type SortableColumn = Exclude<keyof Tenant, "id">;
@@ -68,7 +71,7 @@ function matchesSearch(tenant: Tenant, query: string): boolean {
   return haystack.includes(query);
 }
 
-export default function TenantsTable({ tenants }: Props) {
+export default function TenantsTable({ tenants, fastigheter }: Props) {
   const [formOpen, setFormOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [editingTenant, setEditingTenant] = useState<Tenant | null>(null);
@@ -133,6 +136,14 @@ export default function TenantsTable({ tenants }: Props) {
     });
   }
 
+  function handleExport() {
+    exportRowsToXlsx(
+      `hyresgastlista-${new Date().toISOString().slice(0, 10)}.xlsx`,
+      columns.map((c) => c.label),
+      visibleTenants.map((tenant) => columns.map((c) => tenant[c.key]))
+    );
+  }
+
   return (
     <>
       <Stack
@@ -143,6 +154,13 @@ export default function TenantsTable({ tenants }: Props) {
           Hyresgästlista
         </Typography>
         <Stack direction="row" sx={{ gap: 1 }}>
+          <Button
+            variant="outlined"
+            startIcon={<FileDownloadIcon />}
+            onClick={handleExport}
+          >
+            Exportera
+          </Button>
           <Button
             variant="outlined"
             startIcon={<UploadFileIcon />}
@@ -268,6 +286,7 @@ export default function TenantsTable({ tenants }: Props) {
 
       <ExcelImportDialog
         open={importOpen}
+        fastigheter={fastigheter}
         onClose={() => setImportOpen(false)}
       />
 
@@ -280,6 +299,7 @@ export default function TenantsTable({ tenants }: Props) {
         key={dialogKey}
         open={formOpen}
         tenant={editingTenant}
+        fastigheter={fastigheter}
         onClose={() => setFormOpen(false)}
         onSubmit={handleFormSubmit}
       />

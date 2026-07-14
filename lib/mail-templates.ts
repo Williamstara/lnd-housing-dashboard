@@ -13,6 +13,7 @@ export type MailTemplate = {
 };
 
 type MailTemplateDoc = {
+  nationsID: string;
   name: string;
   message: string;
   starred?: boolean;
@@ -30,9 +31,12 @@ async function getCollection() {
   return db.collection<MailTemplateDoc>("mail-templates");
 }
 
-export async function getMailTemplates(): Promise<MailTemplate[]> {
+export async function getMailTemplates(nationsId: string): Promise<MailTemplate[]> {
   const col = await getCollection();
-  const docs = await col.find({}, { projection: { "attachment.data": 0 } }).sort({ name: 1 }).toArray();
+  const docs = await col
+    .find({ nationsID: nationsId }, { projection: { "attachment.data": 0 } })
+    .sort({ name: 1 })
+    .toArray();
   return docs.map((doc) => ({
     id: doc._id.toString(),
     name: doc.name,
@@ -45,6 +49,7 @@ export async function getMailTemplates(): Promise<MailTemplate[]> {
 }
 
 export async function setTemplateAttachment(
+  nationsId: string,
   id: string,
   filename: string,
   data: Buffer,
@@ -52,26 +57,27 @@ export async function setTemplateAttachment(
 ): Promise<boolean> {
   const col = await getCollection();
   const result = await col.updateOne(
-    { _id: new ObjectId(id) },
+    { _id: new ObjectId(id), nationsID: nationsId },
     { $set: { attachment: { filename, data: new Binary(data), contentType }, updatedAt: new Date() } }
   );
   return result.matchedCount > 0;
 }
 
-export async function removeTemplateAttachment(id: string): Promise<boolean> {
+export async function removeTemplateAttachment(nationsId: string, id: string): Promise<boolean> {
   const col = await getCollection();
   const result = await col.updateOne(
-    { _id: new ObjectId(id) },
+    { _id: new ObjectId(id), nationsID: nationsId },
     { $unset: { attachment: "" }, $set: { updatedAt: new Date() } }
   );
   return result.matchedCount > 0;
 }
 
 export async function getTemplateAttachment(
+  nationsId: string,
   id: string
 ): Promise<{ filename: string; data: Buffer; contentType: string } | null> {
   const col = await getCollection();
-  const doc = await col.findOne({ _id: new ObjectId(id) });
+  const doc = await col.findOne({ _id: new ObjectId(id), nationsID: nationsId });
   if (!doc?.attachment) return null;
   return {
     filename: doc.attachment.filename,
@@ -80,33 +86,45 @@ export async function getTemplateAttachment(
   };
 }
 
-export async function setStarredTemplate(id: string): Promise<void> {
+export async function setStarredTemplate(nationsId: string, id: string): Promise<void> {
   const col = await getCollection();
-  await col.updateMany({}, { $set: { starred: false } });
-  await col.updateOne({ _id: new ObjectId(id) }, { $set: { starred: true } });
+  await col.updateMany({ nationsID: nationsId }, { $set: { starred: false } });
+  await col.updateOne({ _id: new ObjectId(id), nationsID: nationsId }, { $set: { starred: true } });
 }
 
-export async function createMailTemplate(name: string, message: string): Promise<MailTemplate> {
+export async function createMailTemplate(
+  nationsId: string,
+  name: string,
+  message: string
+): Promise<MailTemplate> {
   const col = await getCollection();
   const now = new Date();
-  const result = await col.insertOne({ name, message, starred: false, createdAt: now, updatedAt: now });
-  return { id: result.insertedId.toString(), name, message, starred: false, createdAt: now, updatedAt: now };
+  const result = await col.insertOne({
+    nationsID: nationsId,
+    name,
+    message,
+    starred: false,
+    createdAt: now,
+    updatedAt: now,
+  });
+  return { id: result.insertedId.toString(), name, message, starred: false, attachmentName: null, createdAt: now, updatedAt: now };
 }
 
 export async function updateMailTemplate(
+  nationsId: string,
   id: string,
   data: { name?: string; message?: string }
 ): Promise<boolean> {
   const col = await getCollection();
   const result = await col.updateOne(
-    { _id: new ObjectId(id) },
+    { _id: new ObjectId(id), nationsID: nationsId },
     { $set: { ...data, updatedAt: new Date() } }
   );
   return result.matchedCount > 0;
 }
 
-export async function deleteMailTemplate(id: string): Promise<boolean> {
+export async function deleteMailTemplate(nationsId: string, id: string): Promise<boolean> {
   const col = await getCollection();
-  const result = await col.deleteOne({ _id: new ObjectId(id) });
+  const result = await col.deleteOne({ _id: new ObjectId(id), nationsID: nationsId });
   return result.deletedCount > 0;
 }

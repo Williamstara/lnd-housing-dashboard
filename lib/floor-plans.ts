@@ -11,6 +11,7 @@ export type FloorPlan = {
 };
 
 type FloorPlanDoc = {
+  nationsID: string;
   aptName: string;
   floorplanning: {
     data: Binary;
@@ -25,10 +26,10 @@ async function getCollection() {
   return db.collection<FloorPlanDoc>("floor-plans");
 }
 
-export async function getFloorPlans(): Promise<FloorPlan[]> {
+export async function getFloorPlans(nationsId: string): Promise<FloorPlan[]> {
   const col = await getCollection();
   const docs = await col
-    .find({}, { projection: { "floorplanning.data": 0 } })
+    .find({ nationsID: nationsId }, { projection: { "floorplanning.data": 0 } })
     .sort({ aptName: 1 })
     .toArray();
   return docs.map((doc) => ({
@@ -41,6 +42,7 @@ export async function getFloorPlans(): Promise<FloorPlan[]> {
 }
 
 export async function createFloorPlan(
+  nationsId: string,
   aptName: string,
   data: Buffer,
   contentType: string
@@ -48,6 +50,7 @@ export async function createFloorPlan(
   const col = await getCollection();
   const now = new Date();
   const result = await col.insertOne({
+    nationsID: nationsId,
     aptName,
     floorplanning: { data: new Binary(data), contentType },
     createdAt: now,
@@ -56,26 +59,27 @@ export async function createFloorPlan(
   return { id: result.insertedId.toString(), aptName, contentType, createdAt: now, updatedAt: now };
 }
 
-export async function updateFloorPlan(id: string, aptName: string): Promise<boolean> {
+export async function updateFloorPlan(nationsId: string, id: string, aptName: string): Promise<boolean> {
   const col = await getCollection();
   const result = await col.updateOne(
-    { _id: new ObjectId(id) },
+    { _id: new ObjectId(id), nationsID: nationsId },
     { $set: { aptName, updatedAt: new Date() } }
   );
   return result.matchedCount > 0;
 }
 
-export async function deleteFloorPlan(id: string): Promise<boolean> {
+export async function deleteFloorPlan(nationsId: string, id: string): Promise<boolean> {
   const col = await getCollection();
-  const result = await col.deleteOne({ _id: new ObjectId(id) });
+  const result = await col.deleteOne({ _id: new ObjectId(id), nationsID: nationsId });
   return result.deletedCount > 0;
 }
 
 export async function getFloorPlanFile(
+  nationsId: string,
   id: string
 ): Promise<{ data: Buffer; contentType: string; aptName: string } | null> {
   const col = await getCollection();
-  const doc = await col.findOne({ _id: new ObjectId(id) });
+  const doc = await col.findOne({ _id: new ObjectId(id), nationsID: nationsId });
   if (!doc) return null;
   return {
     data: Buffer.from(doc.floorplanning.data.buffer as ArrayBuffer),
@@ -85,10 +89,12 @@ export async function getFloorPlanFile(
 }
 
 export async function getFloorPlanByAptName(
+  nationsId: string,
   aptName: string
 ): Promise<{ data: Buffer; contentType: string } | null> {
   const col = await getCollection();
   const doc = await col.findOne({
+    nationsID: nationsId,
     aptName: { $regex: new RegExp(`^${aptName}$`, "i") },
   });
   if (!doc) return null;

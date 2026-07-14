@@ -2,6 +2,7 @@
 
 import { useUser } from "@auth0/nextjs-auth0";
 import { useMemo, useState } from "react";
+import FileDownloadIcon from "@mui/icons-material/FileDownload";
 import Button from "@mui/material/Button";
 import Paper from "@mui/material/Paper";
 import Stack from "@mui/material/Stack";
@@ -16,6 +17,7 @@ import TableSortLabel from "@mui/material/TableSortLabel";
 import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
 import { confirmUppsagningAction } from "@/app/uppsagning/actions";
+import { exportRowsToXlsx } from "@/lib/export-xlsx";
 import type { Uppsagning } from "@/lib/uppsagningar";
 import type { Tenant } from "@/lib/tenants";
 import ConfirmUppsagningDialog from "@/components/ConfirmUppsagningDialog";
@@ -86,6 +88,14 @@ export default function UppsagningTable({ uppsagningar, tenants }: Props) {
     await confirmUppsagningAction(lagenhetsnummer, flyttdatum);
   }
 
+  function handleExport() {
+    exportRowsToXlsx(
+      `uppsagning-${new Date().toISOString().slice(0, 10)}.xlsx`,
+      columns.map((c) => c.label),
+      visible.map((u) => columns.map((c) => u[c.key]))
+    );
+  }
+
   return (
     <>
       <Stack
@@ -95,11 +105,20 @@ export default function UppsagningTable({ uppsagningar, tenants }: Props) {
         <Typography variant="h4" component="h1" sx={{ fontWeight: 600 }}>
           Uppsägning
         </Typography>
-        {isEkonomi && (
-          <Button variant="contained" onClick={() => setConfirmOpen(true)}>
-            Bekräfta uppsägning
+        <Stack direction="row" sx={{ gap: 1 }}>
+          <Button
+            variant="outlined"
+            startIcon={<FileDownloadIcon />}
+            onClick={handleExport}
+          >
+            Exportera
           </Button>
-        )}
+          {isEkonomi && (
+            <Button variant="contained" onClick={() => setConfirmOpen(true)}>
+              Bekräfta uppsägning
+            </Button>
+          )}
+        </Stack>
       </Stack>
 
       <TextField

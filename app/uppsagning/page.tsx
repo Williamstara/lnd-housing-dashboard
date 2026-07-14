@@ -1,5 +1,6 @@
 import Container from "@mui/material/Container";
 import { auth0 } from "@/lib/auth0";
+import { requireNationsIdOrRedirect } from "@/lib/nations";
 import { getUppsagningar } from "@/lib/uppsagningar";
 import { getTenants } from "@/lib/tenants";
 import UppsagningTable from "@/components/UppsagningTable";
@@ -9,9 +10,11 @@ import UppsagningTable from "@/components/UppsagningTable";
 // server-side in app/uppsagning/actions.ts).
 const UppsagningPage = auth0.withPageAuthRequired(
   async function UppsagningPage() {
+    const session = await auth0.getSession();
+    const nationsId = requireNationsIdOrRedirect(session?.user);
     const [uppsagningar, tenants] = await Promise.all([
-      getUppsagningar(),
-      getTenants(),
+      getUppsagningar(nationsId),
+      getTenants(nationsId),
     ]);
 
     return (

@@ -3,6 +3,7 @@
 import { useUser } from "@auth0/nextjs-auth0";
 import { useMemo, useState, useTransition, type ChangeEvent } from "react";
 import DeleteIcon from "@mui/icons-material/Delete";
+import FileDownloadIcon from "@mui/icons-material/FileDownload";
 import Alert from "@mui/material/Alert";
 import Button from "@mui/material/Button";
 import Dialog from "@mui/material/Dialog";
@@ -32,7 +33,8 @@ import {
   removeFromKontraktAction,
 } from "@/app/lediga-lagenheter/actions";
 import type { Apartment } from "@/lib/apartments";
-import { ROLES, hasRole } from "@/lib/roles";
+import { exportRowsToXlsx } from "@/lib/export-xlsx";
+import { ARCHIVE_ROLES, ROLES, hasAnyRole, hasRole } from "@/lib/roles";
 
 type Props = {
   apartments: Apartment[];
@@ -48,6 +50,7 @@ type ColumnKey =
   | "antalRum"
   | "ledigFrom"
   | "arshyra"
+  | "hyresrabatt"
   | "hyresreduktion"
   | "arshyraMedRed"
   | "manadshyra"
@@ -56,6 +59,7 @@ type ColumnKey =
   | "epost"
   | "telefonnummer"
   | "kontonummer"
+  | "klartFranHusfmDatum"
   | "kontraktSkickatDatum"
   | "kontraktSigneratDatum";
 
@@ -69,6 +73,7 @@ const columns: Array<{ key: ColumnKey; label: string; align?: "right" }> = [
   { key: "antalRum", label: "Antal rum", align: "right" },
   { key: "ledigFrom", label: "Ledig fr.o.m." },
   { key: "arshyra", label: "Årshyra", align: "right" },
+  { key: "hyresrabatt", label: "Hyresrabatt", align: "right" },
   { key: "hyresreduktion", label: "Hyresreduktion", align: "right" },
   { key: "arshyraMedRed", label: "Årshyra med red.", align: "right" },
   { key: "manadshyra", label: "Månadshyra", align: "right" },
@@ -77,6 +82,7 @@ const columns: Array<{ key: ColumnKey; label: string; align?: "right" }> = [
   { key: "epost", label: "E-post" },
   { key: "telefonnummer", label: "Telefonnummer" },
   { key: "kontonummer", label: "Kontonummer" },
+  { key: "klartFranHusfmDatum", label: "Klart från HusFM" },
   { key: "kontraktSkickatDatum", label: "Kontrakt skickat" },
   { key: "kontraktSigneratDatum", label: "Kontrakt signerat" },
 ];
@@ -89,6 +95,7 @@ const columnValue: Record<ColumnKey, (a: Apartment) => string | number> = {
   antalRum: (a) => a.antalRum,
   ledigFrom: (a) => a.ledigFrom,
   arshyra: (a) => a.arshyra,
+  hyresrabatt: (a) => a.hyresrabatt,
   hyresreduktion: (a) => a.hyresreduktion,
   arshyraMedRed: (a) => a.arshyraMedRed,
   manadshyra: (a) => a.manadshyra,
@@ -97,6 +104,7 @@ const columnValue: Record<ColumnKey, (a: Apartment) => string | number> = {
   epost: (a) => a.epost ?? "",
   telefonnummer: (a) => a.telefonnummer ?? "",
   kontonummer: (a) => a.kontonummer ?? "",
+  klartFranHusfmDatum: (a) => a.klartFranHusfmDatum ?? "",
   kontraktSkickatDatum: (a) => a.kontraktSkickatDatum ?? "",
   kontraktSigneratDatum: (a) => a.kontraktSigneratDatum ?? "",
 };
@@ -130,6 +138,7 @@ export default function ContractsReadyTable({ apartments }: Props) {
   const { user } = useUser();
   const isEkonomi = hasRole(user, ROLES.EKONOMI);
   const isAdmin = hasRole(user, ROLES.ADMIN);
+  const canArchive = hasAnyRole(user, ARCHIVE_ROLES);
 
   const [isPending, startTransition] = useTransition();
   const [search, setSearch] = useState("");
@@ -212,11 +221,33 @@ export default function ContractsReadyTable({ apartments }: Props) {
     });
   }
 
+  function handleExport() {
+    exportRowsToXlsx(
+      `redo-for-kontrakt-${new Date().toISOString().slice(0, 10)}.xlsx`,
+      columns.map((c) => c.label),
+      visibleApartments.map((apartment) =>
+        columns.map((c) => columnValue[c.key](apartment))
+      )
+    );
+  }
+
   return (
     <>
-      <Typography variant="h4" component="h1" sx={{ fontWeight: 600, mb: 3 }}>
-        Redo för kontrakt
-      </Typography>
+      <Stack
+        direction="row"
+        sx={{ justifyContent: "space-between", alignItems: "center", mb: 3, gap: 2 }}
+      >
+        <Typography variant="h4" component="h1" sx={{ fontWeight: 600 }}>
+          Redo för kontrakt
+        </Typography>
+        <Button
+          variant="outlined"
+          startIcon={<FileDownloadIcon />}
+          onClick={handleExport}
+        >
+          Exportera
+        </Button>
+      </Stack>
 
       <Stack
         direction="row"
@@ -233,25 +264,27 @@ export default function ContractsReadyTable({ apartments }: Props) {
           sx={{ maxWidth: 320 }}
           fullWidth
         />
-        <Stack direction="row" sx={{ alignItems: "center", gap: 1 }}>
-          <TextField
-            label="Arkivera allt med flyttdatum"
-            type="date"
-            size="small"
-            value={archiveDate}
-            onChange={(event: ChangeEvent<HTMLInputElement>) =>
-              setArchiveDate(event.target.value)
-            }
-            slotProps={{ inputLabel: { shrink: true } }}
-          />
-          <Button
-            variant="outlined"
-            disabled={!archiveDate || isArchiving}
-            onClick={archiveByDate}
-          >
-            Arkivera
-          </Button>
-        </Stack>
+        {canArchive && (
+          <Stack direction="row" sx={{ alignItems: "center", gap: 1 }}>
+            <TextField
+              label="Arkivera allt med flyttdatum"
+              type="date"
+              size="small"
+              value={archiveDate}
+              onChange={(event: ChangeEvent<HTMLInputElement>) =>
+                setArchiveDate(event.target.value)
+              }
+              slotProps={{ inputLabel: { shrink: true } }}
+            />
+            <Button
+              variant="outlined"
+              disabled={!archiveDate || isArchiving}
+              onClick={archiveByDate}
+            >
+              Arkivera
+            </Button>
+          </Stack>
+        )}
       </Stack>
 
       {archiveMessage && (
@@ -311,6 +344,9 @@ export default function ContractsReadyTable({ apartments }: Props) {
                     {currency.format(apartment.arshyra)}
                   </TableCell>
                   <TableCell align="right">
+                    {currency.format(apartment.hyresrabatt)}
+                  </TableCell>
+                  <TableCell align="right">
                     {currency.format(apartment.hyresreduktion)}
                   </TableCell>
                   <TableCell align="right">
@@ -324,6 +360,7 @@ export default function ContractsReadyTable({ apartments }: Props) {
                   <TableCell>{apartment.epost}</TableCell>
                   <TableCell>{apartment.telefonnummer}</TableCell>
                   <TableCell>{apartment.kontonummer}</TableCell>
+                  <TableCell>{apartment.klartFranHusfmDatum}</TableCell>
                   <TableCell>
                     {apartment.kontraktSkickatDatum ? (
                       apartment.kontraktSkickatDatum

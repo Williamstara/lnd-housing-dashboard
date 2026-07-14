@@ -1,10 +1,12 @@
 "use client";
 
 import { useMemo, useState, useTransition, type ChangeEvent } from "react";
+import FileDownloadIcon from "@mui/icons-material/FileDownload";
 import Alert from "@mui/material/Alert";
 import Button from "@mui/material/Button";
 import Chip from "@mui/material/Chip";
 import Paper from "@mui/material/Paper";
+import Stack from "@mui/material/Stack";
 import Table from "@mui/material/Table";
 import TableBody from "@mui/material/TableBody";
 import TableCell from "@mui/material/TableCell";
@@ -17,6 +19,7 @@ import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
 import { addToHyresgastlistaAction } from "@/app/arkiv/actions";
 import type { Apartment } from "@/lib/apartments";
+import { exportRowsToXlsx } from "@/lib/export-xlsx";
 
 type Props = {
   apartments: Apartment[];
@@ -32,6 +35,7 @@ type ColumnKey =
   | "antalRum"
   | "ledigFrom"
   | "arshyra"
+  | "hyresrabatt"
   | "hyresreduktion"
   | "arshyraMedRed"
   | "manadshyra"
@@ -53,6 +57,7 @@ const columns: Array<{ key: ColumnKey; label: string; align?: "right" }> = [
   { key: "antalRum", label: "Antal rum", align: "right" },
   { key: "ledigFrom", label: "Ledig fr.o.m." },
   { key: "arshyra", label: "Årshyra", align: "right" },
+  { key: "hyresrabatt", label: "Hyresrabatt", align: "right" },
   { key: "hyresreduktion", label: "Hyresreduktion", align: "right" },
   { key: "arshyraMedRed", label: "Årshyra med red.", align: "right" },
   { key: "manadshyra", label: "Månadshyra", align: "right" },
@@ -73,6 +78,7 @@ const columnValue: Record<ColumnKey, (a: Apartment) => string | number> = {
   antalRum: (a) => a.antalRum,
   ledigFrom: (a) => a.ledigFrom,
   arshyra: (a) => a.arshyra,
+  hyresrabatt: (a) => a.hyresrabatt,
   hyresreduktion: (a) => a.hyresreduktion,
   arshyraMedRed: (a) => a.arshyraMedRed,
   manadshyra: (a) => a.manadshyra,
@@ -150,11 +156,33 @@ export default function ArchiveTable({ apartments }: Props) {
     });
   }
 
+  function handleExport() {
+    exportRowsToXlsx(
+      `arkiv-${new Date().toISOString().slice(0, 10)}.xlsx`,
+      columns.map((c) => c.label),
+      visibleApartments.map((apartment) =>
+        columns.map((c) => columnValue[c.key](apartment))
+      )
+    );
+  }
+
   return (
     <>
-      <Typography variant="h4" component="h1" sx={{ fontWeight: 600, mb: 3 }}>
-        Arkiv
-      </Typography>
+      <Stack
+        direction="row"
+        sx={{ justifyContent: "space-between", alignItems: "center", mb: 3, gap: 2 }}
+      >
+        <Typography variant="h4" component="h1" sx={{ fontWeight: 600 }}>
+          Arkiv
+        </Typography>
+        <Button
+          variant="outlined"
+          startIcon={<FileDownloadIcon />}
+          onClick={handleExport}
+        >
+          Exportera
+        </Button>
+      </Stack>
 
       <TextField
         placeholder="Sök i arkivet..."
@@ -216,6 +244,9 @@ export default function ArchiveTable({ apartments }: Props) {
                   <TableCell>{apartment.ledigFrom}</TableCell>
                   <TableCell align="right">
                     {currency.format(apartment.arshyra)}
+                  </TableCell>
+                  <TableCell align="right">
+                    {currency.format(apartment.hyresrabatt)}
                   </TableCell>
                   <TableCell align="right">
                     {currency.format(apartment.hyresreduktion)}

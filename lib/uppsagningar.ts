@@ -13,17 +13,17 @@ export type Uppsagning = {
 
 export type UppsagningInput = Omit<Uppsagning, "id">;
 
-type UppsagningDoc = Omit<Uppsagning, "id">;
+type UppsagningDoc = Omit<Uppsagning, "id"> & { nationsID: string };
 
 async function getCollection() {
   const db = await getDb();
   return db.collection<UppsagningDoc>("uppsagningar");
 }
 
-export async function getUppsagningar(): Promise<Uppsagning[]> {
+export async function getUppsagningar(nationsId: string): Promise<Uppsagning[]> {
   const col = await getCollection();
   const docs = await col
-    .find()
+    .find({ nationsID: nationsId })
     .sort({ bekraftelsedatum: -1 })
     .toArray();
   return docs.map((doc) => ({
@@ -36,13 +36,13 @@ export async function getUppsagningar(): Promise<Uppsagning[]> {
   }));
 }
 
-export async function createUppsagning(input: UppsagningInput): Promise<Uppsagning> {
+export async function createUppsagning(nationsId: string, input: UppsagningInput): Promise<Uppsagning> {
   const col = await getCollection();
-  const result = await col.insertOne(input);
+  const result = await col.insertOne({ ...input, nationsID: nationsId });
   return { ...input, id: result.insertedId.toString() };
 }
 
-export async function deleteUppsagning(id: string): Promise<void> {
+export async function deleteUppsagning(nationsId: string, id: string): Promise<void> {
   const col = await getCollection();
-  await col.deleteOne({ _id: new ObjectId(id) });
+  await col.deleteOne({ _id: new ObjectId(id), nationsID: nationsId });
 }

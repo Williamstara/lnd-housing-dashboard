@@ -1,19 +1,71 @@
 "use client";
 
+import { useState, type MouseEvent } from "react";
 import { useUser } from "@auth0/nextjs-auth0";
 import { usePathname } from "next/navigation";
+import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import HolidayVillageIcon from "@mui/icons-material/HolidayVillage";
 import AppBar from "@mui/material/AppBar";
 import Avatar from "@mui/material/Avatar";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
 import CircularProgress from "@mui/material/CircularProgress";
+import ListItemIcon from "@mui/material/ListItemIcon";
+import ListItemText from "@mui/material/ListItemText";
+import Menu from "@mui/material/Menu";
+import MenuItem from "@mui/material/MenuItem";
 import Stack from "@mui/material/Stack";
 import Toolbar from "@mui/material/Toolbar";
 import Typography from "@mui/material/Typography";
 import { alpha } from "@mui/material/styles";
 import Link from "next/link";
-import { navLinks } from "@/lib/nav-links";
+import { NAV_GROUPS, navLinks, type NavGroupKey } from "@/lib/nav-links";
+
+function NavGroupMenu({ groupKey, label, active }: { groupKey: NavGroupKey; label: string; active: boolean }) {
+  const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null);
+  const links = navLinks.filter((link) => link.group === groupKey);
+
+  function handleOpen(event: MouseEvent<HTMLElement>) {
+    setAnchorEl(event.currentTarget);
+  }
+
+  function handleClose() {
+    setAnchorEl(null);
+  }
+
+  return (
+    <>
+      <Button
+        onClick={handleOpen}
+        endIcon={<ExpandMoreIcon fontSize="small" />}
+        size="small"
+        sx={{
+          color: "inherit",
+          px: 1.5,
+          borderRadius: 1.5,
+          bgcolor: active
+            ? (theme) => alpha(theme.palette.secondary.main, 0.28)
+            : "transparent",
+          "&:hover": {
+            bgcolor: (theme) => alpha(theme.palette.secondary.main, active ? 0.34 : 0.16),
+          },
+        }}
+      >
+        {label}
+      </Button>
+      <Menu anchorEl={anchorEl} open={!!anchorEl} onClose={handleClose}>
+        {links.map((link) => (
+          <MenuItem key={link.href} component={Link} href={link.href} onClick={handleClose}>
+            <ListItemIcon>
+              <link.icon fontSize="small" />
+            </ListItemIcon>
+            <ListItemText>{link.label}</ListItemText>
+          </MenuItem>
+        ))}
+      </Menu>
+    </>
+  );
+}
 
 export default function NavBar() {
   const { user, isLoading } = useUser();
@@ -59,30 +111,17 @@ export default function NavBar() {
 
         {user && (
           <Stack direction="row" sx={{ flexWrap: "wrap", gap: 0.5 }}>
-            {navLinks.map((link) => {
-              const active = pathname === link.href;
+            {NAV_GROUPS.map((group) => {
+              const active = navLinks.some(
+                (link) => link.group === group.key && link.href === pathname
+              );
               return (
-                <Button
-                  key={link.href}
-                  component={Link}
-                  href={link.href}
-                  startIcon={<link.icon fontSize="small" />}
-                  size="small"
-                  sx={{
-                    color: "inherit",
-                    px: 1.5,
-                    borderRadius: 1.5,
-                    bgcolor: active
-                      ? (theme) => alpha(theme.palette.secondary.main, 0.28)
-                      : "transparent",
-                    "&:hover": {
-                      bgcolor: (theme) =>
-                        alpha(theme.palette.secondary.main, active ? 0.34 : 0.16),
-                    },
-                  }}
-                >
-                  {link.label}
-                </Button>
+                <NavGroupMenu
+                  key={group.key}
+                  groupKey={group.key}
+                  label={group.label}
+                  active={active}
+                />
               );
             })}
           </Stack>

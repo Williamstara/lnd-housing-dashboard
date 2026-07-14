@@ -7,11 +7,16 @@ import { getMailTemplates, getTemplateAttachment } from "@/lib/mail-templates";
 import { getFloorPlanByAptName } from "@/lib/floor-plans";
 import { getGmailToken } from "@/lib/gmail-tokens";
 import { formatForEmail } from "@/lib/mail-utils";
+import { requireNationsId } from "@/lib/nations";
 
 async function requireAuth() {
   const session = await auth0.getSession();
   if (!session?.user) return Response.json({ error: "Unauthorized" }, { status: 401 });
-  return { userId: session.user.sub as string };
+  try {
+    return { userId: session.user.sub as string, nationsId: requireNationsId(session.user) };
+  } catch (err) {
+    return Response.json({ error: err instanceof Error ? err.message : "Unauthorized" }, { status: 403 });
+  }
 }
 
 function resolvePlaceholders(message: string, vars: Record<string, string>): string {
@@ -110,7 +115,7 @@ export async function POST(request: NextRequest) {
       { status: 400 }
     );
 
-  const templates = await getMailTemplates();
+  const templates = await getMailTemplates(auth.nationsId);
   const template = templates.find((t) => t.id === templateId);
   if (!template) return Response.json({ error: "Template not found" }, { status: 404 });
 
@@ -129,7 +134,7 @@ export async function POST(request: NextRequest) {
 
   const attachments: Mail.Attachment[] = [...base64Attachments, ...urlAttachments];
 
-  const templateAttachment = await getTemplateAttachment(templateId);
+  const templateAttachment = await getTemplateAttachment(auth.nationsId, templateId);
   if (templateAttachment) {
     attachments.push({
       filename: templateAttachment.filename,
@@ -140,7 +145,7 @@ export async function POST(request: NextRequest) {
 
   const aptName = variables?.aptName;
   if (aptName) {
-    const plan = await getFloorPlanByAptName(aptName);
+    const plan = await getFloorPlanByAptName(auth.nationsId, aptName);
     if (plan) {
       attachments.push({
         filename: `${aptName}.pdf`,

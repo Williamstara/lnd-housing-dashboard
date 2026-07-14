@@ -25,7 +25,9 @@ import RecipientGroupPicker from "./RecipientGroupPicker";
 interface Template { id: string; name: string; message: string; attachmentName: string | null }
 interface FloorPlan { id: string; aptName: string }
 
-export default function SendMailClient() {
+type Props = { fastigheter: string[] };
+
+export default function SendMailClient({ fastigheter }: Props) {
   const [templates, setTemplates] = useState<Template[]>([]);
   const [floorPlans, setFloorPlans] = useState<FloorPlan[]>([]);
   const [gmailConnected, setGmailConnected] = useState<boolean | null>(null);
@@ -177,6 +179,7 @@ export default function SendMailClient() {
 
           <RecipientGroupPicker
             existingRecipients={recipients}
+            fastigheter={fastigheter}
             onAdd={(newEmails) =>
               setRecipients((prev) => [...prev, ...newEmails.filter((e) => !prev.includes(e))])
             }

@@ -1,12 +1,16 @@
 import Alert from "@mui/material/Alert";
 import Container from "@mui/material/Container";
 import { auth0 } from "@/lib/auth0";
+import { getAndrahandsgaster } from "@/lib/andrahandsgaster";
+import { getFastighetNamn } from "@/lib/fastigheter";
+import { requireNationsIdOrRedirect } from "@/lib/nations";
 import { getTenants, type Tenant } from "@/lib/tenants";
+import AndrahandsgasterTable from "@/components/AndrahandsgasterTable";
 import TenantsTable from "@/components/TenantsTable";
 
-async function loadTenants(): Promise<{ tenants: Tenant[]; error?: string }> {
+async function loadTenants(nationsId: string): Promise<{ tenants: Tenant[]; error?: string }> {
   try {
-    return { tenants: await getTenants() };
+    return { tenants: await getTenants(nationsId) };
   } catch {
     return {
       tenants: [],
@@ -18,7 +22,13 @@ async function loadTenants(): Promise<{ tenants: Tenant[]; error?: string }> {
 
 const HyresgastlistaPage = auth0.withPageAuthRequired(
   async function HyresgastlistaPage() {
-    const { tenants, error } = await loadTenants();
+    const session = await auth0.getSession();
+    const nationsId = requireNationsIdOrRedirect(session?.user);
+    const [{ tenants, error }, fastigheter, andrahandsgaster] = await Promise.all([
+      loadTenants(nationsId),
+      getFastighetNamn(nationsId),
+      getAndrahandsgaster(nationsId),
+    ]);
 
     return (
       <Container maxWidth={false} sx={{ py: 6, width: "80%", mx: "auto" }}>
@@ -28,7 +38,8 @@ const HyresgastlistaPage = auth0.withPageAuthRequired(
           </Alert>
         )}
 
-        <TenantsTable tenants={tenants} />
+        <TenantsTable tenants={tenants} fastigheter={fastigheter} />
+        <AndrahandsgasterTable andrahandsgaster={andrahandsgaster} fastigheter={fastigheter} />
       </Container>
     );
   },

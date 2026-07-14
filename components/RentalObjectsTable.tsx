@@ -4,6 +4,7 @@ import { useMemo, useState, useTransition } from "react";
 import AddIcon from "@mui/icons-material/Add";
 import DeleteIcon from "@mui/icons-material/Delete";
 import EditIcon from "@mui/icons-material/Edit";
+import FileDownloadIcon from "@mui/icons-material/FileDownload";
 import UploadFileIcon from "@mui/icons-material/UploadFile";
 import Button from "@mui/material/Button";
 import Dialog from "@mui/material/Dialog";
@@ -31,11 +32,12 @@ import {
   deleteRentalObjectAction,
   updateRentalObjectAction,
 } from "@/app/databas/actions";
+import { exportRowsToXlsx } from "@/lib/export-xlsx";
 import type { RentalObject, RentalObjectInput } from "@/lib/rentalobjects";
 import RentalObjectExcelImport from "@/components/RentalObjectExcelImport";
 import RentalObjectFormDialog from "@/components/RentalObjectFormDialog";
 
-type Props = { objects: RentalObject[] };
+type Props = { objects: RentalObject[]; fastigheter: string[] };
 
 type ColKey =
   | "lagenhetsnummer"
@@ -100,7 +102,7 @@ function fmtNum(v: number | null): string {
   return v != null ? currency.format(v) : "—";
 }
 
-export default function RentalObjectsTable({ objects }: Props) {
+export default function RentalObjectsTable({ objects, fastigheter }: Props) {
   const [search, setSearch] = useState("");
   const [orderBy, setOrderBy] = useState<ColKey>("lagenhetsnummer");
   const [order, setOrder] = useState<Order>("asc");
@@ -157,6 +159,14 @@ export default function RentalObjectsTable({ objects }: Props) {
     });
   }
 
+  function handleExport() {
+    exportRowsToXlsx(
+      `databas-${new Date().toISOString().slice(0, 10)}.xlsx`,
+      columns.map((c) => c.label),
+      visible.map((o) => columns.map((c) => colValue[c.key](o)))
+    );
+  }
+
   return (
     <>
       <Stack
@@ -167,6 +177,13 @@ export default function RentalObjectsTable({ objects }: Props) {
           Databas
         </Typography>
         <Stack direction="row" sx={{ gap: 1 }}>
+          <Button
+            variant="outlined"
+            startIcon={<FileDownloadIcon />}
+            onClick={handleExport}
+          >
+            Exportera
+          </Button>
           <Button
             variant="outlined"
             startIcon={<UploadFileIcon />}
@@ -290,6 +307,7 @@ export default function RentalObjectsTable({ objects }: Props) {
         key={dialogKey}
         open={formOpen}
         object={editingObject}
+        fastigheter={fastigheter}
         onClose={() => setFormOpen(false)}
         onSubmit={handleFormSubmit}
       />

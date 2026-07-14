@@ -17,7 +17,12 @@ export const ROLES_CLAIM = "https://lnd-housing-dashboard/roles";
 export const ROLES = {
   EKONOMI: "ekonomi",
   ADMIN: "admin",
+  HUSVD: "husvd",
 } as const;
+
+// Shared by every "archive" action (Redo för kontrakt, Besiktningar, ...) —
+// keep them all pointed at this one list rather than repeating it.
+export const ARCHIVE_ROLES: string[] = [ROLES.EKONOMI, ROLES.HUSVD, ROLES.ADMIN];
 
 export function getUserRoles(user: User | null | undefined): string[] {
   if (!user) return [];
@@ -40,4 +45,11 @@ export function hasRole(
   role: string
 ): boolean {
   return getUserRoles(user).includes(role);
+}
+
+export function hasAnyRole(
+  user: User | null | undefined,
+  roles: string[]
+): boolean {
+  return roles.some((role) => hasRole(user, role));
 }

@@ -5,6 +5,7 @@ import { useMemo, useState, useTransition } from "react";
 import AddIcon from "@mui/icons-material/Add";
 import DeleteIcon from "@mui/icons-material/Delete";
 import EditIcon from "@mui/icons-material/Edit";
+import FileDownloadIcon from "@mui/icons-material/FileDownload";
 import MarkEmailReadIcon from "@mui/icons-material/MarkEmailRead";
 import PersonAddIcon from "@mui/icons-material/PersonAdd";
 import VisibilityIcon from "@mui/icons-material/Visibility";
@@ -33,6 +34,7 @@ import TableSortLabel from "@mui/material/TableSortLabel";
 import TextField from "@mui/material/TextField";
 import Tooltip from "@mui/material/Tooltip";
 import Typography from "@mui/material/Typography";
+import { alpha } from "@mui/material/styles";
 import {
   assignTenantAction,
   createApartmentAction,
@@ -51,10 +53,13 @@ import type {
 import ApartmentFormDialog from "@/components/ApartmentFormDialog";
 import AssignTenantDialog from "@/components/AssignTenantDialog";
 import ContactDialog from "@/components/ContactDialog";
+import { exportRowsToXlsx } from "@/lib/export-xlsx";
 import { ROLES, hasRole } from "@/lib/roles";
 
 type Props = {
   apartments: Apartment[];
+  fastigheter: string[];
+  missedRentApartmentIds: string[];
 };
 
 const currency = new Intl.NumberFormat("sv-SE", { maximumFractionDigits: 0 });
@@ -84,6 +89,7 @@ type ColumnKey =
   | "antalRum"
   | "ledigFrom"
   | "arshyra"
+  | "hyresrabatt"
   | "hyresreduktion"
   | "arshyraMedRed"
   | "manadshyra"
@@ -103,6 +109,7 @@ const columns: Array<{
   { key: "antalRum", label: "Antal rum", align: "right" },
   { key: "ledigFrom", label: "Ledig fr.o.m." },
   { key: "arshyra", label: "Årshyra", align: "right" },
+  { key: "hyresrabatt", label: "Hyresrabatt", align: "right" },
   { key: "hyresreduktion", label: "H.red", align: "right" },
   { key: "arshyraMedRed", label: "Årshyra med red.", align: "right" },
   { key: "manadshyra", label: "Månadshyra", align: "right" },
@@ -117,6 +124,7 @@ const columnValue: Record<ColumnKey, (a: Apartment) => string | number> = {
   antalRum: (a) => a.antalRum,
   ledigFrom: (a) => a.ledigFrom,
   arshyra: (a) => a.arshyra,
+  hyresrabatt: (a) => a.hyresrabatt,
   hyresreduktion: (a) => a.hyresreduktion,
   arshyraMedRed: (a) => a.arshyraMedRed,
   manadshyra: (a) => a.manadshyra,
@@ -148,9 +156,10 @@ function matchesSearch(apartment: Apartment, query: string): boolean {
   return haystack.includes(query);
 }
 
-export default function ApartmentsTable({ apartments }: Props) {
+export default function ApartmentsTable({ apartments, fastigheter, missedRentApartmentIds }: Props) {
   const { user } = useUser();
   const isAdmin = hasRole(user, ROLES.ADMIN);
+  const missedRentIds = useMemo(() => new Set(missedRentApartmentIds), [missedRentApartmentIds]);
 
   const [formOpen, setFormOpen] = useState(false);
   const [editingApartment, setEditingApartment] = useState<Apartment | null>(
@@ -260,6 +269,16 @@ export default function ApartmentsTable({ apartments }: Props) {
     });
   }
 
+  function handleExport() {
+    exportRowsToXlsx(
+      `lediga-lagenheter-${new Date().toISOString().slice(0, 10)}.xlsx`,
+      columns.map((c) => c.label),
+      visibleApartments.map((apartment) =>
+        columns.map((c) => columnValue[c.key](apartment))
+      )
+    );
+  }
+
   return (
     <>
       <Stack
@@ -269,13 +288,22 @@ export default function ApartmentsTable({ apartments }: Props) {
         <Typography variant="h4" component="h1" sx={{ fontWeight: 600 }}>
           Lediga lägenheter
         </Typography>
-        <Button
-          variant="contained"
-          startIcon={<AddIcon />}
-          onClick={openCreateDialog}
-        >
-          Lägg till lägenhet
-        </Button>
+        <Stack direction="row" sx={{ gap: 1 }}>
+          <Button
+            variant="outlined"
+            startIcon={<FileDownloadIcon />}
+            onClick={handleExport}
+          >
+            Exportera
+          </Button>
+          <Button
+            variant="contained"
+            startIcon={<AddIcon />}
+            onClick={openCreateDialog}
+          >
+            Lägg till lägenhet
+          </Button>
+        </Stack>
       </Stack>
 
       <Stack
@@ -350,7 +378,12 @@ export default function ApartmentsTable({ apartments }: Props) {
               visibleApartments.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage).map((apartment) => (
                 <TableRow
                   key={apartment.id}
-                  sx={apartment.hidden ? { opacity: 0.5 } : undefined}
+                  sx={[
+                    missedRentIds.has(apartment.id)
+                      ? { bgcolor: (theme) => alpha(theme.palette.error.main, 0.08) }
+                      : null,
+                    apartment.hidden ? { opacity: 0.5 } : null,
+                  ]}
                 >
                   <TableCell>{apartment.lagenhetsnummer}</TableCell>
                   <TableCell sx={{ maxWidth: 160, whiteSpace: "normal" }}>
@@ -364,6 +397,9 @@ export default function ApartmentsTable({ apartments }: Props) {
                     {currency.format(apartment.arshyra)}
                   </TableCell>
                   <TableCell align="right">
+                    {currency.format(apartment.hyresrabatt)}
+                  </TableCell>
+                  <TableCell align="right">
                     {currency.format(apartment.hyresreduktion)}
                   </TableCell>
                   <TableCell align="right">
@@ -373,14 +409,22 @@ export default function ApartmentsTable({ apartments }: Props) {
                     {currency.format(apartment.manadshyra)}
                   </TableCell>
                   <TableCell>
-                    <Chip
-                      label={STATUS_LABELS[apartment.status]}
-                      color={STATUS_COLORS[apartment.status]}
-                      size="small"
-                    />
-                    {apartment.hidden && (
-                      <Chip label="Dold" size="small" sx={{ ml: 0.5 }} />
-                    )}
+                    <Stack direction="row" sx={{ flexWrap: "wrap", gap: 0.5 }}>
+                      <Chip
+                        label={STATUS_LABELS[apartment.status]}
+                        color={STATUS_COLORS[apartment.status]}
+                        size="small"
+                      />
+                      {apartment.hidden && <Chip label="Dold" size="small" />}
+                      {missedRentIds.has(apartment.id) && (
+                        <Chip
+                          label="Missad hyra"
+                          color="error"
+                          size="small"
+                          sx={{ fontSize: "0.6875rem" }}
+                        />
+                      )}
+                    </Stack>
                     {apartment.status === "kontaktad" && (
                       <Box sx={{ mt: 0.5 }}>
                         <Typography variant="caption" color="text.secondary">
@@ -480,6 +524,7 @@ export default function ApartmentsTable({ apartments }: Props) {
         key={`form-${dialogKey}`}
         open={formOpen}
         apartment={editingApartment}
+        fastigheter={fastigheter}
         onClose={() => setFormOpen(false)}
         onSubmit={handleFormSubmit}
       />

@@ -10,7 +10,6 @@ import DialogTitle from "@mui/material/DialogTitle";
 import MenuItem from "@mui/material/MenuItem";
 import Stack from "@mui/material/Stack";
 import TextField from "@mui/material/TextField";
-import { FASTIGHETER } from "@/lib/fastigheter";
 import type { Tenant, TenantInput } from "@/lib/tenants";
 
 const emptyForm: TenantInput = {
@@ -22,23 +21,10 @@ const emptyForm: TenantInput = {
   telefonnummer: "",
 };
 
-const fields: Array<{
-  key: keyof TenantInput;
-  label: string;
-  type?: string;
-  options?: readonly string[];
-}> = [
-  { key: "lagenhetsnummer", label: "Lägenhetsnummer" },
-  { key: "fastighet", label: "Fastighet", options: FASTIGHETER },
-  { key: "namn", label: "Namn" },
-  { key: "personnummer", label: "Personnummer" },
-  { key: "mejladress", label: "Mejladress", type: "email" },
-  { key: "telefonnummer", label: "Telefonnummer" },
-];
-
 type Props = {
   open: boolean;
   tenant: Tenant | null;
+  fastigheter: string[];
   onClose: () => void;
   onSubmit: (input: TenantInput) => Promise<void>;
 };
@@ -46,9 +32,23 @@ type Props = {
 export default function TenantFormDialog({
   open,
   tenant,
+  fastigheter,
   onClose,
   onSubmit,
 }: Props) {
+  const fields: Array<{
+    key: keyof TenantInput;
+    label: string;
+    type?: string;
+    options?: readonly string[];
+  }> = [
+    { key: "lagenhetsnummer", label: "Lägenhetsnummer" },
+    { key: "fastighet", label: "Fastighet", options: fastigheter },
+    { key: "namn", label: "Namn" },
+    { key: "personnummer", label: "Personnummer" },
+    { key: "mejladress", label: "Mejladress", type: "email" },
+    { key: "telefonnummer", label: "Telefonnummer" },
+  ];
   // The parent remounts this component (via a `key`) each time it opens for
   // a new tenant/create action, so the form can simply initialize from props
   // instead of syncing via an effect.
