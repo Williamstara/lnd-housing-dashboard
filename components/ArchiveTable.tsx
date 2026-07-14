@@ -10,6 +10,7 @@ import TableBody from "@mui/material/TableBody";
 import TableCell from "@mui/material/TableCell";
 import TableContainer from "@mui/material/TableContainer";
 import TableHead from "@mui/material/TableHead";
+import TablePagination from "@mui/material/TablePagination";
 import TableRow from "@mui/material/TableRow";
 import TableSortLabel from "@mui/material/TableSortLabel";
 import TextField from "@mui/material/TextField";
@@ -115,6 +116,8 @@ export default function ArchiveTable({ apartments }: Props) {
   const [order, setOrder] = useState<Order>("desc");
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  const [page, setPage] = useState(0);
+  const [rowsPerPage, setRowsPerPage] = useState(25);
 
   const visibleApartments = useMemo(() => {
     const query = search.trim().toLocaleLowerCase("sv");
@@ -133,6 +136,7 @@ export default function ArchiveTable({ apartments }: Props) {
       setOrderBy(column);
       setOrder("asc");
     }
+    setPage(0);
   }
 
   function addToHyresgastlista(id: string) {
@@ -155,9 +159,10 @@ export default function ArchiveTable({ apartments }: Props) {
       <TextField
         placeholder="Sök i arkivet..."
         value={search}
-        onChange={(event: ChangeEvent<HTMLInputElement>) =>
-          setSearch(event.target.value)
-        }
+        onChange={(event: ChangeEvent<HTMLInputElement>) => {
+          setSearch(event.target.value);
+          setPage(0);
+        }}
         size="small"
         sx={{ mb: 2, maxWidth: 360 }}
         fullWidth
@@ -201,7 +206,7 @@ export default function ArchiveTable({ apartments }: Props) {
                 </TableCell>
               </TableRow>
             ) : (
-              visibleApartments.map((apartment) => (
+              visibleApartments.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage).map((apartment) => (
                 <TableRow key={apartment.id}>
                   <TableCell>{apartment.lagenhetsnummer}</TableCell>
                   <TableCell>{apartment.fastighet}</TableCell>
@@ -252,6 +257,17 @@ export default function ArchiveTable({ apartments }: Props) {
           </TableBody>
         </Table>
       </TableContainer>
+      <TablePagination
+        component="div"
+        count={visibleApartments.length}
+        page={page}
+        rowsPerPage={rowsPerPage}
+        onPageChange={(_, newPage) => setPage(newPage)}
+        onRowsPerPageChange={(e) => { setRowsPerPage(parseInt(e.target.value, 10)); setPage(0); }}
+        rowsPerPageOptions={[10, 25, 50, 100]}
+        labelRowsPerPage="Rader per sida:"
+        labelDisplayedRows={({ from, to, count }) => `${from}–${to} av ${count}`}
+      />
     </>
   );
 }

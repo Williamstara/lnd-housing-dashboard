@@ -18,10 +18,12 @@ import TableBody from "@mui/material/TableBody";
 import TableCell from "@mui/material/TableCell";
 import TableContainer from "@mui/material/TableContainer";
 import TableHead from "@mui/material/TableHead";
+import TablePagination from "@mui/material/TablePagination";
 import TableRow from "@mui/material/TableRow";
 import TableSortLabel from "@mui/material/TableSortLabel";
 import TextField from "@mui/material/TextField";
 import Tooltip from "@mui/material/Tooltip";
+import Box from "@mui/material/Box";
 import Typography from "@mui/material/Typography";
 import {
   archiveByLedigFromAction,
@@ -133,6 +135,8 @@ export default function ContractsReadyTable({ apartments }: Props) {
   const [search, setSearch] = useState("");
   const [orderBy, setOrderBy] = useState<ColumnKey>("ledigFrom");
   const [order, setOrder] = useState<Order>("asc");
+  const [page, setPage] = useState(0);
+  const [rowsPerPage, setRowsPerPage] = useState(25);
 
   const [archiveDate, setArchiveDate] = useState("");
   const [archiveMessage, setArchiveMessage] = useState<string | null>(null);
@@ -161,6 +165,7 @@ export default function ContractsReadyTable({ apartments }: Props) {
       setOrderBy(column);
       setOrder("asc");
     }
+    setPage(0);
   }
 
   function sendContract(id: string) {
@@ -220,9 +225,10 @@ export default function ContractsReadyTable({ apartments }: Props) {
         <TextField
           placeholder="Sök..."
           value={search}
-          onChange={(event: ChangeEvent<HTMLInputElement>) =>
-            setSearch(event.target.value)
-          }
+          onChange={(event: ChangeEvent<HTMLInputElement>) => {
+            setSearch(event.target.value);
+            setPage(0);
+          }}
           size="small"
           sx={{ maxWidth: 320 }}
           fullWidth
@@ -293,7 +299,7 @@ export default function ContractsReadyTable({ apartments }: Props) {
                 </TableCell>
               </TableRow>
             ) : (
-              visibleApartments.map((apartment) => (
+              visibleApartments.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage).map((apartment) => (
                 <TableRow key={apartment.id}>
                   <TableCell>{apartment.lagenhetsnummer}</TableCell>
                   <TableCell>{apartment.fastighet}</TableCell>
@@ -319,19 +325,20 @@ export default function ContractsReadyTable({ apartments }: Props) {
                   <TableCell>{apartment.telefonnummer}</TableCell>
                   <TableCell>{apartment.kontonummer}</TableCell>
                   <TableCell>
-                    {apartment.kontraktSkickatDatum ??
-                      (isEkonomi ? (
-                        <Button
-                          size="small"
-                          variant="outlined"
-                          disabled={isPending}
-                          onClick={() => sendContract(apartment.id)}
-                        >
-                          Kontrakt skickat
-                        </Button>
-                      ) : (
-                        "Ej skickat"
-                      ))}
+                    {apartment.kontraktSkickatDatum ? (
+                      apartment.kontraktSkickatDatum
+                    ) : isEkonomi ? (
+                      <Button
+                        size="small"
+                        variant="outlined"
+                        disabled={isPending}
+                        onClick={() => sendContract(apartment.id)}
+                      >
+                        Kontrakt skickat
+                      </Button>
+                    ) : (
+                      "Ej skickat"
+                    )}
                   </TableCell>
                   <TableCell>
                     {apartment.kontraktSigneratDatum ?? (
@@ -376,6 +383,17 @@ export default function ContractsReadyTable({ apartments }: Props) {
           </TableBody>
         </Table>
       </TableContainer>
+      <TablePagination
+        component="div"
+        count={visibleApartments.length}
+        page={page}
+        rowsPerPage={rowsPerPage}
+        onPageChange={(_, newPage) => setPage(newPage)}
+        onRowsPerPageChange={(e) => { setRowsPerPage(parseInt(e.target.value, 10)); setPage(0); }}
+        rowsPerPageOptions={[10, 25, 50, 100]}
+        labelRowsPerPage="Rader per sida:"
+        labelDisplayedRows={({ from, to, count }) => `${from}–${to} av ${count}`}
+      />
 
       <Dialog
         open={!!removingApartment}

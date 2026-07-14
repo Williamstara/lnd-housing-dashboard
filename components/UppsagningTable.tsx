@@ -10,6 +10,7 @@ import TableBody from "@mui/material/TableBody";
 import TableCell from "@mui/material/TableCell";
 import TableContainer from "@mui/material/TableContainer";
 import TableHead from "@mui/material/TableHead";
+import TablePagination from "@mui/material/TablePagination";
 import TableRow from "@mui/material/TableRow";
 import TableSortLabel from "@mui/material/TableSortLabel";
 import TextField from "@mui/material/TextField";
@@ -58,6 +59,8 @@ export default function UppsagningTable({ uppsagningar, tenants }: Props) {
   const [search, setSearch] = useState("");
   const [orderBy, setOrderBy] = useState<ColumnKey>("bekraftelsedatum");
   const [order, setOrder] = useState<Order>("desc");
+  const [page, setPage] = useState(0);
+  const [rowsPerPage, setRowsPerPage] = useState(25);
 
   const visible = useMemo(() => {
     const query = search.trim().toLocaleLowerCase("sv");
@@ -76,6 +79,7 @@ export default function UppsagningTable({ uppsagningar, tenants }: Props) {
       setOrderBy(column);
       setOrder("asc");
     }
+    setPage(0);
   }
 
   async function handleConfirm(lagenhetsnummer: string, flyttdatum: string) {
@@ -101,7 +105,7 @@ export default function UppsagningTable({ uppsagningar, tenants }: Props) {
       <TextField
         placeholder="Sök..."
         value={search}
-        onChange={(event) => setSearch(event.target.value)}
+        onChange={(event) => { setSearch(event.target.value); setPage(0); }}
         size="small"
         sx={{ mb: 2, maxWidth: 360 }}
         fullWidth
@@ -137,7 +141,7 @@ export default function UppsagningTable({ uppsagningar, tenants }: Props) {
                 </TableCell>
               </TableRow>
             ) : (
-              visible.map((u) => (
+              visible.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage).map((u) => (
                 <TableRow key={u.id}>
                   <TableCell>{u.lagenhetsnummer}</TableCell>
                   <TableCell>{u.fastighet}</TableCell>
@@ -150,6 +154,17 @@ export default function UppsagningTable({ uppsagningar, tenants }: Props) {
           </TableBody>
         </Table>
       </TableContainer>
+      <TablePagination
+        component="div"
+        count={visible.length}
+        page={page}
+        rowsPerPage={rowsPerPage}
+        onPageChange={(_, newPage) => setPage(newPage)}
+        onRowsPerPageChange={(e) => { setRowsPerPage(parseInt(e.target.value, 10)); setPage(0); }}
+        rowsPerPageOptions={[10, 25, 50, 100]}
+        labelRowsPerPage="Rader per sida:"
+        labelDisplayedRows={({ from, to, count }) => `${from}–${to} av ${count}`}
+      />
 
       <ConfirmUppsagningDialog
         open={confirmOpen}

@@ -27,6 +27,7 @@ import TableBody from "@mui/material/TableBody";
 import TableCell from "@mui/material/TableCell";
 import TableContainer from "@mui/material/TableContainer";
 import TableHead from "@mui/material/TableHead";
+import TablePagination from "@mui/material/TablePagination";
 import TableRow from "@mui/material/TableRow";
 import TableSortLabel from "@mui/material/TableSortLabel";
 import TextField from "@mui/material/TextField";
@@ -176,6 +177,8 @@ export default function ApartmentsTable({ apartments }: Props) {
   const [showHidden, setShowHidden] = useState(false);
   const [orderBy, setOrderBy] = useState<ColumnKey>("ledigFrom");
   const [order, setOrder] = useState<Order>("asc");
+  const [page, setPage] = useState(0);
+  const [rowsPerPage, setRowsPerPage] = useState(25);
 
   const visibleApartments = useMemo(() => {
     const query = search.trim().toLocaleLowerCase("sv");
@@ -197,6 +200,7 @@ export default function ApartmentsTable({ apartments }: Props) {
       setOrderBy(column);
       setOrder("asc");
     }
+    setPage(0);
   }
 
   function openCreateDialog() {
@@ -281,7 +285,7 @@ export default function ApartmentsTable({ apartments }: Props) {
         <TextField
           placeholder="Sök lägenheter..."
           value={search}
-          onChange={(event) => setSearch(event.target.value)}
+          onChange={(event) => { setSearch(event.target.value); setPage(0); }}
           size="small"
           sx={{ maxWidth: 360 }}
           fullWidth
@@ -343,7 +347,7 @@ export default function ApartmentsTable({ apartments }: Props) {
                 </TableCell>
               </TableRow>
             ) : (
-              visibleApartments.map((apartment) => (
+              visibleApartments.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage).map((apartment) => (
                 <TableRow
                   key={apartment.id}
                   sx={apartment.hidden ? { opacity: 0.5 } : undefined}
@@ -382,6 +386,13 @@ export default function ApartmentsTable({ apartments }: Props) {
                         <Typography variant="caption" color="text.secondary">
                           {apartment.kontaktperson} — svar senast{" "}
                           {apartment.svarSenast}
+                        </Typography>
+                      </Box>
+                    )}
+                    {apartment.status === "redo_for_kontrakt" && apartment.hyresgastNamn && (
+                      <Box sx={{ mt: 0.5 }}>
+                        <Typography variant="caption" color="text.secondary">
+                          {apartment.hyresgastNamn}
                         </Typography>
                       </Box>
                     )}
@@ -453,6 +464,17 @@ export default function ApartmentsTable({ apartments }: Props) {
           </TableBody>
         </Table>
       </TableContainer>
+      <TablePagination
+        component="div"
+        count={visibleApartments.length}
+        page={page}
+        rowsPerPage={rowsPerPage}
+        onPageChange={(_, newPage) => setPage(newPage)}
+        onRowsPerPageChange={(e) => { setRowsPerPage(parseInt(e.target.value, 10)); setPage(0); }}
+        rowsPerPageOptions={[10, 25, 50, 100]}
+        labelRowsPerPage="Rader per sida:"
+        labelDisplayedRows={({ from, to, count }) => `${from}–${to} av ${count}`}
+      />
 
       <ApartmentFormDialog
         key={`form-${dialogKey}`}

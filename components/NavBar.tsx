@@ -92,20 +92,26 @@ export default function NavBar() {
           <CircularProgress size={20} color="inherit" />
         ) : user ? (
           <Box sx={{ display: "flex", alignItems: "center", gap: 1.5 }}>
-            {user.picture && (
-              <Avatar
-                src={user.picture}
-                alt={user.name ?? "User"}
-                sx={{
-                  width: 32,
-                  height: 32,
-                  border: (theme) => `2px solid ${alpha(theme.palette.secondary.main, 0.7)}`,
-                }}
-              />
-            )}
-            <Typography variant="body2" sx={{ display: { xs: "none", sm: "block" } }}>
-              {user.name}
-            </Typography>
+            <Box
+              component={Link}
+              href="/profil"
+              sx={{ display: "flex", alignItems: "center", gap: 1, color: "inherit", textDecoration: "none", "&:hover": { opacity: 0.85 } }}
+            >
+              {user.picture && (
+                <Avatar
+                  src={user.picture}
+                  alt={user.name ?? "User"}
+                  sx={{
+                    width: 32,
+                    height: 32,
+                    border: (theme) => `2px solid ${alpha(theme.palette.secondary.main, 0.7)}`,
+                  }}
+                />
+              )}
+              <Typography variant="body2" sx={{ display: { xs: "none", sm: "block" } }}>
+                {user.name}
+              </Typography>
+            </Box>
             <Button
               component="a"
               href="/auth/logout"

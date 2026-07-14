@@ -5,7 +5,7 @@ import { alpha, createTheme, darken, lighten } from "@mui/material/styles";
 // Brand colors — dark forest green as the primary accent, warm greige for
 // everything else (surfaces, borders, secondary actions).
 const brandGreen = "#093408";
-const brandBeige = "#BFBAAD";
+const brandBeige = "#F4EED9";
 
 const theme = createTheme({
   cssVariables: { colorSchemeSelector: "class" },
@@ -25,7 +25,7 @@ const theme = createTheme({
           contrastText: brandGreen,
         },
         background: {
-          default: "#f5f3ee",
+          default: brandBeige,
           paper: "#ffffff",
         },
         text: {
@@ -78,7 +78,9 @@ const theme = createTheme({
       styleOverrides: {
         root: {
           boxShadow: "none",
-          borderBottom: `1px solid ${alpha(brandBeige, 0.35)}`,
+          backgroundColor: brandGreen,
+          color: "#ffffff",
+          borderBottom: `1px solid ${alpha(brandBeige, 0.2)}`,
         },
       },
     },

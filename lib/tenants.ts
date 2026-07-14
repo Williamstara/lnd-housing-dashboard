@@ -7,6 +7,7 @@ export type Tenant = {
   lagenhetsnummer: string;
   fastighet: string;
   namn: string;
+  personnummer: string;
   mejladress: string;
   telefonnummer: string;
 };
@@ -15,6 +16,7 @@ export type TenantInput = {
   lagenhetsnummer: string;
   fastighet: string;
   namn: string;
+  personnummer: string;
   mejladress: string;
   telefonnummer: string;
 };
@@ -38,6 +40,7 @@ export async function getTenants(): Promise<Tenant[]> {
     lagenhetsnummer: doc.lagenhetsnummer,
     fastighet: doc.fastighet,
     namn: doc.namn,
+    personnummer: doc.personnummer ?? "",
     mejladress: doc.mejladress,
     telefonnummer: doc.telefonnummer,
   }));
@@ -75,4 +78,24 @@ export async function upsertTenantByLagenhetsnummer(
     { upsert: true }
   );
   return { replaced: result.matchedCount > 0 };
+}
+
+export type BulkUpsertResult = { inserted: number; updated: number };
+
+export async function bulkUpsertTenants(
+  inputs: TenantInput[]
+): Promise<BulkUpsertResult> {
+  const collection = await getTenantsCollection();
+  let inserted = 0;
+  let updated = 0;
+  for (const input of inputs) {
+    const result = await collection.updateOne(
+      { lagenhetsnummer: input.lagenhetsnummer },
+      { $set: input },
+      { upsert: true }
+    );
+    if (result.upsertedCount > 0) inserted++;
+    else updated++;
+  }
+  return { inserted, updated };
 }

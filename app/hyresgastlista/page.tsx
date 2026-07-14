@@ -21,7 +21,7 @@ const HyresgastlistaPage = auth0.withPageAuthRequired(
     const { tenants, error } = await loadTenants();
 
     return (
-      <Container maxWidth="lg" sx={{ py: 6 }}>
+      <Container maxWidth={false} sx={{ py: 6, width: "80%", mx: "auto" }}>
         {error && (
           <Alert severity="warning" sx={{ mb: 3 }}>
             {error}

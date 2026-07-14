@@ -31,6 +31,7 @@ export async function addToHyresgastlistaAction(id: string) {
     lagenhetsnummer: apartment.lagenhetsnummer,
     fastighet: apartment.fastighet,
     namn: apartment.hyresgastNamn,
+    personnummer: apartment.personnummer ?? "",
     mejladress: apartment.epost,
     telefonnummer: apartment.telefonnummer,
   });

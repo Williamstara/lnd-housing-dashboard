@@ -17,6 +17,7 @@ const emptyForm: TenantInput = {
   lagenhetsnummer: "",
   fastighet: "",
   namn: "",
+  personnummer: "",
   mejladress: "",
   telefonnummer: "",
 };
@@ -30,6 +31,7 @@ const fields: Array<{
   { key: "lagenhetsnummer", label: "Lägenhetsnummer" },
   { key: "fastighet", label: "Fastighet", options: FASTIGHETER },
   { key: "namn", label: "Namn" },
+  { key: "personnummer", label: "Personnummer" },
   { key: "mejladress", label: "Mejladress", type: "email" },
   { key: "telefonnummer", label: "Telefonnummer" },
 ];
@@ -56,6 +58,7 @@ export default function TenantFormDialog({
           lagenhetsnummer: tenant.lagenhetsnummer,
           fastighet: tenant.fastighet,
           namn: tenant.namn,
+          personnummer: tenant.personnummer,
           mejladress: tenant.mejladress,
           telefonnummer: tenant.telefonnummer,
         }

@@ -4,7 +4,9 @@ import { useMemo, useState, useTransition } from "react";
 import AddIcon from "@mui/icons-material/Add";
 import DeleteIcon from "@mui/icons-material/Delete";
 import EditIcon from "@mui/icons-material/Edit";
+import LocalLaundryServiceIcon from "@mui/icons-material/LocalLaundryService";
 import SearchIcon from "@mui/icons-material/Search";
+import UploadFileIcon from "@mui/icons-material/UploadFile";
 import Button from "@mui/material/Button";
 import Dialog from "@mui/material/Dialog";
 import DialogActions from "@mui/material/DialogActions";
@@ -20,6 +22,7 @@ import TableBody from "@mui/material/TableBody";
 import TableCell from "@mui/material/TableCell";
 import TableContainer from "@mui/material/TableContainer";
 import TableHead from "@mui/material/TableHead";
+import TablePagination from "@mui/material/TablePagination";
 import TableRow from "@mui/material/TableRow";
 import TableSortLabel from "@mui/material/TableSortLabel";
 import TextField from "@mui/material/TextField";
@@ -30,6 +33,8 @@ import {
   updateTenantAction,
 } from "@/app/hyresgastlista/actions";
 import type { Tenant, TenantInput } from "@/lib/tenants";
+import ExcelImportDialog from "@/components/ExcelImportDialog";
+import LaundryAccountDialog from "@/components/LaundryAccountDialog";
 import TenantFormDialog from "@/components/TenantFormDialog";
 
 type Props = {
@@ -43,6 +48,7 @@ const columns: Array<{ key: SortableColumn; label: string }> = [
   { key: "lagenhetsnummer", label: "Lägenhetsnummer" },
   { key: "fastighet", label: "Fastighet" },
   { key: "namn", label: "Namn" },
+  { key: "personnummer", label: "Personnummer" },
   { key: "mejladress", label: "Mejladress" },
   { key: "telefonnummer", label: "Telefonnummer" },
 ];
@@ -53,6 +59,7 @@ function matchesSearch(tenant: Tenant, query: string): boolean {
     tenant.lagenhetsnummer,
     tenant.fastighet,
     tenant.namn,
+    tenant.personnummer,
     tenant.mejladress,
     tenant.telefonnummer,
   ]
@@ -63,8 +70,10 @@ function matchesSearch(tenant: Tenant, query: string): boolean {
 
 export default function TenantsTable({ tenants }: Props) {
   const [formOpen, setFormOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
   const [editingTenant, setEditingTenant] = useState<Tenant | null>(null);
   const [deletingTenant, setDeletingTenant] = useState<Tenant | null>(null);
+  const [laundryTenant, setLaundryTenant] = useState<Tenant | null>(null);
   const [isDeleting, startDeleteTransition] = useTransition();
   // Bumped on every open so TenantFormDialog remounts with fresh form state
   // instead of syncing props via an effect.
@@ -72,6 +81,8 @@ export default function TenantsTable({ tenants }: Props) {
   const [search, setSearch] = useState("");
   const [orderBy, setOrderBy] = useState<SortableColumn>("fastighet");
   const [order, setOrder] = useState<Order>("asc");
+  const [page, setPage] = useState(0);
+  const [rowsPerPage, setRowsPerPage] = useState(25);
 
   const visibleTenants = useMemo(() => {
     const query = search.trim().toLocaleLowerCase("sv");
@@ -90,6 +101,7 @@ export default function TenantsTable({ tenants }: Props) {
       setOrderBy(column);
       setOrder("asc");
     }
+    setPage(0);
   }
 
   function openCreateDialog() {
@@ -130,19 +142,28 @@ export default function TenantsTable({ tenants }: Props) {
         <Typography variant="h4" component="h1" sx={{ fontWeight: 600 }}>
           Hyresgästlista
         </Typography>
-        <Button
-          variant="contained"
-          startIcon={<AddIcon />}
-          onClick={openCreateDialog}
-        >
-          Lägg till hyresgäst
-        </Button>
+        <Stack direction="row" sx={{ gap: 1 }}>
+          <Button
+            variant="outlined"
+            startIcon={<UploadFileIcon />}
+            onClick={() => setImportOpen(true)}
+          >
+            Lägg till från Excel
+          </Button>
+          <Button
+            variant="contained"
+            startIcon={<AddIcon />}
+            onClick={openCreateDialog}
+          >
+            Lägg till hyresgäst
+          </Button>
+        </Stack>
       </Stack>
 
       <TextField
         placeholder="Sök hyresgäster..."
         value={search}
-        onChange={(event) => setSearch(event.target.value)}
+        onChange={(event) => { setSearch(event.target.value); setPage(0); }}
         size="small"
         sx={{ mb: 2, maxWidth: 360 }}
         fullWidth
@@ -157,8 +178,15 @@ export default function TenantsTable({ tenants }: Props) {
         }}
       />
 
-      <TableContainer component={Paper}>
-        <Table aria-label="Hyresgästlista">
+      <TableContainer component={Paper} sx={{ overflowX: "auto" }}>
+        <Table
+          aria-label="Hyresgästlista"
+          size="small"
+          sx={{
+            minWidth: 1000,
+            "& .MuiTableCell-root": { px: 1.25, py: 0.75, fontSize: "0.8125rem", whiteSpace: "nowrap" },
+          }}
+        >
           <TableHead>
             <TableRow>
               {columns.map((column) => (
@@ -181,21 +209,30 @@ export default function TenantsTable({ tenants }: Props) {
           <TableBody>
             {visibleTenants.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={6} align="center">
+                <TableCell colSpan={7} align="center">
                   {tenants.length === 0
                     ? "Inga hyresgäster hittades."
                     : "Inga träffar för sökningen."}
                 </TableCell>
               </TableRow>
             ) : (
-              visibleTenants.map((tenant) => (
+              visibleTenants.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage).map((tenant) => (
                 <TableRow key={tenant.id}>
                   <TableCell>{tenant.lagenhetsnummer}</TableCell>
                   <TableCell>{tenant.fastighet}</TableCell>
                   <TableCell>{tenant.namn}</TableCell>
+                  <TableCell>{tenant.personnummer}</TableCell>
                   <TableCell>{tenant.mejladress}</TableCell>
                   <TableCell>{tenant.telefonnummer}</TableCell>
                   <TableCell align="right">
+                    <IconButton
+                      aria-label="Skapa tvättstugekonto"
+                      size="small"
+                      onClick={() => setLaundryTenant(tenant)}
+                      title="Skapa tvättstugekonto"
+                    >
+                      <LocalLaundryServiceIcon fontSize="small" />
+                    </IconButton>
                     <IconButton
                       aria-label="Redigera"
                       size="small"
@@ -217,6 +254,27 @@ export default function TenantsTable({ tenants }: Props) {
           </TableBody>
         </Table>
       </TableContainer>
+      <TablePagination
+        component="div"
+        count={visibleTenants.length}
+        page={page}
+        rowsPerPage={rowsPerPage}
+        onPageChange={(_, newPage) => setPage(newPage)}
+        onRowsPerPageChange={(e) => { setRowsPerPage(parseInt(e.target.value, 10)); setPage(0); }}
+        rowsPerPageOptions={[10, 25, 50, 100]}
+        labelRowsPerPage="Rader per sida:"
+        labelDisplayedRows={({ from, to, count }) => `${from}–${to} av ${count}`}
+      />
+
+      <ExcelImportDialog
+        open={importOpen}
+        onClose={() => setImportOpen(false)}
+      />
+
+      <LaundryAccountDialog
+        tenant={laundryTenant}
+        onClose={() => setLaundryTenant(null)}
+      />
 
       <TenantFormDialog
         key={dialogKey}

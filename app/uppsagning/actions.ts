@@ -2,10 +2,11 @@
 
 import { revalidatePath } from "next/cache";
 import { auth0 } from "@/lib/auth0";
-import { createApartment, findLatestApartmentSpecs } from "@/lib/apartments";
+import { createApartment, findLatestApartmentSpecs, type ApartmentInput } from "@/lib/apartments";
 import { ROLES, hasRole } from "@/lib/roles";
 import { getTenants } from "@/lib/tenants";
 import { createUppsagning } from "@/lib/uppsagningar";
+import { findRentalObjectForApartment, type RentalObject } from "@/lib/rentalobjects";
 
 async function requireEkonomiRole() {
   const session = await auth0.getSession();
@@ -14,13 +15,31 @@ async function requireEkonomiRole() {
   }
 }
 
-// Confirms a lease termination: looks up the current tenant in
-// hyresgästlistan by apartment number, records the termination, and adds
-// the apartment back to lediga lägenheter with the new move-in date.
-// Reuses the apartment's most recent known size/rent if it's appeared in
-// the apartments store before, since ekonomi only supplies the number and
-// the new move-in date here — everything else can be corrected later via
-// "Redigera" on Lediga lägenheter if it's changed.
+function rentalObjectToApartmentInput(
+  ro: RentalObject,
+  lagenhetsnummer: string,
+  fastighet: string,
+  ledigFrom: string
+): ApartmentInput {
+  const area = ro.areaInkKorr ?? ro.area;
+  return {
+    lagenhetsnummer,
+    fastighet,
+    storlek: area != null ? `${area} m²` : "",
+    objekttyp: ro.typ ?? "",
+    antalRum: 0,
+    ledigFrom,
+    arshyra: ro.malbildshyra ?? 0,
+    hyresreduktion: ro.hyresred ?? 0,
+    arshyraMedRed: ro.individuellArshyra ?? 0,
+    manadshyra: ro.manadshyra ?? 0,
+  };
+}
+
+// Confirms a lease termination: records the termination in uppsägningar,
+// then adds the apartment to lediga lägenheter. Specs are pulled from the
+// databas (rentalobjects) when a match is found, with a fallback to the
+// apartment's most recent entry in the apartments store.
 export async function confirmUppsagningAction(
   lagenhetsnummer: string,
   flyttdatum: string
@@ -51,19 +70,33 @@ export async function confirmUppsagningAction(
     flyttdatum: trimmedDatum,
   });
 
-  const existingSpecs = await findLatestApartmentSpecs(trimmedNummer);
-  await createApartment({
-    lagenhetsnummer: trimmedNummer,
-    fastighet: tenant.fastighet,
-    storlek: existingSpecs?.storlek ?? "",
-    objekttyp: existingSpecs?.objekttyp ?? "",
-    antalRum: existingSpecs?.antalRum ?? 0,
-    ledigFrom: trimmedDatum,
-    arshyra: existingSpecs?.arshyra ?? 0,
-    hyresreduktion: existingSpecs?.hyresreduktion ?? 0,
-    arshyraMedRed: existingSpecs?.arshyraMedRed ?? 0,
-    manadshyra: existingSpecs?.manadshyra ?? 0,
-  });
+  const rentalObject = await findRentalObjectForApartment(trimmedNummer, tenant.fastighet);
+
+  let apartmentInput: ApartmentInput;
+  if (rentalObject) {
+    apartmentInput = rentalObjectToApartmentInput(
+      rentalObject,
+      trimmedNummer,
+      tenant.fastighet,
+      trimmedDatum
+    );
+  } else {
+    const existingSpecs = await findLatestApartmentSpecs(trimmedNummer);
+    apartmentInput = {
+      lagenhetsnummer: trimmedNummer,
+      fastighet: tenant.fastighet,
+      storlek: existingSpecs?.storlek ?? "",
+      objekttyp: existingSpecs?.objekttyp ?? "",
+      antalRum: existingSpecs?.antalRum ?? 0,
+      ledigFrom: trimmedDatum,
+      arshyra: existingSpecs?.arshyra ?? 0,
+      hyresreduktion: existingSpecs?.hyresreduktion ?? 0,
+      arshyraMedRed: existingSpecs?.arshyraMedRed ?? 0,
+      manadshyra: existingSpecs?.manadshyra ?? 0,
+    };
+  }
+
+  await createApartment(apartmentInput);
 
   revalidatePath("/uppsagning");
   revalidatePath("/lediga-lagenheter");

@@ -1,42 +1,48 @@
 import "server-only";
-import { randomUUID } from "node:crypto";
-
-// Mock store for confirmed lease terminations, same globalThis-cached
-// in-memory approach as lib/apartments.ts — swap for a real collection
-// later.
+import { ObjectId } from "mongodb";
+import { getDb } from "@/lib/mongodb";
 
 export type Uppsagning = {
   id: string;
   lagenhetsnummer: string;
   fastighet: string;
   hyresgastNamn: string;
-  bekraftelsedatum: string; // ISO date the termination was confirmed
-  flyttdatum: string; // ISO date the tenant moves out / apartment is ready
+  bekraftelsedatum: string;
+  flyttdatum: string;
 };
 
 export type UppsagningInput = Omit<Uppsagning, "id">;
 
-const globalStore = globalThis as typeof globalThis & {
-  _uppsagningarStore?: Uppsagning[];
-};
+type UppsagningDoc = Omit<Uppsagning, "id">;
 
-function getStore(): Uppsagning[] {
-  if (!globalStore._uppsagningarStore) {
-    globalStore._uppsagningarStore = [];
-  }
-  return globalStore._uppsagningarStore;
+async function getCollection() {
+  const db = await getDb();
+  return db.collection<UppsagningDoc>("uppsagningar");
 }
 
 export async function getUppsagningar(): Promise<Uppsagning[]> {
-  return getStore()
-    .slice()
-    .sort((a, b) => b.bekraftelsedatum.localeCompare(a.bekraftelsedatum));
+  const col = await getCollection();
+  const docs = await col
+    .find()
+    .sort({ bekraftelsedatum: -1 })
+    .toArray();
+  return docs.map((doc) => ({
+    id: doc._id.toString(),
+    lagenhetsnummer: doc.lagenhetsnummer,
+    fastighet: doc.fastighet,
+    hyresgastNamn: doc.hyresgastNamn,
+    bekraftelsedatum: doc.bekraftelsedatum,
+    flyttdatum: doc.flyttdatum,
+  }));
 }
 
-export async function createUppsagning(
-  input: UppsagningInput
-): Promise<Uppsagning> {
-  const record: Uppsagning = { ...input, id: randomUUID() };
-  getStore().push(record);
-  return record;
+export async function createUppsagning(input: UppsagningInput): Promise<Uppsagning> {
+  const col = await getCollection();
+  const result = await col.insertOne(input);
+  return { ...input, id: result.insertedId.toString() };
+}
+
+export async function deleteUppsagning(id: string): Promise<void> {
+  const col = await getCollection();
+  await col.deleteOne({ _id: new ObjectId(id) });
 }

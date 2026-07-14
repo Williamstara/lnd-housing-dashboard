@@ -8,7 +8,7 @@ const LedigaLagenheterPage = auth0.withPageAuthRequired(
     const apartments = await getLedigaLagenheter();
 
     return (
-      <Container maxWidth="xl" sx={{ py: 6 }}>
+      <Container maxWidth={false} sx={{ py: 6, width: "80%", mx: "auto" }}>
         <ApartmentsTable apartments={apartments} />
       </Container>
     );
