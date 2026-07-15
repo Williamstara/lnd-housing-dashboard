@@ -6,7 +6,6 @@ import AddIcon from "@mui/icons-material/Add";
 import DeleteIcon from "@mui/icons-material/Delete";
 import EditIcon from "@mui/icons-material/Edit";
 import FileDownloadIcon from "@mui/icons-material/FileDownload";
-import MarkEmailReadIcon from "@mui/icons-material/MarkEmailRead";
 import PersonAddIcon from "@mui/icons-material/PersonAdd";
 import VisibilityIcon from "@mui/icons-material/Visibility";
 import VisibilityOffIcon from "@mui/icons-material/VisibilityOff";
@@ -39,7 +38,8 @@ import {
   assignTenantAction,
   createApartmentAction,
   deleteApartmentAction,
-  markContactedAction,
+  saveApartmentInterestAction,
+  sendApartmentContactEmailInfoAction,
   setHiddenAction,
   updateApartmentAction,
 } from "@/app/lediga-lagenheter/actions";
@@ -47,12 +47,10 @@ import type {
   Apartment,
   ApartmentInput,
   ApartmentStatus,
-  ContactInput,
   TenantAssignmentInput,
 } from "@/lib/apartments";
 import ApartmentFormDialog from "@/components/ApartmentFormDialog";
-import AssignTenantDialog from "@/components/AssignTenantDialog";
-import ContactDialog from "@/components/ContactDialog";
+import ApartmentInterestDialog from "@/components/ApartmentInterestDialog";
 import { exportRowsToXlsx } from "@/lib/export-xlsx";
 import { ROLES, hasRole } from "@/lib/roles";
 
@@ -165,12 +163,8 @@ export default function ApartmentsTable({ apartments, fastigheter, missedRentApa
   const [editingApartment, setEditingApartment] = useState<Apartment | null>(
     null
   );
-  const [contactOpen, setContactOpen] = useState(false);
-  const [contactApartment, setContactApartment] = useState<Apartment | null>(
-    null
-  );
-  const [assignOpen, setAssignOpen] = useState(false);
-  const [assignApartment, setAssignApartment] = useState<Apartment | null>(
+  const [interestOpen, setInterestOpen] = useState(false);
+  const [interestApartment, setInterestApartment] = useState<Apartment | null>(
     null
   );
   const [deletingApartment, setDeletingApartment] = useState<Apartment | null>(
@@ -224,16 +218,10 @@ export default function ApartmentsTable({ apartments, fastigheter, missedRentApa
     setFormOpen(true);
   }
 
-  function openContactDialog(apartment: Apartment) {
-    setContactApartment(apartment);
+  function openInterestDialog(apartment: Apartment) {
+    setInterestApartment(apartment);
     setDialogKey((key) => key + 1);
-    setContactOpen(true);
-  }
-
-  function openAssignDialog(apartment: Apartment) {
-    setAssignApartment(apartment);
-    setDialogKey((key) => key + 1);
-    setAssignOpen(true);
+    setInterestOpen(true);
   }
 
   async function handleFormSubmit(input: ApartmentInput) {
@@ -244,14 +232,19 @@ export default function ApartmentsTable({ apartments, fastigheter, missedRentApa
     }
   }
 
-  async function handleContactSubmit(input: ContactInput) {
-    if (!contactApartment) return;
-    await markContactedAction(contactApartment.id, input);
+  async function handleSaveInterest(input: TenantAssignmentInput) {
+    if (!interestApartment) return;
+    await saveApartmentInterestAction(interestApartment.id, input);
   }
 
-  async function handleAssignSubmit(input: TenantAssignmentInput) {
-    if (!assignApartment) return;
-    await assignTenantAction(assignApartment.id, input);
+  async function handleSendToContract(input: TenantAssignmentInput) {
+    if (!interestApartment) return;
+    await assignTenantAction(interestApartment.id, input);
+  }
+
+  async function handleSendEmailInfo(input: TenantAssignmentInput, svarSenast: string) {
+    if (!interestApartment) return;
+    await sendApartmentContactEmailInfoAction(interestApartment.id, input, svarSenast);
   }
 
   function confirmDelete() {
@@ -425,6 +418,13 @@ export default function ApartmentsTable({ apartments, fastigheter, missedRentApa
                         />
                       )}
                     </Stack>
+                    {apartment.status === "ledig" && apartment.hyresgastNamn && (
+                      <Box sx={{ mt: 0.5 }}>
+                        <Typography variant="caption" color="text.secondary">
+                          Intresserad: {apartment.hyresgastNamn}
+                        </Typography>
+                      </Box>
+                    )}
                     {apartment.status === "kontaktad" && (
                       <Box sx={{ mt: 0.5 }}>
                         <Typography variant="caption" color="text.secondary">
@@ -445,28 +445,11 @@ export default function ApartmentsTable({ apartments, fastigheter, missedRentApa
                     <Stack direction="row" sx={{ justifyContent: "flex-end" }}>
                       {(apartment.status === "ledig" ||
                         apartment.status === "kontaktad") && (
-                        <Tooltip
-                          title={
-                            apartment.status === "ledig"
-                              ? "Markera som kontaktad"
-                              : "Byt kontaktperson"
-                          }
-                        >
+                        <Tooltip title="Intresserad / kontraktsinfo">
                           <IconButton
-                            aria-label="Kontakta"
+                            aria-label="Intresserad / kontraktsinfo"
                             size="small"
-                            onClick={() => openContactDialog(apartment)}
-                          >
-                            <MarkEmailReadIcon fontSize="small" />
-                          </IconButton>
-                        </Tooltip>
-                      )}
-                      {apartment.status === "kontaktad" && isHusforman && (
-                        <Tooltip title="Fyll i hyresgästinfo (skickar till Redo för kontrakt)">
-                          <IconButton
-                            aria-label="Fyll i hyresgästinfo"
-                            size="small"
-                            onClick={() => openAssignDialog(apartment)}
+                            onClick={() => openInterestDialog(apartment)}
                           >
                             <PersonAddIcon fontSize="small" />
                           </IconButton>
@@ -529,20 +512,15 @@ export default function ApartmentsTable({ apartments, fastigheter, missedRentApa
         onSubmit={handleFormSubmit}
       />
 
-      <ContactDialog
-        key={`contact-${dialogKey}`}
-        open={contactOpen}
-        apartment={contactApartment}
-        onClose={() => setContactOpen(false)}
-        onSubmit={handleContactSubmit}
-      />
-
-      <AssignTenantDialog
-        key={`assign-${dialogKey}`}
-        open={assignOpen}
-        apartment={assignApartment}
-        onClose={() => setAssignOpen(false)}
-        onSubmit={handleAssignSubmit}
+      <ApartmentInterestDialog
+        key={`interest-${dialogKey}`}
+        open={interestOpen}
+        apartment={interestApartment}
+        canSendToContract={isHusforman}
+        onClose={() => setInterestOpen(false)}
+        onSaveInterest={handleSaveInterest}
+        onSendToContract={handleSendToContract}
+        onSendEmailInfo={handleSendEmailInfo}
       />
 
       <Dialog

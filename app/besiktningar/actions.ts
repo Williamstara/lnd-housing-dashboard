@@ -3,10 +3,15 @@
 import { revalidatePath } from "next/cache";
 import {
   archiveBesiktning,
+  bulkUpsertBesiktningar,
+  createManualBesiktning,
+  deleteBesiktning,
   markBetalningGjord,
   markKlarForBetalning,
   updateBesiktning,
   type BesiktningEditInput,
+  type BesiktningImportInput,
+  type BulkUpsertResult,
 } from "@/lib/besiktningar";
 import { auth0 } from "@/lib/auth0";
 import { requireNationsId } from "@/lib/nations";
@@ -45,6 +50,14 @@ export async function updateBesiktningAction(id: string, input: BesiktningEditIn
   revalidateBesiktningarPages();
 }
 
+export async function createBesiktningAction(input: BesiktningImportInput) {
+  const nationsId = await requireUser();
+  if (!input.lagenhetsnummer.trim()) throw new Error("Lägenhetsnummer krävs.");
+  if (!input.besiktningsdatum) throw new Error("Besiktningsdatum krävs.");
+  await createManualBesiktning(nationsId, input);
+  revalidateBesiktningarPages();
+}
+
 // Only husvd/ekonomi may progress a besiktning's payment status.
 export async function markKlarForBetalningAction(id: string) {
   const { nationsId, userName } = await requireHusvdOrEkonomiRole();
@@ -62,4 +75,20 @@ export async function archiveBesiktningAction(id: string) {
   const nationsId = await requireArchiveRole();
   await archiveBesiktning(nationsId, id);
   revalidateBesiktningarPages();
+}
+
+export async function deleteBesiktningAction(id: string) {
+  const nationsId = await requireArchiveRole();
+  await deleteBesiktning(nationsId, id);
+  revalidateBesiktningarPages();
+}
+
+export async function importBesiktningarFromExcelAction(
+  rows: BesiktningImportInput[]
+): Promise<BulkUpsertResult> {
+  const nationsId = await requireUser();
+  if (rows.length === 0) throw new Error("Inga rader att importera.");
+  const result = await bulkUpsertBesiktningar(nationsId, rows);
+  revalidateBesiktningarPages();
+  return result;
 }

@@ -29,6 +29,12 @@ export type BesiktningEditInput = {
   totaltAvdrag: number;
 };
 
+export type BesiktningImportInput = BesiktningEditInput & {
+  lagenhetsnummer: string;
+};
+
+export type BulkUpsertResult = { inserted: number; updated: number };
+
 type BesiktningDoc = Omit<Besiktning, "id"> & { nationsID: string };
 
 async function getCollection() {
@@ -111,6 +117,23 @@ export async function createBesiktning(
   await col.insertOne(doc);
 }
 
+export async function createManualBesiktning(
+  nationsId: string,
+  input: BesiktningImportInput
+): Promise<void> {
+  const col = await getCollection();
+  const doc: BesiktningDoc = {
+    nationsID: nationsId,
+    ...input,
+    klarForBetalningDatum: null,
+    klarForBetalningAv: null,
+    betalningGjordDatum: null,
+    betalningGjordAv: null,
+    status: "aktiv",
+  };
+  await col.insertOne(doc);
+}
+
 export async function updateBesiktning(
   nationsId: string,
   id: string,
@@ -134,6 +157,45 @@ export async function markBetalningGjord(nationsId: string, id: string, utfordAv
     { _id: new ObjectId(id), nationsID: nationsId },
     { $set: { betalningGjordDatum: new Date().toISOString().slice(0, 10), betalningGjordAv: utfordAv } }
   );
+}
+
+// Upserts one row per (lägenhetsnummer, besiktningsdatum) among non-archived
+// besiktningar — matches an existing row from the Excel import and updates
+// it, or creates a new "aktiv" row if none matches.
+export async function bulkUpsertBesiktningar(
+  nationsId: string,
+  inputs: BesiktningImportInput[]
+): Promise<BulkUpsertResult> {
+  const col = await getCollection();
+  let inserted = 0;
+  let updated = 0;
+  for (const { lagenhetsnummer, besiktningsdatum, ...rest } of inputs) {
+    const result = await col.updateOne(
+      { nationsID: nationsId, lagenhetsnummer, besiktningsdatum, status: { $ne: "arkiverad" } },
+      {
+        $set: { ...rest },
+        $setOnInsert: {
+          nationsID: nationsId,
+          lagenhetsnummer,
+          besiktningsdatum,
+          klarForBetalningDatum: null,
+          klarForBetalningAv: null,
+          betalningGjordDatum: null,
+          betalningGjordAv: null,
+          status: "aktiv" as BesiktningStatus,
+        },
+      },
+      { upsert: true }
+    );
+    if (result.upsertedCount > 0) inserted++;
+    else updated++;
+  }
+  return { inserted, updated };
+}
+
+export async function deleteBesiktning(nationsId: string, id: string): Promise<void> {
+  const col = await getCollection();
+  await col.deleteOne({ _id: new ObjectId(id), nationsID: nationsId });
 }
 
 export async function archiveBesiktning(nationsId: string, id: string): Promise<void> {

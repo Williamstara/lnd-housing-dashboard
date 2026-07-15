@@ -2,9 +2,12 @@
 
 import { useUser } from "@auth0/nextjs-auth0";
 import { useMemo, useState, useTransition, type ChangeEvent } from "react";
+import AddIcon from "@mui/icons-material/Add";
 import ArchiveIcon from "@mui/icons-material/Archive";
+import DeleteIcon from "@mui/icons-material/Delete";
 import EditIcon from "@mui/icons-material/Edit";
 import FileDownloadIcon from "@mui/icons-material/FileDownload";
+import UploadFileIcon from "@mui/icons-material/UploadFile";
 import Alert from "@mui/material/Alert";
 import Button from "@mui/material/Button";
 import Dialog from "@mui/material/Dialog";
@@ -29,12 +32,15 @@ import Tooltip from "@mui/material/Tooltip";
 import Typography from "@mui/material/Typography";
 import {
   archiveBesiktningAction,
+  createBesiktningAction,
+  deleteBesiktningAction,
   markBetalningGjordAction,
   markKlarForBetalningAction,
   updateBesiktningAction,
 } from "@/app/besiktningar/actions";
+import BesiktningarExcelImportDialog from "@/components/BesiktningarExcelImportDialog";
 import { exportRowsToXlsx } from "@/lib/export-xlsx";
-import type { Besiktning, BesiktningEditInput } from "@/lib/besiktningar";
+import type { Besiktning, BesiktningEditInput, BesiktningImportInput } from "@/lib/besiktningar";
 import { ARCHIVE_ROLES, ROLES, hasAnyRole, hasRole } from "@/lib/roles";
 
 type Props = {
@@ -114,6 +120,20 @@ function toEditForm(b: Besiktning): EditForm {
   };
 }
 
+type AddForm = EditForm & { lagenhetsnummer: string };
+
+function emptyAddForm(): AddForm {
+  return {
+    lagenhetsnummer: "",
+    besiktningsdatum: new Date().toISOString().slice(0, 10),
+    kostnadStadning: "0",
+    vaktmastareAnteckning: "",
+    godkand: "",
+    husformanAnteckning: "",
+    totaltAvdrag: "0",
+  };
+}
+
 export default function BesiktningarTable({ besiktningar }: Props) {
   const { user } = useUser();
   const canArchive = hasAnyRole(user, ARCHIVE_ROLES);
@@ -135,6 +155,17 @@ export default function BesiktningarTable({ besiktningar }: Props) {
   const [archivingRow, setArchivingRow] = useState<Besiktning | null>(null);
   const [archiveError, setArchiveError] = useState<string | null>(null);
   const [isArchiving, startArchiveTransition] = useTransition();
+
+  const [deletingRow, setDeletingRow] = useState<Besiktning | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [isDeleting, startDeleteTransition] = useTransition();
+
+  const [importOpen, setImportOpen] = useState(false);
+
+  const [addOpen, setAddOpen] = useState(false);
+  const [addForm, setAddForm] = useState<AddForm>(emptyAddForm);
+  const [addError, setAddError] = useState<string | null>(null);
+  const [isAdding, startAddTransition] = useTransition();
 
   const visibleRows = useMemo(() => {
     const query = search.trim().toLocaleLowerCase("sv");
@@ -214,6 +245,33 @@ export default function BesiktningarTable({ besiktningar }: Props) {
     });
   }
 
+  function openAdd() {
+    setAddError(null);
+    setAddForm(emptyAddForm());
+    setAddOpen(true);
+  }
+
+  function handleAdd() {
+    const input: BesiktningImportInput = {
+      lagenhetsnummer: addForm.lagenhetsnummer.trim(),
+      besiktningsdatum: addForm.besiktningsdatum,
+      kostnadStadning: Number(addForm.kostnadStadning) || 0,
+      vaktmastareAnteckning: addForm.vaktmastareAnteckning.trim(),
+      godkand: addForm.godkand === "ja" ? true : addForm.godkand === "nej" ? false : null,
+      husformanAnteckning: addForm.husformanAnteckning.trim(),
+      totaltAvdrag: Number(addForm.totaltAvdrag) || 0,
+    };
+    setAddError(null);
+    startAddTransition(async () => {
+      try {
+        await createBesiktningAction(input);
+        setAddOpen(false);
+      } catch (err) {
+        setAddError(err instanceof Error ? err.message : "Något gick fel.");
+      }
+    });
+  }
+
   function openArchive(row: Besiktning) {
     setArchiveError(null);
     setArchivingRow(row);
@@ -233,6 +291,25 @@ export default function BesiktningarTable({ besiktningar }: Props) {
     });
   }
 
+  function openDelete(row: Besiktning) {
+    setDeleteError(null);
+    setDeletingRow(row);
+  }
+
+  function confirmDelete() {
+    if (!deletingRow) return;
+    const id = deletingRow.id;
+    setDeleteError(null);
+    startDeleteTransition(async () => {
+      try {
+        await deleteBesiktningAction(id);
+        setDeletingRow(null);
+      } catch (err) {
+        setDeleteError(err instanceof Error ? err.message : "Något gick fel.");
+      }
+    });
+  }
+
   return (
     <>
       <Stack
@@ -242,9 +319,21 @@ export default function BesiktningarTable({ besiktningar }: Props) {
         <Typography variant="h4" component="h1" sx={{ fontWeight: 600 }}>
           Besiktningar
         </Typography>
-        <Button variant="outlined" startIcon={<FileDownloadIcon />} onClick={handleExport}>
-          Exportera
-        </Button>
+        <Stack direction="row" sx={{ gap: 1 }}>
+          <Button variant="contained" startIcon={<AddIcon />} onClick={openAdd}>
+            Lägg till besiktning
+          </Button>
+          <Button variant="outlined" startIcon={<FileDownloadIcon />} onClick={handleExport}>
+            Exportera
+          </Button>
+          <Button
+            variant="outlined"
+            startIcon={<UploadFileIcon />}
+            onClick={() => setImportOpen(true)}
+          >
+            Ladda upp från excel
+          </Button>
+        </Stack>
       </Stack>
 
       <TextField
@@ -402,6 +491,15 @@ export default function BesiktningarTable({ besiktningar }: Props) {
                             </span>
                           </Tooltip>
                         )}
+                        {canArchive && (
+                          <IconButton
+                            aria-label="Ta bort"
+                            size="small"
+                            onClick={() => openDelete(row)}
+                          >
+                            <DeleteIcon fontSize="small" />
+                          </IconButton>
+                        )}
                       </Stack>
                     </TableCell>
                   </TableRow>
@@ -498,6 +596,86 @@ export default function BesiktningarTable({ besiktningar }: Props) {
         </DialogActions>
       </Dialog>
 
+      <Dialog open={addOpen} onClose={() => setAddOpen(false)} fullWidth maxWidth="sm">
+        <DialogTitle>Lägg till besiktning</DialogTitle>
+        <DialogContent>
+          <Stack spacing={2} sx={{ mt: 1 }}>
+            {addError && <Alert severity="error">{addError}</Alert>}
+            <TextField
+              label="Lägenhetsnummer"
+              value={addForm.lagenhetsnummer}
+              onChange={(e) => setAddForm((prev) => ({ ...prev, lagenhetsnummer: e.target.value }))}
+              disabled={isAdding}
+              fullWidth
+              autoFocus
+            />
+            <TextField
+              label="Besiktningsdatum"
+              type="date"
+              value={addForm.besiktningsdatum}
+              onChange={(e) => setAddForm((prev) => ({ ...prev, besiktningsdatum: e.target.value }))}
+              disabled={isAdding}
+              slotProps={{ inputLabel: { shrink: true } }}
+              fullWidth
+            />
+            <TextField
+              label="Kostnad städning (kr)"
+              type="number"
+              value={addForm.kostnadStadning}
+              onChange={(e) => setAddForm((prev) => ({ ...prev, kostnadStadning: e.target.value }))}
+              disabled={isAdding}
+              fullWidth
+            />
+            <TextField
+              label="Vaktmästare anteckning"
+              value={addForm.vaktmastareAnteckning}
+              onChange={(e) => setAddForm((prev) => ({ ...prev, vaktmastareAnteckning: e.target.value }))}
+              disabled={isAdding}
+              multiline
+              minRows={2}
+              fullWidth
+            />
+            <TextField
+              select
+              label="Godkänd?"
+              value={addForm.godkand}
+              onChange={(e) => setAddForm((prev) => ({ ...prev, godkand: e.target.value }))}
+              disabled={isAdding}
+              fullWidth
+            >
+              <MenuItem value="">—</MenuItem>
+              <MenuItem value="ja">Ja</MenuItem>
+              <MenuItem value="nej">Nej</MenuItem>
+            </TextField>
+            <TextField
+              label="Husförman anteckning"
+              value={addForm.husformanAnteckning}
+              onChange={(e) => setAddForm((prev) => ({ ...prev, husformanAnteckning: e.target.value }))}
+              disabled={isAdding}
+              multiline
+              minRows={2}
+              fullWidth
+            />
+            <TextField
+              label="Totalt avdrag (kr)"
+              type="number"
+              value={addForm.totaltAvdrag}
+              onChange={(e) => setAddForm((prev) => ({ ...prev, totaltAvdrag: e.target.value }))}
+              disabled={isAdding}
+              fullWidth
+            />
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setAddOpen(false)} disabled={isAdding}>
+            Avbryt
+          </Button>
+          <Button onClick={handleAdd} variant="contained" disabled={isAdding || !addForm.lagenhetsnummer.trim()}>
+            Lägg till
+          </Button>
+        </DialogActions>
+      </Dialog>
+
       <Dialog open={!!archivingRow} onClose={() => setArchivingRow(null)}>
         <DialogTitle>Arkivera besiktning</DialogTitle>
         <DialogContent>
@@ -517,6 +695,27 @@ export default function BesiktningarTable({ besiktningar }: Props) {
           </Button>
         </DialogActions>
       </Dialog>
+
+      <Dialog open={!!deletingRow} onClose={() => setDeletingRow(null)}>
+        <DialogTitle>Ta bort besiktning</DialogTitle>
+        <DialogContent>
+          {deleteError && <Alert severity="error" sx={{ mb: 2 }}>{deleteError}</Alert>}
+          <DialogContentText>
+            Är du säker på att du vill ta bort besiktningen för{" "}
+            {deletingRow?.lagenhetsnummer}? Detta går inte att ångra.
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setDeletingRow(null)} disabled={isDeleting}>
+            Avbryt
+          </Button>
+          <Button onClick={confirmDelete} color="error" variant="contained" disabled={isDeleting}>
+            Ta bort
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <BesiktningarExcelImportDialog open={importOpen} onClose={() => setImportOpen(false)} />
     </>
   );
 }

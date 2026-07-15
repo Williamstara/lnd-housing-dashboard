@@ -14,10 +14,10 @@ import {
   markContractSent,
   markContractSigned,
   removeFromKontrakt,
+  saveApartmentInterest,
   setHidden,
   updateApartment,
   type ApartmentInput,
-  type ContactInput,
   type TenantAssignmentInput,
 } from "@/lib/apartments";
 import { findRentalObjectForApartment, updateRentalObjectPricing } from "@/lib/rentalobjects";
@@ -101,27 +101,20 @@ async function sanitizeApartmentInput(nationsId: string, input: ApartmentInput):
   return trimmed;
 }
 
-function sanitizeContactInput(input: ContactInput): ContactInput {
-  const trimmed: ContactInput = {
-    kontaktperson: input.kontaktperson.trim(),
-    svarSenast: input.svarSenast.trim(),
-  };
-  if (!trimmed.kontaktperson || !trimmed.svarSenast) {
-    throw new Error("Alla fält måste fyllas i.");
-  }
-  return trimmed;
-}
-
-function sanitizeTenantInput(
-  input: TenantAssignmentInput
-): TenantAssignmentInput {
-  const trimmed: TenantAssignmentInput = {
+function trimTenantInput(input: TenantAssignmentInput): TenantAssignmentInput {
+  return {
     hyresgastNamn: input.hyresgastNamn.trim(),
     personnummer: input.personnummer.trim(),
     epost: input.epost.trim(),
     telefonnummer: input.telefonnummer.trim(),
     kontonummer: input.kontonummer.trim(),
   };
+}
+
+function sanitizeTenantInput(
+  input: TenantAssignmentInput
+): TenantAssignmentInput {
+  const trimmed = trimTenantInput(input);
   if (Object.values(trimmed).some((value) => value === "")) {
     throw new Error("Alla fält måste fyllas i.");
   }
@@ -179,9 +172,37 @@ export async function deleteApartmentAction(id: string) {
   revalidateApartmentPages();
 }
 
-export async function markContactedAction(id: string, input: ContactInput) {
+// Persists whatever interest/contract fields are filled in so far — no
+// completeness check and no status change, so a name can be saved on its
+// own without triggering an email or a "redo för kontrakt" transition.
+export async function saveApartmentInterestAction(
+  id: string,
+  input: TenantAssignmentInput
+) {
   const { nationsId } = await requireUser();
-  await markContacted(nationsId, id, sanitizeContactInput(input));
+  await saveApartmentInterest(nationsId, id, trimTenantInput(input));
+  revalidateApartmentPages();
+}
+
+// Persists the current form state and marks the apartment "kontaktad" with
+// the given reply-by date. The dialog sends the actual e-post afterwards via
+// /api/send-mail.
+export async function sendApartmentContactEmailInfoAction(
+  id: string,
+  input: TenantAssignmentInput,
+  svarSenast: string
+) {
+  const { nationsId } = await requireUser();
+  const trimmed = trimTenantInput(input);
+  const svarSenastTrimmed = svarSenast.trim();
+  if (!trimmed.hyresgastNamn || !trimmed.epost || !svarSenastTrimmed) {
+    throw new Error("Namn, e-post och svarsdatum måste fyllas i.");
+  }
+  await saveApartmentInterest(nationsId, id, trimmed);
+  await markContacted(nationsId, id, {
+    kontaktperson: trimmed.hyresgastNamn,
+    svarSenast: svarSenastTrimmed.split("T")[0]!,
+  });
   revalidateApartmentPages();
 }
 

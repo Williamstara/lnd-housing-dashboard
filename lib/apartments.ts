@@ -208,6 +208,18 @@ export async function assignTenantAndSendToContract(
   );
 }
 
+// Persists whatever tenant-interest fields are currently filled in, without
+// requiring completeness and without touching status — lets a partial
+// "interested person" entry be saved before all contract fields are ready.
+export async function saveApartmentInterest(
+  nationsId: string,
+  id: string,
+  input: TenantAssignmentInput
+): Promise<void> {
+  const col = await getCollection();
+  await col.updateOne({ _id: new ObjectId(id), nationsID: nationsId }, { $set: input });
+}
+
 export async function markContractSent(nationsId: string, id: string, utfordAv: string): Promise<void> {
   const col = await getCollection();
   await col.updateOne(
