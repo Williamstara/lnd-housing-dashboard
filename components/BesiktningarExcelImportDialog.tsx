@@ -56,7 +56,17 @@ function formatDateCell(value: unknown): string {
     return `${y}-${m}-${d}`;
   }
   const str = String(value ?? "").trim();
-  return /^\d{4}-\d{2}-\d{2}/.test(str) ? str.slice(0, 10) : str;
+  if (/^\d{4}-\d{2}-\d{2}/.test(str)) return str.slice(0, 10);
+  // Cell holds a plain "YYMMDD" number/text (e.g. 260601), not an Excel date
+  // serial — 46000-ish is a real serial, 260601 is just the digits as typed.
+  if (/^\d{5,6}$/.test(str)) {
+    const padded = str.padStart(6, "0");
+    const yy = padded.slice(0, 2);
+    const mm = padded.slice(2, 4);
+    const dd = padded.slice(4, 6);
+    return `20${yy}-${mm}-${dd}`;
+  }
+  return str;
 }
 
 function parseRows(data: ArrayBuffer): { rows: BesiktningImportInput[]; skipped: number } {
