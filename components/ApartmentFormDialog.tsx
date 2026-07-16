@@ -1,8 +1,10 @@
 "use client";
 
 import { useState, useTransition, type ChangeEvent } from "react";
+import CloudDownloadIcon from "@mui/icons-material/CloudDownload";
 import Alert from "@mui/material/Alert";
 import Button from "@mui/material/Button";
+import CircularProgress from "@mui/material/CircularProgress";
 import Dialog from "@mui/material/Dialog";
 import DialogActions from "@mui/material/DialogActions";
 import DialogContent from "@mui/material/DialogContent";
@@ -11,7 +13,7 @@ import Grid from "@mui/material/Grid";
 import MenuItem from "@mui/material/MenuItem";
 import Stack from "@mui/material/Stack";
 import TextField from "@mui/material/TextField";
-import type { Apartment, ApartmentInput } from "@/lib/apartments";
+import type { Apartment, ApartmentInput, ApartmentSpecs } from "@/lib/apartments";
 
 function n(s: string): number | null {
   const v = parseFloat(s.replace(",", "."));
@@ -69,6 +71,7 @@ type Props = {
   fastigheter: string[];
   onClose: () => void;
   onSubmit: (input: ApartmentInput) => Promise<void>;
+  onLookupSpecs: (lagenhetsnummer: string) => Promise<ApartmentSpecs | null>;
 };
 
 export default function ApartmentFormDialog({
@@ -77,6 +80,7 @@ export default function ApartmentFormDialog({
   fastigheter,
   onClose,
   onSubmit,
+  onLookupSpecs,
 }: Props) {
   const fields: Array<{
     key: keyof FormValues;
@@ -84,7 +88,6 @@ export default function ApartmentFormDialog({
     type?: string;
     options?: readonly string[];
   }> = [
-    { key: "lagenhetsnummer", label: "Lägenhetsnummer" },
     { key: "fastighet", label: "Fastighet", options: fastigheter },
     { key: "storlek", label: "Storlek" },
     { key: "objekttyp", label: "Objekttyp" },
@@ -99,6 +102,8 @@ export default function ApartmentFormDialog({
   const [form, setForm] = useState<FormValues>(() => toFormValues(apartment));
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+  const [lookupMessage, setLookupMessage] = useState<string | null>(null);
+  const [isLookingUp, startLookupTransition] = useTransition();
 
   function set(field: keyof FormValues, value: string) {
     setForm((prev) => {
@@ -123,6 +128,31 @@ export default function ApartmentFormDialog({
   function handleChange(field: keyof FormValues) {
     return (event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
       set(field, event.target.value);
+  }
+
+  function handleLookupSpecs() {
+    const lagenhetsnummer = form.lagenhetsnummer.trim();
+    if (!lagenhetsnummer) return;
+    setLookupMessage(null);
+    startLookupTransition(async () => {
+      const specs = await onLookupSpecs(lagenhetsnummer);
+      if (!specs) {
+        setLookupMessage("Ingen tidigare information hittades för det lägenhetsnumret.");
+        return;
+      }
+      setForm((prev) => ({
+        ...prev,
+        fastighet: specs.fastighet,
+        storlek: specs.storlek,
+        objekttyp: specs.objekttyp,
+        antalRum: String(specs.antalRum),
+        arshyra: String(specs.arshyra),
+        hyresrabatt: String(specs.hyresrabatt),
+        hyresreduktion: String(specs.hyresreduktion),
+        arshyraMedRed: String(specs.arshyraMedRed),
+        manadshyra: String(specs.manadshyra),
+      }));
+    });
   }
 
   function handleSubmit() {
@@ -162,6 +192,32 @@ export default function ApartmentFormDialog({
       <DialogContent>
         <Stack spacing={2} sx={{ mt: 1 }}>
           {error && <Alert severity="error">{error}</Alert>}
+          <Stack direction="row" spacing={1} sx={{ alignItems: "flex-start" }}>
+            <TextField
+              label="Lägenhetsnummer"
+              value={form.lagenhetsnummer}
+              onChange={(e) => {
+                handleChange("lagenhetsnummer")(e);
+                setLookupMessage(null);
+              }}
+              disabled={isPending}
+              fullWidth
+            />
+            {!apartment && (
+              <Button
+                variant="outlined"
+                onClick={handleLookupSpecs}
+                disabled={isPending || isLookingUp || !form.lagenhetsnummer.trim()}
+                startIcon={
+                  isLookingUp ? <CircularProgress size={16} color="inherit" /> : <CloudDownloadIcon />
+                }
+                sx={{ whiteSpace: "nowrap", flexShrink: 0 }}
+              >
+                Hämta från databas
+              </Button>
+            )}
+          </Stack>
+          {lookupMessage && <Alert severity="info">{lookupMessage}</Alert>}
           <Grid container spacing={2}>
             {fields.map(({ key, label, type, options }) => (
               <Grid key={key} size={{ xs: 12, sm: 6 }}>

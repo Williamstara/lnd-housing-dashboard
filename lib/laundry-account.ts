@@ -81,6 +81,20 @@ async function findExistingUser(domain: string, token: string, lagenhetsnummer: 
   return users[0]?.user_id ?? null;
 }
 
+// Auth0 dedupes by email within a connection, so a same-email account under
+// a *different* apartment (e.g. the tenant moved) would otherwise block
+// creation with a 409 even though the apartment-based lookup above found
+// nothing — check for it too so it gets replaced the same way.
+async function findUserByEmail(domain: string, token: string, email: string): Promise<string | null> {
+  const res = await fetch(
+    `https://${domain}/api/v2/users-by-email?email=${encodeURIComponent(email)}&fields=user_id`,
+    { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" }
+  );
+  if (!res.ok) return null;
+  const users = (await res.json()) as Array<{ user_id: string }>;
+  return users[0]?.user_id ?? null;
+}
+
 async function deleteUser(domain: string, token: string, userId: string): Promise<void> {
   await fetch(`https://${domain}/api/v2/users/${encodeURIComponent(userId)}`, {
     method: "DELETE",
@@ -101,9 +115,13 @@ export async function createLaundryAccount(
   const laundryBuilding = resolveLaundryBuilding(fastighet);
   const token = await getMgmtToken();
 
-  const existingId = await findExistingUser(domain, token, lagenhetsnummer);
-  if (existingId) {
-    await deleteUser(domain, token, existingId);
+  const existingByApartment = await findExistingUser(domain, token, lagenhetsnummer);
+  const existingByEmail = await findUserByEmail(domain, token, mejladress);
+  const idsToReplace = new Set(
+    [existingByApartment, existingByEmail].filter((id): id is string => !!id)
+  );
+  for (const id of idsToReplace) {
+    await deleteUser(domain, token, id);
   }
 
   const res = await fetch(`https://${domain}/api/v2/users`, {
@@ -134,9 +152,16 @@ export async function createLaundryAccount(
   });
 
   if (!res.ok) {
-    const body = (await res.json().catch(() => ({}))) as { message?: string };
-    throw new Error(body.message ?? `Konto kunde inte skapas (HTTP ${res.status})`);
+    const body = (await res.json().catch(() => ({}))) as { message?: string; errorCode?: string };
+    // Should be rare now that both the apartment- and email-based matches
+    // above get replaced first — kept as a fallback for races/edge cases.
+    if (res.status === 409 || body.errorCode === "auth0_idp_error" || /already exists/i.test(body.message ?? "")) {
+      throw new Error(
+        `Det finns redan ett tvättstugekonto med mejladressen ${mejladress}, troligen kopplat till en annan lägenhet. Kontrollera mejladressen, eller ta bort det gamla kontot i tvättstugesystemet och försök igen.`
+      );
+    }
+    throw new Error(body.message ?? `Kontot kunde inte skapas just nu (fel ${res.status}). Försök igen om en stund.`);
   }
 
-  return { userId: ((await res.json()) as { user_id: string }).user_id, replaced: !!existingId };
+  return { userId: ((await res.json()) as { user_id: string }).user_id, replaced: idsToReplace.size > 0 };
 }

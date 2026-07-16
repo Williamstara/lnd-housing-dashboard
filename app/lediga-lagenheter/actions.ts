@@ -10,6 +10,7 @@ import {
   assignTenantAndSendToContract,
   createApartment,
   deleteApartment,
+  findLatestApartmentSpecs,
   markContacted,
   markContractSent,
   markContractSigned,
@@ -18,9 +19,15 @@ import {
   setHidden,
   updateApartment,
   type ApartmentInput,
+  type ApartmentSpecs,
   type TenantAssignmentInput,
 } from "@/lib/apartments";
-import { findRentalObjectForApartment, updateRentalObjectPricing } from "@/lib/rentalobjects";
+import {
+  findRentalObjectByLagenhetsnummer,
+  findRentalObjectForApartment,
+  rentalObjectToApartmentSpecs,
+  updateRentalObjectPricing,
+} from "@/lib/rentalobjects";
 
 type Actor = { nationsId: string; userName: string };
 
@@ -145,6 +152,34 @@ async function syncPricingToDatabas(nationsId: string, input: ApartmentInput) {
     manadshyra: input.manadshyra,
   });
   revalidatePath("/databas");
+}
+
+// Looks up the "Hämta från databas" specs for a lägenhetsnummer: prefers the
+// databas (rentalobjects), falling back to the most recent apartment record
+// with the same number, same as the automatic uppsägning flow does.
+export async function lookupApartmentSpecsAction(
+  lagenhetsnummer: string
+): Promise<ApartmentSpecs | null> {
+  const { nationsId } = await requireUser();
+  const trimmed = lagenhetsnummer.trim();
+  if (!trimmed) return null;
+
+  const rentalObject = await findRentalObjectByLagenhetsnummer(nationsId, trimmed);
+  if (rentalObject) return rentalObjectToApartmentSpecs(rentalObject);
+
+  const existing = await findLatestApartmentSpecs(nationsId, trimmed);
+  if (!existing) return null;
+  return {
+    fastighet: existing.fastighet,
+    storlek: existing.storlek,
+    objekttyp: existing.objekttyp,
+    antalRum: existing.antalRum,
+    arshyra: existing.arshyra,
+    hyresrabatt: existing.hyresrabatt,
+    hyresreduktion: existing.hyresreduktion,
+    arshyraMedRed: existing.arshyraMedRed,
+    manadshyra: existing.manadshyra,
+  };
 }
 
 export async function createApartmentAction(input: ApartmentInput) {

@@ -1,6 +1,7 @@
 import "server-only";
 import { ObjectId } from "mongodb";
 import { getDb } from "@/lib/mongodb";
+import type { ApartmentSpecs } from "@/lib/apartments";
 
 // Prefixes used in the databas lagenhetsnummer per fastighet.
 // Needed when the tenant's lagenhetsnummer (e.g. "1402") doesn't include
@@ -120,6 +121,46 @@ export async function findRentalObjectForApartment(
   }
 
   return null;
+}
+
+const ALL_PREFIXES = Array.from(new Set(Object.values(FASTIGHET_PREFIXES).flat()));
+
+// Same matching as findRentalObjectForApartment, but for when the fastighet
+// isn't known yet (e.g. typing a lägenhetsnummer before picking a fastighet)
+// — tries an exact match, then every fastighet's prefix in turn.
+export async function findRentalObjectByLagenhetsnummer(
+  nationsId: string,
+  lagenhetsnummer: string
+): Promise<RentalObject | null> {
+  const col = await getCollection();
+
+  const exact = await col.findOne({ nationsID: nationsId, lagenhetsnummer });
+  if (exact) return mapDoc(exact as RentalObjectDocument & { _id: ObjectId });
+
+  for (const prefix of ALL_PREFIXES) {
+    const prefixed = await col.findOne({
+      nationsID: nationsId,
+      lagenhetsnummer: prefix + lagenhetsnummer,
+    });
+    if (prefixed) return mapDoc(prefixed as RentalObjectDocument & { _id: ObjectId });
+  }
+
+  return null;
+}
+
+export function rentalObjectToApartmentSpecs(ro: RentalObject): ApartmentSpecs {
+  const area = ro.areaInkKorr ?? ro.area;
+  return {
+    fastighet: ro.fastighet,
+    storlek: area != null ? `${area} m²` : "",
+    objekttyp: ro.typ ?? "",
+    antalRum: 0,
+    arshyra: ro.malbildshyra ?? 0,
+    hyresrabatt: ro.hyresrabatt ?? 0,
+    hyresreduktion: ro.hyresred ?? 0,
+    arshyraMedRed: ro.individuellArshyra ?? 0,
+    manadshyra: ro.manadshyra ?? 0,
+  };
 }
 
 export type BulkUpsertRentalResult = { inserted: number; updated: number };

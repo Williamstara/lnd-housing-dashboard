@@ -9,7 +9,14 @@ function connect(): Promise<MongoClient> {
   if (!uri) {
     throw new Error("Missing MONGODB_URI environment variable");
   }
-  return new MongoClient(uri).connect();
+  // The driver defaults to a 100-socket pool per client and keeps idle
+  // sockets open indefinitely. On serverless, every concurrent instance
+  // gets its own client, so that default multiplies fast and trips Atlas's
+  // connection-count warnings. Capping the pool and recycling idle sockets
+  // only limits how many TCP connections stay open — reads/writes (and the
+  // revalidatePath-driven UI refreshes) still go through the shared pool
+  // exactly as before.
+  return new MongoClient(uri, { maxPoolSize: 10, maxIdleTimeMS: 30_000 }).connect();
 }
 
 function getClientPromise(): Promise<MongoClient> {

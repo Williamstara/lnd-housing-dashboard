@@ -22,6 +22,8 @@ export type ApartmentInput = {
   manadshyra: number;
 };
 
+export type ApartmentSpecs = Omit<ApartmentInput, "lagenhetsnummer" | "ledigFrom">;
+
 export type ContactInput = {
   kontaktperson: string;
   svarSenast: string;

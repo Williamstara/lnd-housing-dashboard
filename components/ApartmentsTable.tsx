@@ -38,6 +38,7 @@ import {
   assignTenantAction,
   createApartmentAction,
   deleteApartmentAction,
+  lookupApartmentSpecsAction,
   saveApartmentInterestAction,
   sendApartmentContactEmailInfoAction,
   setHiddenAction,
@@ -510,6 +511,7 @@ export default function ApartmentsTable({ apartments, fastigheter, missedRentApa
         fastigheter={fastigheter}
         onClose={() => setFormOpen(false)}
         onSubmit={handleFormSubmit}
+        onLookupSpecs={lookupApartmentSpecsAction}
       />
 
       <ApartmentInterestDialog
