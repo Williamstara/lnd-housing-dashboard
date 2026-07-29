@@ -1,5 +1,5 @@
 import "server-only";
-import { ObjectId } from "mongodb";
+import { Binary, ObjectId } from "mongodb";
 import { getDb } from "@/lib/mongodb";
 
 export type Uppsagning = {
@@ -10,11 +10,17 @@ export type Uppsagning = {
   bekraftelsedatum: string;
   bekraftadAv: string;
   flyttdatum: string;
+  dokumentFilnamn: string;
 };
 
-export type UppsagningInput = Omit<Uppsagning, "id">;
+export type UppsagningInput = Omit<Uppsagning, "id" | "dokumentFilnamn"> & {
+  dokument: { data: Buffer; contentType: string; filename: string };
+};
 
-type UppsagningDoc = Omit<Uppsagning, "id"> & { nationsID: string };
+type UppsagningDoc = Omit<Uppsagning, "id" | "dokumentFilnamn"> & {
+  nationsID: string;
+  dokument: { data: Binary; contentType: string; filename: string };
+};
 
 async function getCollection() {
   const db = await getDb();
@@ -24,7 +30,7 @@ async function getCollection() {
 export async function getUppsagningar(nationsId: string): Promise<Uppsagning[]> {
   const col = await getCollection();
   const docs = await col
-    .find({ nationsID: nationsId })
+    .find({ nationsID: nationsId }, { projection: { "dokument.data": 0 } })
     .sort({ bekraftelsedatum: -1 })
     .toArray();
   return docs.map((doc) => ({
@@ -35,13 +41,33 @@ export async function getUppsagningar(nationsId: string): Promise<Uppsagning[]> 
     bekraftelsedatum: doc.bekraftelsedatum,
     bekraftadAv: doc.bekraftadAv ?? "",
     flyttdatum: doc.flyttdatum,
+    dokumentFilnamn: doc.dokument?.filename ?? "",
   }));
 }
 
 export async function createUppsagning(nationsId: string, input: UppsagningInput): Promise<Uppsagning> {
   const col = await getCollection();
-  const result = await col.insertOne({ ...input, nationsID: nationsId });
-  return { ...input, id: result.insertedId.toString() };
+  const { dokument, ...rest } = input;
+  const result = await col.insertOne({
+    ...rest,
+    nationsID: nationsId,
+    dokument: { data: new Binary(dokument.data), contentType: dokument.contentType, filename: dokument.filename },
+  });
+  return { ...rest, id: result.insertedId.toString(), dokumentFilnamn: dokument.filename };
+}
+
+export async function getUppsagningFile(
+  nationsId: string,
+  id: string
+): Promise<{ data: Buffer; contentType: string; filename: string } | null> {
+  const col = await getCollection();
+  const doc = await col.findOne({ _id: new ObjectId(id), nationsID: nationsId });
+  if (!doc?.dokument) return null;
+  return {
+    data: Buffer.from(doc.dokument.data.buffer as unknown as ArrayBuffer),
+    contentType: doc.dokument.contentType,
+    filename: doc.dokument.filename,
+  };
 }
 
 export async function deleteUppsagning(nationsId: string, id: string): Promise<void> {

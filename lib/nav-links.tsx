@@ -12,6 +12,7 @@ import PeopleAltIcon from "@mui/icons-material/PeopleAlt";
 import QueryStatsIcon from "@mui/icons-material/QueryStats";
 import StorageIcon from "@mui/icons-material/Storage";
 import SubjectIcon from "@mui/icons-material/Subject";
+import ChecklistIcon from "@mui/icons-material/Checklist";
 
 // Shared between NavBar (grouped dropdown menus) and the landing page
 // (flat quick-link cards), so the two never drift out of sync.
@@ -114,6 +115,13 @@ export const navLinks: NavLink[] = [
     label: "Arkiv",
     description: "Avslutade och signerade kontrakt.",
     icon: Inventory2Icon,
+    group: "gemensamt",
+  },
+  {
+    href: "/todo",
+    label: "Todo-lista",
+    description: "Gemensamma uppgifter med deadline, prioritet och ansvarig.",
+    icon: ChecklistIcon,
     group: "gemensamt",
   },
 ];

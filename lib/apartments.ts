@@ -41,6 +41,8 @@ export type Apartment = ApartmentInput & {
   id: string;
   status: ApartmentStatus;
   hidden: boolean;
+  nyckelInlamnad: boolean;
+  nyckelHamtad: boolean;
   kontaktperson?: string;
   svarSenast?: string;
   hyresgastNamn?: string;
@@ -79,6 +81,8 @@ function mapDoc(doc: ApartmentDoc & { _id: ObjectId }): Apartment {
     manadshyra: doc.manadshyra,
     status: doc.status,
     hidden: doc.hidden ?? false,
+    nyckelInlamnad: doc.nyckelInlamnad ?? false,
+    nyckelHamtad: doc.nyckelHamtad ?? false,
     kontaktperson: doc.kontaktperson,
     svarSenast: doc.svarSenast,
     hyresgastNamn: doc.hyresgastNamn,
@@ -164,7 +168,14 @@ export async function getArkiv(nationsId: string): Promise<Apartment[]> {
 
 export async function createApartment(nationsId: string, input: ApartmentInput): Promise<Apartment> {
   const col = await getCollection();
-  const doc: ApartmentDoc = { ...input, nationsID: nationsId, status: "ledig", hidden: false };
+  const doc: ApartmentDoc = {
+    ...input,
+    nationsID: nationsId,
+    status: "ledig",
+    hidden: false,
+    nyckelInlamnad: false,
+    nyckelHamtad: false,
+  };
   const result = await col.insertOne(doc);
   return { ...doc, id: result.insertedId.toString() };
 }
@@ -182,6 +193,25 @@ export async function deleteApartment(nationsId: string, id: string): Promise<vo
 export async function setHidden(nationsId: string, id: string, hidden: boolean): Promise<void> {
   const col = await getCollection();
   await col.updateOne({ _id: new ObjectId(id), nationsID: nationsId }, { $set: { hidden } });
+}
+
+// Turning "inlämnad" back off implies the key can't be "hämtad" either.
+export async function setNyckelInlamnad(nationsId: string, id: string, value: boolean): Promise<void> {
+  const col = await getCollection();
+  await col.updateOne(
+    { _id: new ObjectId(id), nationsID: nationsId },
+    { $set: value ? { nyckelInlamnad: true } : { nyckelInlamnad: false, nyckelHamtad: false } }
+  );
+}
+
+export async function setNyckelHamtad(nationsId: string, id: string, value: boolean): Promise<void> {
+  const col = await getCollection();
+  const doc = await col.findOne({ _id: new ObjectId(id), nationsID: nationsId });
+  if (!doc) throw new Error("Lägenheten hittades inte.");
+  if (value && !doc.nyckelInlamnad) {
+    throw new Error("Nyckeln måste vara inlämnad innan den kan hämtas.");
+  }
+  await col.updateOne({ _id: new ObjectId(id), nationsID: nationsId }, { $set: { nyckelHamtad: value } });
 }
 
 export async function markContacted(nationsId: string, id: string, input: ContactInput): Promise<void> {

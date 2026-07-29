@@ -46,7 +46,8 @@ function rentalObjectToApartmentInput(
 // apartment's most recent entry in the apartments store.
 export async function confirmUppsagningAction(
   lagenhetsnummer: string,
-  flyttdatum: string
+  flyttdatum: string,
+  dokument: File
 ) {
   const { nationsId, userName } = await requireEkonomiRole();
 
@@ -54,6 +55,9 @@ export async function confirmUppsagningAction(
   const trimmedDatum = flyttdatum.trim();
   if (!trimmedNummer || !trimmedDatum) {
     throw new Error("Alla fält måste fyllas i.");
+  }
+  if (!dokument || dokument.size === 0) {
+    throw new Error("En fil måste bifogas.");
   }
 
   const tenants = await getTenants(nationsId);
@@ -65,6 +69,7 @@ export async function confirmUppsagningAction(
   }
 
   const bekraftelsedatum = new Date().toISOString().slice(0, 10);
+  const dokumentBuffer = Buffer.from(await dokument.arrayBuffer());
 
   await createUppsagning(nationsId, {
     lagenhetsnummer: trimmedNummer,
@@ -73,6 +78,11 @@ export async function confirmUppsagningAction(
     bekraftelsedatum,
     bekraftadAv: userName,
     flyttdatum: trimmedDatum,
+    dokument: {
+      data: dokumentBuffer,
+      contentType: dokument.type || "application/octet-stream",
+      filename: dokument.name,
+    },
   });
 
   const rentalObject = await findRentalObjectForApartment(nationsId, trimmedNummer, tenant.fastighet);

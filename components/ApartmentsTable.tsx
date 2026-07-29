@@ -5,7 +5,9 @@ import { useMemo, useState, useTransition } from "react";
 import AddIcon from "@mui/icons-material/Add";
 import DeleteIcon from "@mui/icons-material/Delete";
 import EditIcon from "@mui/icons-material/Edit";
+import AssignmentTurnedInIcon from "@mui/icons-material/AssignmentTurnedIn";
 import FileDownloadIcon from "@mui/icons-material/FileDownload";
+import KeyIcon from "@mui/icons-material/Key";
 import PersonAddIcon from "@mui/icons-material/PersonAdd";
 import VisibilityIcon from "@mui/icons-material/Visibility";
 import VisibilityOffIcon from "@mui/icons-material/VisibilityOff";
@@ -42,6 +44,8 @@ import {
   saveApartmentInterestAction,
   sendApartmentContactEmailInfoAction,
   setHiddenAction,
+  setNyckelHamtadAction,
+  setNyckelInlamnadAction,
   updateApartmentAction,
 } from "@/app/lediga-lagenheter/actions";
 import type {
@@ -173,6 +177,7 @@ export default function ApartmentsTable({ apartments, fastigheter, missedRentApa
   );
   const [isDeleting, startDeleteTransition] = useTransition();
   const [isTogglingHidden, startHiddenTransition] = useTransition();
+  const [isTogglingNyckel, startNyckelTransition] = useTransition();
   // Bumped on every dialog open so the dialogs remount with fresh state
   // instead of syncing props via an effect.
   const [dialogKey, setDialogKey] = useState(0);
@@ -260,6 +265,19 @@ export default function ApartmentsTable({ apartments, fastigheter, missedRentApa
   function toggleHidden(apartment: Apartment) {
     startHiddenTransition(async () => {
       await setHiddenAction(apartment.id, !apartment.hidden);
+    });
+  }
+
+  function toggleNyckelInlamnad(apartment: Apartment) {
+    startNyckelTransition(async () => {
+      await setNyckelInlamnadAction(apartment.id, !apartment.nyckelInlamnad);
+    });
+  }
+
+  function toggleNyckelHamtad(apartment: Apartment) {
+    if (!apartment.nyckelInlamnad) return;
+    startNyckelTransition(async () => {
+      await setNyckelHamtadAction(apartment.id, !apartment.nyckelHamtad);
     });
   }
 
@@ -456,6 +474,44 @@ export default function ApartmentsTable({ apartments, fastigheter, missedRentApa
                           </IconButton>
                         </Tooltip>
                       )}
+                      <Tooltip
+                        title={
+                          apartment.nyckelInlamnad
+                            ? "Nyckel inlämnad (klicka för att ångra)"
+                            : "Markera nyckel inlämnad"
+                        }
+                      >
+                        <IconButton
+                          aria-label="Nyckel inlämnad"
+                          size="small"
+                          color={apartment.nyckelInlamnad ? "primary" : "default"}
+                          disabled={isTogglingNyckel}
+                          onClick={() => toggleNyckelInlamnad(apartment)}
+                        >
+                          <KeyIcon fontSize="small" />
+                        </IconButton>
+                      </Tooltip>
+                      <Tooltip
+                        title={
+                          !apartment.nyckelInlamnad
+                            ? "Nyckeln måste lämnas in innan den kan hämtas"
+                            : apartment.nyckelHamtad
+                              ? "Nyckel hämtad (klicka för att ångra)"
+                              : "Markera nyckel hämtad"
+                        }
+                      >
+                        <span>
+                          <IconButton
+                            aria-label="Nyckel hämtad"
+                            size="small"
+                            color={apartment.nyckelHamtad ? "primary" : "default"}
+                            disabled={isTogglingNyckel || !apartment.nyckelInlamnad}
+                            onClick={() => toggleNyckelHamtad(apartment)}
+                          >
+                            <AssignmentTurnedInIcon fontSize="small" />
+                          </IconButton>
+                        </span>
+                      </Tooltip>
                       <Tooltip title={apartment.hidden ? "Visa" : "Dölj"}>
                         <IconButton
                           aria-label={apartment.hidden ? "Visa" : "Dölj"}

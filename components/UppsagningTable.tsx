@@ -84,8 +84,8 @@ export default function UppsagningTable({ uppsagningar, tenants }: Props) {
     setPage(0);
   }
 
-  async function handleConfirm(lagenhetsnummer: string, flyttdatum: string) {
-    await confirmUppsagningAction(lagenhetsnummer, flyttdatum);
+  async function handleConfirm(lagenhetsnummer: string, flyttdatum: string, dokument: File) {
+    await confirmUppsagningAction(lagenhetsnummer, flyttdatum, dokument);
   }
 
   function handleExport() {
@@ -148,12 +148,13 @@ export default function UppsagningTable({ uppsagningar, tenants }: Props) {
                   </TableSortLabel>
                 </TableCell>
               ))}
+              <TableCell>Dokument</TableCell>
             </TableRow>
           </TableHead>
           <TableBody>
             {visible.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={columns.length} align="center">
+                <TableCell colSpan={columns.length + 1} align="center">
                   {uppsagningar.length === 0
                     ? "Inga uppsägningar registrerade än."
                     : "Inga träffar."}
@@ -174,6 +175,18 @@ export default function UppsagningTable({ uppsagningar, tenants }: Props) {
                     )}
                   </TableCell>
                   <TableCell>{u.flyttdatum}</TableCell>
+                  <TableCell>
+                    {u.dokumentFilnamn && (
+                      <Button
+                        size="small"
+                        href={`/api/uppsagningar/${u.id}/file`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        {u.dokumentFilnamn}
+                      </Button>
+                    )}
+                  </TableCell>
                 </TableRow>
               ))
             )}

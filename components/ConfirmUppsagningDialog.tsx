@@ -21,7 +21,7 @@ type Props = {
   open: boolean;
   tenants: Tenant[];
   onClose: () => void;
-  onSubmit: (lagenhetsnummer: string, flyttdatum: string) => Promise<void>;
+  onSubmit: (lagenhetsnummer: string, flyttdatum: string, dokument: File) => Promise<void>;
 };
 
 export default function ConfirmUppsagningDialog({
@@ -32,19 +32,20 @@ export default function ConfirmUppsagningDialog({
 }: Props) {
   const [lagenhetsnummer, setLagenhetsnummer] = useState("");
   const [flyttdatum, setFlyttdatum] = useState("");
+  const [dokument, setDokument] = useState<File | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
   function handleSubmit() {
-    if (!lagenhetsnummer || !flyttdatum) {
-      setError("Alla fält måste fyllas i.");
+    if (!lagenhetsnummer || !flyttdatum || !dokument) {
+      setError("Alla fält måste fyllas i, inklusive fil.");
       return;
     }
 
     setError(null);
     startTransition(async () => {
       try {
-        await onSubmit(lagenhetsnummer, flyttdatum);
+        await onSubmit(lagenhetsnummer, flyttdatum, dokument);
         onClose();
       } catch (submitError) {
         setError(
@@ -91,6 +92,16 @@ export default function ConfirmUppsagningDialog({
             slotProps={{ inputLabel: { shrink: true } }}
             fullWidth
           />
+          <Button variant="outlined" component="label" disabled={isPending}>
+            {dokument ? dokument.name : "Bifoga fil"}
+            <input
+              type="file"
+              hidden
+              onChange={(event: ChangeEvent<HTMLInputElement>) =>
+                setDokument(event.target.files?.[0] ?? null)
+              }
+            />
+          </Button>
         </Stack>
       </DialogContent>
       <DialogActions>

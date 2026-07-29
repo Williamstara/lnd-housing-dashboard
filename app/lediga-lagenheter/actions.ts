@@ -17,6 +17,8 @@ import {
   removeFromKontrakt,
   saveApartmentInterest,
   setHidden,
+  setNyckelHamtad,
+  setNyckelInlamnad,
   updateApartment,
   type ApartmentInput,
   type ApartmentSpecs,
@@ -275,6 +277,18 @@ export async function markContractSignedAction(id: string) {
 export async function setHiddenAction(id: string, hidden: boolean) {
   const { nationsId } = await requireUser();
   await setHidden(nationsId, id, hidden);
+  revalidateApartmentPages();
+}
+
+export async function setNyckelInlamnadAction(id: string, value: boolean) {
+  const { nationsId } = await requireUser();
+  await setNyckelInlamnad(nationsId, id, value);
+  revalidateApartmentPages();
+}
+
+export async function setNyckelHamtadAction(id: string, value: boolean) {
+  const { nationsId } = await requireUser();
+  await setNyckelHamtad(nationsId, id, value);
   revalidateApartmentPages();
 }
 
