@@ -3,6 +3,8 @@ import Container from "@mui/material/Container";
 import { auth0 } from "@/lib/auth0";
 import { getFastighetNamn } from "@/lib/fastigheter";
 import { requireNationsIdOrRedirect } from "@/lib/nations";
+import { getNationSettings } from "@/lib/nation-settings";
+import { DEFAULT_RENTALOBJECT_COLUMNS, resolveColumns } from "@/lib/table-columns";
 import { getRentalObjects, type RentalObject } from "@/lib/rentalobjects";
 import RentalObjectsTable from "@/components/RentalObjectsTable";
 
@@ -21,10 +23,12 @@ const DatabасPage = auth0.withPageAuthRequired(
   async function DatabасPage() {
     const session = await auth0.getSession();
     const nationsId = requireNationsIdOrRedirect(session?.user);
-    const [{ objects, error }, fastigheter] = await Promise.all([
+    const [{ objects, error }, fastigheter, nationSettings] = await Promise.all([
       loadObjects(nationsId),
       getFastighetNamn(nationsId),
+      getNationSettings(nationsId),
     ]);
+    const columnSettings = resolveColumns(DEFAULT_RENTALOBJECT_COLUMNS, nationSettings?.tables.rentalobjects);
 
     return (
       <Container maxWidth="xl" sx={{ py: 6 }}>
@@ -33,7 +37,7 @@ const DatabасPage = auth0.withPageAuthRequired(
             {error}
           </Alert>
         )}
-        <RentalObjectsTable objects={objects} fastigheter={fastigheter} />
+        <RentalObjectsTable objects={objects} fastigheter={fastigheter} columnSettings={columnSettings} />
       </Container>
     );
   },

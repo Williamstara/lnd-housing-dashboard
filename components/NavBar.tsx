@@ -20,10 +20,23 @@ import Typography from "@mui/material/Typography";
 import { alpha } from "@mui/material/styles";
 import Link from "next/link";
 import { NAV_GROUPS, navLinks, type NavGroupKey } from "@/lib/nav-links";
+import { ROLES, hasRole } from "@/lib/roles";
 
-function NavGroupMenu({ groupKey, label, active }: { groupKey: NavGroupKey; label: string; active: boolean }) {
+function NavGroupMenu({
+  groupKey,
+  label,
+  active,
+  isAdmin,
+}: {
+  groupKey: NavGroupKey;
+  label: string;
+  active: boolean;
+  isAdmin: boolean;
+}) {
   const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null);
-  const links = navLinks.filter((link) => link.group === groupKey);
+  const links = navLinks.filter(
+    (link) => link.group === groupKey && (!link.adminOnly || isAdmin)
+  );
 
   function handleOpen(event: MouseEvent<HTMLElement>) {
     setAnchorEl(event.currentTarget);
@@ -70,6 +83,7 @@ function NavGroupMenu({ groupKey, label, active }: { groupKey: NavGroupKey; labe
 export default function NavBar() {
   const { user, isLoading } = useUser();
   const pathname = usePathname();
+  const isAdmin = hasRole(user, ROLES.ADMIN);
 
   return (
     <AppBar position="static" color="primary" enableColorOnDark>
@@ -121,6 +135,7 @@ export default function NavBar() {
                   groupKey={group.key}
                   label={group.label}
                   active={active}
+                  isAdmin={isAdmin}
                 />
               );
             })}

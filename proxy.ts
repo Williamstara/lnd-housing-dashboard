@@ -6,7 +6,10 @@ import { getNationsId } from "@/lib/nations";
 // the Auth0 SDK's own routes, API routes (which return JSON 401/403 errors
 // of their own via requireNationsId — a redirect would break fetch() callers),
 // and the explanation page itself (avoid a redirect loop).
-const SKIP_NATIONS_CHECK = ["/api", "/auth", "/nationsid-saknas"];
+// /admin is excluded too — an admin's own account may have no nationsID
+// (they manage every nation, not one), and without this they'd get bounced
+// to /nationsid-saknas before ever reaching the admin page.
+const SKIP_NATIONS_CHECK = ["/api", "/auth", "/nationsid-saknas", "/admin"];
 
 function skipNationsCheck(pathname: string): boolean {
   return SKIP_NATIONS_CHECK.some((p) => pathname === p || pathname.startsWith(`${p}/`));

@@ -17,6 +17,11 @@ function requireEnv(name: string): string {
   return value;
 }
 
+async function throwForResponse(response: Response, action: string): Promise<never> {
+  const body = await response.text().catch(() => "");
+  throw new Error(`${action}: ${response.status}${body ? ` — ${body}` : ""}`);
+}
+
 async function getManagementToken(): Promise<string> {
   if (tokenCache && tokenCache.expiresAt > Date.now()) {
     return tokenCache.token;
@@ -34,7 +39,7 @@ async function getManagementToken(): Promise<string> {
     }),
   });
   if (!response.ok) {
-    throw new Error(`Failed to get Auth0 Management API token: ${response.status}`);
+    await throwForResponse(response, "Failed to get Auth0 Management API token");
   }
 
   const data = (await response.json()) as { access_token: string; expires_in: number };
@@ -65,7 +70,7 @@ export async function getUsersInNation(nationsId: string): Promise<AppUser[]> {
 
   const response = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
   if (!response.ok) {
-    throw new Error(`Failed to fetch users from Auth0: ${response.status}`);
+    await throwForResponse(response, "Failed to fetch users from Auth0");
   }
 
   const data = (await response.json()) as Array<{ user_id: string; name?: string; email?: string }>;
@@ -75,4 +80,58 @@ export async function getUsersInNation(nationsId: string): Promise<AppUser[]> {
 
   usersCache.set(nationsId, { users, expiresAt: Date.now() + USERS_CACHE_TTL_MS });
   return users;
+}
+
+// Every user in the tenant necessarily signed up through this app, so
+// "logged in but missing a nationsID" is just every Auth0 user with no
+// app_metadata.nationsID — no separate login-tracking needed. Not cached:
+// this is only read from the low-traffic admin page, and staleness here
+// risks the admin assigning a nation to someone already assigned.
+export async function getUsersWithoutNation(): Promise<AppUser[]> {
+  const domain = requireEnv("AUTH0_DOMAIN");
+  const token = await getManagementToken();
+  const url = new URL(`https://${domain}/api/v2/users`);
+  url.searchParams.set("q", "NOT _exists_:app_metadata.nationsID");
+  url.searchParams.set("search_engine", "v3");
+  url.searchParams.set("fields", "user_id,name,email");
+  url.searchParams.set("include_fields", "true");
+
+  const response = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+  if (!response.ok) {
+    await throwForResponse(response, "Failed to fetch users from Auth0");
+  }
+
+  const data = (await response.json()) as Array<{ user_id: string; name?: string; email?: string }>;
+  return data
+    .map((u) => ({ sub: u.user_id, name: u.name ?? u.email ?? u.user_id, email: u.email ?? "" }))
+    .sort((a, b) => a.name.localeCompare(b.name, "sv", { sensitivity: "base" }));
+}
+
+export async function assignNationsId(sub: string, nationsId: string): Promise<void> {
+  const domain = requireEnv("AUTH0_DOMAIN");
+  const token = await getManagementToken();
+  const response = await fetch(`https://${domain}/api/v2/users/${encodeURIComponent(sub)}`, {
+    method: "PATCH",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ app_metadata: { nationsID: nationsId } }),
+  });
+  if (!response.ok) {
+    await throwForResponse(response, "Failed to assign nationsID");
+  }
+  usersCache.delete(nationsId);
+}
+
+// Permanently removes the Auth0 account — for pruning irrelevant/bogus join
+// requests out of the "users without a nation" list, not for offboarding a
+// real assigned user.
+export async function deleteUser(sub: string): Promise<void> {
+  const domain = requireEnv("AUTH0_DOMAIN");
+  const token = await getManagementToken();
+  const response = await fetch(`https://${domain}/api/v2/users/${encodeURIComponent(sub)}`, {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!response.ok) {
+    await throwForResponse(response, "Failed to delete user");
+  }
 }

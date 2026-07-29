@@ -1,5 +1,6 @@
 import type { ComponentType } from "react";
 import type { SvgIconProps } from "@mui/material/SvgIcon";
+import AdminPanelSettingsIcon from "@mui/icons-material/AdminPanelSettings";
 import ApartmentIcon from "@mui/icons-material/Apartment";
 import AssignmentTurnedInIcon from "@mui/icons-material/AssignmentTurnedIn";
 import DomainIcon from "@mui/icons-material/Domain";
@@ -24,6 +25,9 @@ export type NavLink = {
   description: string;
   icon: ComponentType<SvgIconProps>;
   group: NavGroupKey;
+  // Shows cross-nation data — hidden from nav for anyone without the admin
+  // role, unlike every other link here (which only gate inside the page).
+  adminOnly?: boolean;
 };
 
 export const NAV_GROUPS: Array<{ key: NavGroupKey; label: string }> = [
@@ -123,5 +127,13 @@ export const navLinks: NavLink[] = [
     description: "Gemensamma uppgifter med deadline, prioritet och ansvarig.",
     icon: ChecklistIcon,
     group: "gemensamt",
+  },
+  {
+    href: "/admin",
+    label: "Admin",
+    description: "Tabellinställningar per nation och nationsID-hantering.",
+    icon: AdminPanelSettingsIcon,
+    group: "gemensamt",
+    adminOnly: true,
   },
 ];

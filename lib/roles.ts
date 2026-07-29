@@ -1,3 +1,4 @@
+import { redirect } from "next/navigation";
 import type { User } from "@auth0/nextjs-auth0/types";
 
 // Auth0 doesn't put custom roles on the session by default — an Auth0
@@ -48,6 +49,15 @@ export function hasAnyRole(
   roles: string[]
 ): boolean {
   return roles.some((role) => hasRole(user, role));
+}
+
+// Page-level counterpart to requireNationsIdOrRedirect in lib/nations.ts —
+// the admin page shows cross-nation data, so anyone without the admin role
+// gets bounced rather than seeing it.
+export function requireAdminOrRedirect(user: User | null | undefined): void {
+  if (!hasRole(user, ROLES.ADMIN)) {
+    redirect("/");
+  }
 }
 
 // Human-readable identifier for audit trails (e.g. "who pressed this

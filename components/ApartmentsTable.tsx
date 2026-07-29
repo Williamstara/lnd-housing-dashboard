@@ -1,7 +1,7 @@
 "use client";
 
 import { useUser } from "@auth0/nextjs-auth0";
-import { useMemo, useState, useTransition } from "react";
+import { useMemo, useState, useTransition, type ReactNode } from "react";
 import AddIcon from "@mui/icons-material/Add";
 import DeleteIcon from "@mui/icons-material/Delete";
 import EditIcon from "@mui/icons-material/Edit";
@@ -54,6 +54,7 @@ import type {
   ApartmentStatus,
   TenantAssignmentInput,
 } from "@/lib/apartments";
+import type { TableColumnConfig } from "@/lib/table-columns";
 import ApartmentFormDialog from "@/components/ApartmentFormDialog";
 import ApartmentInterestDialog from "@/components/ApartmentInterestDialog";
 import { exportRowsToXlsx } from "@/lib/export-xlsx";
@@ -63,6 +64,7 @@ type Props = {
   apartments: Apartment[];
   fastigheter: string[];
   missedRentApartmentIds: string[];
+  columnSettings: TableColumnConfig[];
 };
 
 const currency = new Intl.NumberFormat("sv-SE", { maximumFractionDigits: 0 });
@@ -84,42 +86,18 @@ const STATUS_COLORS: Record<
   arkiverad: "default",
 };
 
-type ColumnKey =
-  | "lagenhetsnummer"
-  | "fastighet"
-  | "storlek"
-  | "objekttyp"
-  | "antalRum"
-  | "ledigFrom"
-  | "arshyra"
-  | "hyresrabatt"
-  | "hyresreduktion"
-  | "arshyraMedRed"
-  | "manadshyra"
-  | "status";
+// Built-in fields that need special formatting/alignment. Anything not
+// listed here (built-in or custom) renders as plain text, left-aligned.
+const CURRENCY_KEYS = new Set([
+  "arshyra",
+  "hyresrabatt",
+  "hyresreduktion",
+  "arshyraMedRed",
+  "manadshyra",
+]);
+const RIGHT_ALIGN_KEYS = new Set(["antalRum", ...CURRENCY_KEYS]);
 
-type Order = "asc" | "desc";
-
-const columns: Array<{
-  key: ColumnKey;
-  label: string;
-  align?: "right";
-}> = [
-  { key: "lagenhetsnummer", label: "Bostad" },
-  { key: "fastighet", label: "Fastighet" },
-  { key: "storlek", label: "Storlek" },
-  { key: "objekttyp", label: "Objekttyp" },
-  { key: "antalRum", label: "Antal rum", align: "right" },
-  { key: "ledigFrom", label: "Ledig fr.o.m." },
-  { key: "arshyra", label: "Årshyra", align: "right" },
-  { key: "hyresrabatt", label: "Hyresrabatt", align: "right" },
-  { key: "hyresreduktion", label: "H.red", align: "right" },
-  { key: "arshyraMedRed", label: "Årshyra med red.", align: "right" },
-  { key: "manadshyra", label: "Månadshyra", align: "right" },
-  { key: "status", label: "Status" },
-];
-
-const columnValue: Record<ColumnKey, (a: Apartment) => string | number> = {
+const builtInValue: Record<string, (a: Apartment) => string | number> = {
   lagenhetsnummer: (a) => a.lagenhetsnummer,
   fastighet: (a) => a.fastighet,
   storlek: (a) => a.storlek,
@@ -133,6 +111,11 @@ const columnValue: Record<ColumnKey, (a: Apartment) => string | number> = {
   manadshyra: (a) => a.manadshyra,
   status: (a) => STATUS_LABELS[a.status],
 };
+
+function getColumnValue(apartment: Apartment, col: TableColumnConfig): string | number {
+  if (col.isCustom) return apartment.custom?.[col.key] ?? "";
+  return builtInValue[col.key]?.(apartment) ?? "";
+}
 
 function compareValues(a: string | number, b: string | number): number {
   if (typeof a === "number" && typeof b === "number") return a - b;
@@ -159,10 +142,20 @@ function matchesSearch(apartment: Apartment, query: string): boolean {
   return haystack.includes(query);
 }
 
-export default function ApartmentsTable({ apartments, fastigheter, missedRentApartmentIds }: Props) {
+export default function ApartmentsTable({
+  apartments,
+  fastigheter,
+  missedRentApartmentIds,
+  columnSettings,
+}: Props) {
   const { user } = useUser();
   const isHusforman = hasRole(user, ROLES.HUSFORMAN);
   const missedRentIds = useMemo(() => new Set(missedRentApartmentIds), [missedRentApartmentIds]);
+  const visibleColumns = useMemo(() => columnSettings.filter((c) => c.visible), [columnSettings]);
+  const customFieldDefs = useMemo(
+    () => columnSettings.filter((c) => c.isCustom).map((c) => ({ key: c.key, label: c.label })),
+    [columnSettings]
+  );
 
   const [formOpen, setFormOpen] = useState(false);
   const [editingApartment, setEditingApartment] = useState<Apartment | null>(
@@ -184,8 +177,8 @@ export default function ApartmentsTable({ apartments, fastigheter, missedRentApa
 
   const [search, setSearch] = useState("");
   const [showHidden, setShowHidden] = useState(false);
-  const [orderBy, setOrderBy] = useState<ColumnKey>("ledigFrom");
-  const [order, setOrder] = useState<Order>("asc");
+  const [orderBy, setOrderBy] = useState<string>("ledigFrom");
+  const [order, setOrder] = useState<"asc" | "desc">("asc");
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(25);
 
@@ -196,17 +189,17 @@ export default function ApartmentsTable({ apartments, fastigheter, missedRentApa
         (showHidden || !apartment.hidden) && matchesSearch(apartment, query)
     );
     const direction = order === "asc" ? 1 : -1;
-    const getValue = columnValue[orderBy];
+    const orderCol = columnSettings.find((c) => c.key === orderBy) ?? columnSettings[0];
     return filtered.sort(
-      (a, b) => direction * compareValues(getValue(a), getValue(b))
+      (a, b) => direction * compareValues(getColumnValue(a, orderCol), getColumnValue(b, orderCol))
     );
-  }, [apartments, search, showHidden, orderBy, order]);
+  }, [apartments, search, showHidden, orderBy, order, columnSettings]);
 
-  function handleSort(column: ColumnKey) {
-    if (orderBy === column) {
+  function handleSort(col: TableColumnConfig) {
+    if (orderBy === col.key) {
       setOrder((prev) => (prev === "asc" ? "desc" : "asc"));
     } else {
-      setOrderBy(column);
+      setOrderBy(col.key);
       setOrder("asc");
     }
     setPage(0);
@@ -284,11 +277,62 @@ export default function ApartmentsTable({ apartments, fastigheter, missedRentApa
   function handleExport() {
     exportRowsToXlsx(
       `lediga-lagenheter-${new Date().toISOString().slice(0, 10)}.xlsx`,
-      columns.map((c) => c.label),
+      visibleColumns.map((c) => c.label),
       visibleApartments.map((apartment) =>
-        columns.map((c) => columnValue[c.key](apartment))
+        visibleColumns.map((c) => getColumnValue(apartment, c))
       )
     );
+  }
+
+  function renderCell(apartment: Apartment, col: TableColumnConfig): ReactNode {
+    if (!col.isCustom && col.key === "status") {
+      return (
+        <>
+          <Stack direction="row" sx={{ flexWrap: "wrap", gap: 0.5 }}>
+            <Chip
+              label={STATUS_LABELS[apartment.status]}
+              color={STATUS_COLORS[apartment.status]}
+              size="small"
+            />
+            {apartment.hidden && <Chip label="Dold" size="small" />}
+            {missedRentIds.has(apartment.id) && (
+              <Chip
+                label="Missad hyra"
+                color="error"
+                size="small"
+                sx={{ fontSize: "0.6875rem" }}
+              />
+            )}
+          </Stack>
+          {apartment.status === "ledig" && apartment.hyresgastNamn && (
+            <Box sx={{ mt: 0.5 }}>
+              <Typography variant="caption" color="text.secondary">
+                Intresserad: {apartment.hyresgastNamn}
+              </Typography>
+            </Box>
+          )}
+          {apartment.status === "kontaktad" && (
+            <Box sx={{ mt: 0.5 }}>
+              <Typography variant="caption" color="text.secondary">
+                {apartment.kontaktperson} — svar senast {apartment.svarSenast}
+              </Typography>
+            </Box>
+          )}
+          {apartment.status === "redo_for_kontrakt" && apartment.hyresgastNamn && (
+            <Box sx={{ mt: 0.5 }}>
+              <Typography variant="caption" color="text.secondary">
+                {apartment.hyresgastNamn}
+              </Typography>
+            </Box>
+          )}
+        </>
+      );
+    }
+    const value = getColumnValue(apartment, col);
+    if (!col.isCustom && CURRENCY_KEYS.has(col.key)) {
+      return currency.format(Number(value));
+    }
+    return value;
   }
 
   return (
@@ -356,21 +400,21 @@ export default function ApartmentsTable({ apartments, fastigheter, missedRentApa
         >
           <TableHead>
             <TableRow>
-              {columns.map((column) => (
+              {visibleColumns.map((col) => (
                 <TableCell
-                  key={column.key}
-                  align={column.align}
-                  sortDirection={orderBy === column.key ? order : false}
+                  key={col.key}
+                  align={RIGHT_ALIGN_KEYS.has(col.key) ? "right" : undefined}
+                  sortDirection={orderBy === col.key ? order : false}
                   sx={
-                    column.key === "fastighet" ? { maxWidth: 160 } : undefined
+                    !col.isCustom && col.key === "fastighet" ? { maxWidth: 160 } : undefined
                   }
                 >
                   <TableSortLabel
-                    active={orderBy === column.key}
-                    direction={orderBy === column.key ? order : "asc"}
-                    onClick={() => handleSort(column.key)}
+                    active={orderBy === col.key}
+                    direction={orderBy === col.key ? order : "asc"}
+                    onClick={() => handleSort(col)}
                   >
-                    {column.label}
+                    {col.label}
                   </TableSortLabel>
                 </TableCell>
               ))}
@@ -380,7 +424,7 @@ export default function ApartmentsTable({ apartments, fastigheter, missedRentApa
           <TableBody>
             {visibleApartments.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={columns.length + 1} align="center">
+                <TableCell colSpan={visibleColumns.length + 1} align="center">
                   {apartments.length === 0
                     ? "Inga lediga lägenheter just nu."
                     : "Inga träffar."}
@@ -397,69 +441,19 @@ export default function ApartmentsTable({ apartments, fastigheter, missedRentApa
                     apartment.hidden ? { opacity: 0.5 } : null,
                   ]}
                 >
-                  <TableCell>{apartment.lagenhetsnummer}</TableCell>
-                  <TableCell sx={{ maxWidth: 160, whiteSpace: "normal" }}>
-                    {apartment.fastighet}
-                  </TableCell>
-                  <TableCell>{apartment.storlek}</TableCell>
-                  <TableCell>{apartment.objekttyp}</TableCell>
-                  <TableCell align="right">{apartment.antalRum}</TableCell>
-                  <TableCell>{apartment.ledigFrom}</TableCell>
-                  <TableCell align="right">
-                    {currency.format(apartment.arshyra)}
-                  </TableCell>
-                  <TableCell align="right">
-                    {currency.format(apartment.hyresrabatt)}
-                  </TableCell>
-                  <TableCell align="right">
-                    {currency.format(apartment.hyresreduktion)}
-                  </TableCell>
-                  <TableCell align="right">
-                    {currency.format(apartment.arshyraMedRed)}
-                  </TableCell>
-                  <TableCell align="right">
-                    {currency.format(apartment.manadshyra)}
-                  </TableCell>
-                  <TableCell>
-                    <Stack direction="row" sx={{ flexWrap: "wrap", gap: 0.5 }}>
-                      <Chip
-                        label={STATUS_LABELS[apartment.status]}
-                        color={STATUS_COLORS[apartment.status]}
-                        size="small"
-                      />
-                      {apartment.hidden && <Chip label="Dold" size="small" />}
-                      {missedRentIds.has(apartment.id) && (
-                        <Chip
-                          label="Missad hyra"
-                          color="error"
-                          size="small"
-                          sx={{ fontSize: "0.6875rem" }}
-                        />
-                      )}
-                    </Stack>
-                    {apartment.status === "ledig" && apartment.hyresgastNamn && (
-                      <Box sx={{ mt: 0.5 }}>
-                        <Typography variant="caption" color="text.secondary">
-                          Intresserad: {apartment.hyresgastNamn}
-                        </Typography>
-                      </Box>
-                    )}
-                    {apartment.status === "kontaktad" && (
-                      <Box sx={{ mt: 0.5 }}>
-                        <Typography variant="caption" color="text.secondary">
-                          {apartment.kontaktperson} — svar senast{" "}
-                          {apartment.svarSenast}
-                        </Typography>
-                      </Box>
-                    )}
-                    {apartment.status === "redo_for_kontrakt" && apartment.hyresgastNamn && (
-                      <Box sx={{ mt: 0.5 }}>
-                        <Typography variant="caption" color="text.secondary">
-                          {apartment.hyresgastNamn}
-                        </Typography>
-                      </Box>
-                    )}
-                  </TableCell>
+                  {visibleColumns.map((col) => (
+                    <TableCell
+                      key={col.key}
+                      align={RIGHT_ALIGN_KEYS.has(col.key) ? "right" : undefined}
+                      sx={
+                        !col.isCustom && col.key === "fastighet"
+                          ? { maxWidth: 160, whiteSpace: "normal" }
+                          : undefined
+                      }
+                    >
+                      {renderCell(apartment, col)}
+                    </TableCell>
+                  ))}
                   <TableCell align="right">
                     <Stack direction="row" sx={{ justifyContent: "flex-end" }}>
                       {(apartment.status === "ledig" ||
@@ -565,6 +559,7 @@ export default function ApartmentsTable({ apartments, fastigheter, missedRentApa
         open={formOpen}
         apartment={editingApartment}
         fastigheter={fastigheter}
+        customFieldDefs={customFieldDefs}
         onClose={() => setFormOpen(false)}
         onSubmit={handleFormSubmit}
         onLookupSpecs={lookupApartmentSpecsAction}

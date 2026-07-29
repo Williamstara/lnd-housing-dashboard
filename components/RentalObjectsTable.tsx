@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useMemo, useState, useTransition, type ReactNode } from "react";
 import AddIcon from "@mui/icons-material/Add";
 import DeleteIcon from "@mui/icons-material/Delete";
 import EditIcon from "@mui/icons-material/Edit";
@@ -34,41 +34,40 @@ import {
 } from "@/app/databas/actions";
 import { exportRowsToXlsx } from "@/lib/export-xlsx";
 import type { RentalObject, RentalObjectInput } from "@/lib/rentalobjects";
+import type { TableColumnConfig } from "@/lib/table-columns";
 import RentalObjectExcelImport from "@/components/RentalObjectExcelImport";
 import RentalObjectFormDialog from "@/components/RentalObjectFormDialog";
 
-type Props = { objects: RentalObject[]; fastigheter: string[] };
+type Props = {
+  objects: RentalObject[];
+  fastigheter: string[];
+  columnSettings: TableColumnConfig[];
+};
 
-type ColKey =
-  | "lagenhetsnummer"
-  | "fastighet"
-  | "typ"
-  | "area"
-  | "areaInkKorr"
-  | "malbildshyra"
-  | "renoveringsbehov"
-  | "hyresrabatt"
-  | "hyresred"
-  | "individuellArshyra"
-  | "manadshyra";
+// Built-in numeric fields — null renders as "—", and the currency subset
+// gets sv-SE thousands formatting. Everything else (built-in or custom)
+// renders as plain text.
+const CURRENCY_KEYS = new Set([
+  "malbildshyra",
+  "hyresrabatt",
+  "hyresred",
+  "individuellArshyra",
+  "manadshyra",
+]);
+const NUMERIC_KEYS = new Set(["area", "areaInkKorr", "renoveringsbehov", ...CURRENCY_KEYS]);
 
-type Order = "asc" | "desc";
+const rawNumericValue: Record<string, (o: RentalObject) => number | null> = {
+  area: (o) => o.area,
+  areaInkKorr: (o) => o.areaInkKorr,
+  malbildshyra: (o) => o.malbildshyra,
+  renoveringsbehov: (o) => o.renoveringsbehov,
+  hyresrabatt: (o) => o.hyresrabatt,
+  hyresred: (o) => o.hyresred,
+  individuellArshyra: (o) => o.individuellArshyra,
+  manadshyra: (o) => o.manadshyra,
+};
 
-const columns: Array<{ key: ColKey; label: string; align?: "right" }> = [
-  { key: "lagenhetsnummer", label: "Lägenhetsnummer" },
-  { key: "fastighet", label: "Fastighet" },
-  { key: "typ", label: "Typ" },
-  { key: "area", label: "Area (m²)", align: "right" },
-  { key: "areaInkKorr", label: "Ink korr", align: "right" },
-  { key: "malbildshyra", label: "Målbildshyra", align: "right" },
-  { key: "renoveringsbehov", label: "Renov", align: "right" },
-  { key: "hyresrabatt", label: "Hyresrabatt", align: "right" },
-  { key: "hyresred", label: "Hyresred", align: "right" },
-  { key: "individuellArshyra", label: "Individuell år", align: "right" },
-  { key: "manadshyra", label: "Månadshyra", align: "right" },
-];
-
-const colValue: Record<ColKey, (o: RentalObject) => string | number> = {
+const builtInValue: Record<string, (o: RentalObject) => string | number> = {
   lagenhetsnummer: (o) => o.lagenhetsnummer,
   fastighet: (o) => o.fastighet,
   typ: (o) => o.typ ?? "",
@@ -81,6 +80,11 @@ const colValue: Record<ColKey, (o: RentalObject) => string | number> = {
   individuellArshyra: (o) => o.individuellArshyra ?? 0,
   manadshyra: (o) => o.manadshyra ?? 0,
 };
+
+function getColumnValue(o: RentalObject, col: TableColumnConfig): string | number {
+  if (col.isCustom) return o.custom?.[col.key] ?? "";
+  return builtInValue[col.key]?.(o) ?? "";
+}
 
 function compare(a: string | number, b: string | number) {
   if (typeof a === "number" && typeof b === "number") return a - b;
@@ -98,14 +102,10 @@ function matchesSearch(o: RentalObject, q: string): boolean {
 
 const currency = new Intl.NumberFormat("sv-SE", { maximumFractionDigits: 0 });
 
-function fmtNum(v: number | null): string {
-  return v != null ? currency.format(v) : "—";
-}
-
-export default function RentalObjectsTable({ objects, fastigheter }: Props) {
+export default function RentalObjectsTable({ objects, fastigheter, columnSettings }: Props) {
   const [search, setSearch] = useState("");
-  const [orderBy, setOrderBy] = useState<ColKey>("lagenhetsnummer");
-  const [order, setOrder] = useState<Order>("asc");
+  const [orderBy, setOrderBy] = useState("lagenhetsnummer");
+  const [order, setOrder] = useState<"asc" | "desc">("asc");
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(25);
   const [importOpen, setImportOpen] = useState(false);
@@ -116,17 +116,23 @@ export default function RentalObjectsTable({ objects, fastigheter }: Props) {
   const [deletingLabel, setDeletingLabel] = useState("");
   const [isDeleting, startDeleteTransition] = useTransition();
 
+  const visibleColumns = useMemo(() => columnSettings.filter((c) => c.visible), [columnSettings]);
+  const customFieldDefs = useMemo(
+    () => columnSettings.filter((c) => c.isCustom).map((c) => ({ key: c.key, label: c.label })),
+    [columnSettings]
+  );
+
   const visible = useMemo(() => {
     const q = search.trim().toLocaleLowerCase("sv");
     const filtered = objects.filter((o) => matchesSearch(o, q));
     const dir = order === "asc" ? 1 : -1;
-    const get = colValue[orderBy];
-    return filtered.sort((a, b) => dir * compare(get(a), get(b)));
-  }, [objects, search, orderBy, order]);
+    const orderCol = columnSettings.find((c) => c.key === orderBy) ?? columnSettings[0];
+    return filtered.sort((a, b) => dir * compare(getColumnValue(a, orderCol), getColumnValue(b, orderCol)));
+  }, [objects, search, orderBy, order, columnSettings]);
 
-  function handleSort(col: ColKey) {
-    if (orderBy === col) setOrder((p) => (p === "asc" ? "desc" : "asc"));
-    else { setOrderBy(col); setOrder("asc"); }
+  function handleSort(col: TableColumnConfig) {
+    if (orderBy === col.key) setOrder((p) => (p === "asc" ? "desc" : "asc"));
+    else { setOrderBy(col.key); setOrder("asc"); }
     setPage(0);
   }
 
@@ -162,9 +168,21 @@ export default function RentalObjectsTable({ objects, fastigheter }: Props) {
   function handleExport() {
     exportRowsToXlsx(
       `databas-${new Date().toISOString().slice(0, 10)}.xlsx`,
-      columns.map((c) => c.label),
-      visible.map((o) => columns.map((c) => colValue[c.key](o)))
+      visibleColumns.map((c) => c.label),
+      visible.map((o) => visibleColumns.map((c) => getColumnValue(o, c)))
     );
+  }
+
+  function renderCell(o: RentalObject, col: TableColumnConfig): ReactNode {
+    if (!col.isCustom && NUMERIC_KEYS.has(col.key)) {
+      const raw = rawNumericValue[col.key]!(o);
+      if (raw == null) return "—";
+      return CURRENCY_KEYS.has(col.key) ? currency.format(raw) : raw;
+    }
+    if (!col.isCustom && col.key === "typ") {
+      return o.typ || "—";
+    }
+    return getColumnValue(o, col);
   }
 
   return (
@@ -223,16 +241,16 @@ export default function RentalObjectsTable({ objects, fastigheter }: Props) {
         >
           <TableHead>
             <TableRow>
-              {columns.map((col) => (
+              {visibleColumns.map((col) => (
                 <TableCell
                   key={col.key}
-                  align={col.align}
+                  align={NUMERIC_KEYS.has(col.key) ? "right" : undefined}
                   sortDirection={orderBy === col.key ? order : false}
                 >
                   <TableSortLabel
                     active={orderBy === col.key}
                     direction={orderBy === col.key ? order : "asc"}
-                    onClick={() => handleSort(col.key)}
+                    onClick={() => handleSort(col)}
                   >
                     {col.label}
                   </TableSortLabel>
@@ -244,7 +262,7 @@ export default function RentalObjectsTable({ objects, fastigheter }: Props) {
           <TableBody>
             {visible.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={columns.length + 1} align="center">
+                <TableCell colSpan={visibleColumns.length + 1} align="center">
                   {objects.length === 0
                     ? "Inga hyresobjekt. Importera från Excel för att komma igång."
                     : "Inga träffar."}
@@ -255,17 +273,11 @@ export default function RentalObjectsTable({ objects, fastigheter }: Props) {
                 .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
                 .map((o) => (
                   <TableRow key={o.id}>
-                    <TableCell>{o.lagenhetsnummer}</TableCell>
-                    <TableCell>{o.fastighet}</TableCell>
-                    <TableCell>{o.typ || "—"}</TableCell>
-                    <TableCell align="right">{o.area ?? "—"}</TableCell>
-                    <TableCell align="right">{o.areaInkKorr ?? "—"}</TableCell>
-                    <TableCell align="right">{fmtNum(o.malbildshyra)}</TableCell>
-                    <TableCell align="right">{o.renoveringsbehov ?? "—"}</TableCell>
-                    <TableCell align="right">{fmtNum(o.hyresrabatt)}</TableCell>
-                    <TableCell align="right">{fmtNum(o.hyresred)}</TableCell>
-                    <TableCell align="right">{fmtNum(o.individuellArshyra)}</TableCell>
-                    <TableCell align="right">{fmtNum(o.manadshyra)}</TableCell>
+                    {visibleColumns.map((col) => (
+                      <TableCell key={col.key} align={NUMERIC_KEYS.has(col.key) ? "right" : undefined}>
+                        {renderCell(o, col)}
+                      </TableCell>
+                    ))}
                     <TableCell align="right">
                       <IconButton
                         aria-label="Redigera"
@@ -308,6 +320,7 @@ export default function RentalObjectsTable({ objects, fastigheter }: Props) {
         open={formOpen}
         object={editingObject}
         fastigheter={fastigheter}
+        customFieldDefs={customFieldDefs}
         onClose={() => setFormOpen(false)}
         onSubmit={handleFormSubmit}
       />

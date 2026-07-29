@@ -27,11 +27,16 @@ export type RentalObject = {
   individuellArshyra: number | null;
   manadshyra: number | null;
   planritning: string | null;
+  // Nation-defined free-text fields (e.g. "notes") configured via the admin
+  // page — never read by any calculation, purely stored and displayed.
+  custom: Record<string, string>;
 };
 
-export type RentalObjectInput = Omit<RentalObject, "id">;
+export type RentalObjectInput = Omit<RentalObject, "id" | "custom"> & {
+  custom?: Record<string, string>;
+};
 
-type RentalObjectDocument = RentalObjectInput & { nationsID: string };
+type RentalObjectDocument = Omit<RentalObject, "id"> & { nationsID: string };
 
 async function getCollection() {
   const db = await getDb();
@@ -53,6 +58,7 @@ function mapDoc(doc: RentalObjectDocument & { _id: ObjectId }): RentalObject {
     individuellArshyra: doc.individuellArshyra ?? null,
     manadshyra: doc.manadshyra ?? null,
     planritning: doc.planritning ?? null,
+    custom: doc.custom ?? {},
   };
 }
 
@@ -67,7 +73,8 @@ export async function getRentalObjects(nationsId: string): Promise<RentalObject[
 
 export async function createRentalObject(nationsId: string, input: RentalObjectInput): Promise<string> {
   const col = await getCollection();
-  const result = await col.insertOne({ ...input, nationsID: nationsId } as RentalObjectDocument);
+  const doc: RentalObjectDocument = { ...input, nationsID: nationsId, custom: input.custom ?? {} };
+  const result = await col.insertOne(doc);
   return result.insertedId.toString();
 }
 

@@ -69,6 +69,7 @@ type Props = {
   open: boolean;
   apartment: Apartment | null;
   fastigheter: string[];
+  customFieldDefs?: Array<{ key: string; label: string }>;
   onClose: () => void;
   onSubmit: (input: ApartmentInput) => Promise<void>;
   onLookupSpecs: (lagenhetsnummer: string) => Promise<ApartmentSpecs | null>;
@@ -78,6 +79,7 @@ export default function ApartmentFormDialog({
   open,
   apartment,
   fastigheter,
+  customFieldDefs = [],
   onClose,
   onSubmit,
   onLookupSpecs,
@@ -100,6 +102,9 @@ export default function ApartmentFormDialog({
     { key: "manadshyra", label: "Månadshyra (kr)", type: "number" },
   ];
   const [form, setForm] = useState<FormValues>(() => toFormValues(apartment));
+  const [customValues, setCustomValues] = useState<Record<string, string>>(
+    () => apartment?.custom ?? {}
+  );
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
   const [lookupMessage, setLookupMessage] = useState<string | null>(null);
@@ -176,6 +181,7 @@ export default function ApartmentFormDialog({
           hyresreduktion: Number(form.hyresreduktion),
           arshyraMedRed: Number(form.arshyraMedRed),
           manadshyra: Number(form.manadshyra),
+          custom: customValues,
         });
         onClose();
       } catch {
@@ -242,6 +248,23 @@ export default function ApartmentFormDialog({
               </Grid>
             ))}
           </Grid>
+          {customFieldDefs.length > 0 && (
+            <Grid container spacing={2}>
+              {customFieldDefs.map(({ key, label }) => (
+                <Grid key={key} size={{ xs: 12, sm: 6 }}>
+                  <TextField
+                    label={label}
+                    value={customValues[key] ?? ""}
+                    onChange={(e) =>
+                      setCustomValues((prev) => ({ ...prev, [key]: e.target.value }))
+                    }
+                    disabled={isPending}
+                    fullWidth
+                  />
+                </Grid>
+              ))}
+            </Grid>
+          )}
         </Stack>
       </DialogContent>
       <DialogActions>

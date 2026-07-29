@@ -20,9 +20,12 @@ export type ApartmentInput = {
   hyresreduktion: number;
   arshyraMedRed: number;
   manadshyra: number;
+  // Nation-defined free-text fields (e.g. "notes") configured via the admin
+  // page — never read by any calculation, purely stored and displayed.
+  custom?: Record<string, string>;
 };
 
-export type ApartmentSpecs = Omit<ApartmentInput, "lagenhetsnummer" | "ledigFrom">;
+export type ApartmentSpecs = Omit<ApartmentInput, "lagenhetsnummer" | "ledigFrom" | "custom">;
 
 export type ContactInput = {
   kontaktperson: string;
@@ -43,6 +46,7 @@ export type Apartment = ApartmentInput & {
   hidden: boolean;
   nyckelInlamnad: boolean;
   nyckelHamtad: boolean;
+  custom: Record<string, string>;
   kontaktperson?: string;
   svarSenast?: string;
   hyresgastNamn?: string;
@@ -83,6 +87,7 @@ function mapDoc(doc: ApartmentDoc & { _id: ObjectId }): Apartment {
     hidden: doc.hidden ?? false,
     nyckelInlamnad: doc.nyckelInlamnad ?? false,
     nyckelHamtad: doc.nyckelHamtad ?? false,
+    custom: doc.custom ?? {},
     kontaktperson: doc.kontaktperson,
     svarSenast: doc.svarSenast,
     hyresgastNamn: doc.hyresgastNamn,
@@ -175,6 +180,7 @@ export async function createApartment(nationsId: string, input: ApartmentInput):
     hidden: false,
     nyckelInlamnad: false,
     nyckelHamtad: false,
+    custom: input.custom ?? {},
   };
   const result = await col.insertOne(doc);
   return { ...doc, id: result.insertedId.toString() };

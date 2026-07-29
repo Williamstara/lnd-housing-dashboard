@@ -78,6 +78,7 @@ async function sanitizeApartmentInput(nationsId: string, input: ApartmentInput):
     hyresreduktion: Number(input.hyresreduktion),
     arshyraMedRed: Number(input.arshyraMedRed),
     manadshyra: Number(input.manadshyra),
+    custom: input.custom,
   };
 
   if (

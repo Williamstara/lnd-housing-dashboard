@@ -108,12 +108,23 @@ type Props = {
   open: boolean;
   object: RentalObject | null;
   fastigheter: string[];
+  customFieldDefs?: Array<{ key: string; label: string }>;
   onClose: () => void;
   onSubmit: (input: RentalObjectInput) => Promise<void>;
 };
 
-export default function RentalObjectFormDialog({ open, object, fastigheter, onClose, onSubmit }: Props) {
+export default function RentalObjectFormDialog({
+  open,
+  object,
+  fastigheter,
+  customFieldDefs = [],
+  onClose,
+  onSubmit,
+}: Props) {
   const [form, setForm] = useState<Form>(() => toForm(object));
+  const [customValues, setCustomValues] = useState<Record<string, string>>(
+    () => object?.custom ?? {}
+  );
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
@@ -158,7 +169,7 @@ export default function RentalObjectFormDialog({ open, object, fastigheter, onCl
     setError(null);
     startTransition(async () => {
       try {
-        await onSubmit(toInput(form));
+        await onSubmit({ ...toInput(form), custom: customValues });
         onClose();
       } catch (err) {
         setError(err instanceof Error ? err.message : "Något gick fel.");
@@ -291,6 +302,17 @@ export default function RentalObjectFormDialog({ open, object, fastigheter, onCl
               {manadshyraDisplay} kr
             </Typography>
           </Box>
+
+          {customFieldDefs.map(({ key, label }) => (
+            <TextField
+              key={key}
+              label={label}
+              value={customValues[key] ?? ""}
+              onChange={(e) => setCustomValues((prev) => ({ ...prev, [key]: e.target.value }))}
+              disabled={isPending}
+              fullWidth
+            />
+          ))}
         </Stack>
       </DialogContent>
 

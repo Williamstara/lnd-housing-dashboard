@@ -1,5 +1,6 @@
 "use client";
 
+import { useUser } from "@auth0/nextjs-auth0";
 import Box from "@mui/material/Box";
 import Card from "@mui/material/Card";
 import CardActionArea from "@mui/material/CardActionArea";
@@ -9,8 +10,13 @@ import Typography from "@mui/material/Typography";
 import { alpha } from "@mui/material/styles";
 import Link from "next/link";
 import { navLinks } from "@/lib/nav-links";
+import { ROLES, hasRole } from "@/lib/roles";
 
 export default function NavGrid() {
+  const { user } = useUser();
+  const isAdmin = hasRole(user, ROLES.ADMIN);
+  const visibleLinks = navLinks.filter((link) => !link.adminOnly || isAdmin);
+
   return (
     <Box
       sx={{
@@ -23,7 +29,7 @@ export default function NavGrid() {
         },
       }}
     >
-      {navLinks.map((link) => (
+      {visibleLinks.map((link) => (
         <Card
           key={link.href}
           variant="outlined"
