@@ -7,6 +7,8 @@ import { Auth0Provider } from "@auth0/nextjs-auth0";
 import { auth0 } from "@/lib/auth0";
 import theme from "@/lib/theme";
 import NavBar from "@/components/NavBar";
+import Footer from "@/components/Footer";
+import CookieConsentBanner from "@/components/CookieConsentBanner";
 import "./globals.css";
 
 const montserrat = Montserrat({
@@ -36,6 +38,8 @@ export default async function RootLayout({
             <Auth0Provider user={session?.user}>
               <NavBar />
               <main className="flex flex-1 flex-col">{children}</main>
+              <Footer />
+              <CookieConsentBanner />
             </Auth0Provider>
           </ThemeProvider>
         </AppRouterCacheProvider>

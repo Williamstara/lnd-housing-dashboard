@@ -9,7 +9,7 @@ import { getNationsId } from "@/lib/nations";
 // /admin is excluded too — an admin's own account may have no nationsID
 // (they manage every nation, not one), and without this they'd get bounced
 // to /nationsid-saknas before ever reaching the admin page.
-const SKIP_NATIONS_CHECK = ["/api", "/auth", "/nationsid-saknas", "/admin"];
+const SKIP_NATIONS_CHECK = ["/api", "/auth", "/nationsid-saknas", "/admin", "/policy"];
 
 function skipNationsCheck(pathname: string): boolean {
   return SKIP_NATIONS_CHECK.some((p) => pathname === p || pathname.startsWith(`${p}/`));
