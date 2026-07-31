@@ -20,6 +20,7 @@ export const ROLES = {
   ADMIN: "admin",
   HUSVD: "husvd",
   HUSFORMAN: "husforman",
+  VAKTMASTARE: "vaktmastare",
 } as const;
 
 // Shared by every "archive" action (Redo för kontrakt, Besiktningar, ...) —
@@ -49,6 +50,17 @@ export function hasAnyRole(
   roles: string[]
 ): boolean {
   return roles.some((role) => hasRole(user, role));
+}
+
+// vaktmästare is the one role that *narrows* access instead of adding to
+// it — a user whose only role is vaktmästare gets nothing but the todo
+// list (enforced in proxy.ts, and reflected in the nav in NavBar/NavGrid).
+// Holding any other role alongside it means normal full access applies
+// instead; this deliberately reads the raw roles claim rather than going
+// through hasRole(), so admin's superuser bypass doesn't apply here.
+export function isRestrictedToTodo(user: User | null | undefined): boolean {
+  const roles = getUserRoles(user);
+  return roles.length > 0 && roles.every((role) => role === ROLES.VAKTMASTARE);
 }
 
 // Page-level counterpart to requireNationsIdOrRedirect in lib/nations.ts —

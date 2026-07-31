@@ -1,11 +1,14 @@
 "use client";
 
 import { useUser } from "@auth0/nextjs-auth0";
-import { useMemo, useState, useTransition, type ChangeEvent } from "react";
+import { useMemo, useState, useTransition, type ChangeEvent, type ReactNode } from "react";
 import DeleteIcon from "@mui/icons-material/Delete";
 import FileDownloadIcon from "@mui/icons-material/FileDownload";
 import Alert from "@mui/material/Alert";
+import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
+import Card from "@mui/material/Card";
+import CardContent from "@mui/material/CardContent";
 import Dialog from "@mui/material/Dialog";
 import DialogActions from "@mui/material/DialogActions";
 import DialogContent from "@mui/material/DialogContent";
@@ -32,8 +35,10 @@ import {
   removeFromKontraktAction,
 } from "@/app/lediga-lagenheter/actions";
 import type { Apartment } from "@/lib/apartments";
+import ColumnVisibilityMenu from "@/components/ColumnVisibilityMenu";
 import { exportRowsToXlsx } from "@/lib/export-xlsx";
 import { ARCHIVE_ROLES, ROLES, hasAnyRole, hasRole } from "@/lib/roles";
+import { useColumnVisibility } from "@/lib/use-column-visibility";
 
 type Props = {
   apartments: Apartment[];
@@ -108,6 +113,14 @@ const columnValue: Record<ColumnKey, (a: Apartment) => string | number> = {
   kontraktSigneratDatum: (a) => a.kontraktSigneratDatum ?? "",
 };
 
+const CURRENCY_KEYS = new Set<ColumnKey>([
+  "arshyra",
+  "hyresrabatt",
+  "hyresreduktion",
+  "arshyraMedRed",
+  "manadshyra",
+]);
+
 function compareValues(a: string | number, b: string | number): number {
   if (typeof a === "number" && typeof b === "number") return a - b;
   return String(a).localeCompare(String(b), "sv", { sensitivity: "base" });
@@ -155,6 +168,8 @@ export default function ContractsReadyTable({ apartments }: Props) {
   );
   const [removeError, setRemoveError] = useState<string | null>(null);
   const [isRemoving, startRemoveTransition] = useTransition();
+  const { isVisible, toggle } = useColumnVisibility("redo-for-kontrakt");
+  const visibleColumnDefs = columns.filter((c) => isVisible(c.key));
 
   const visibleApartments = useMemo(() => {
     const query = search.trim().toLocaleLowerCase("sv");
@@ -220,6 +235,59 @@ export default function ContractsReadyTable({ apartments }: Props) {
     });
   }
 
+  function renderCellValue(apartment: Apartment, key: ColumnKey): ReactNode {
+    if (CURRENCY_KEYS.has(key)) {
+      return currency.format(columnValue[key](apartment) as number);
+    }
+    if (key === "kontraktSkickatDatum") {
+      return apartment.kontraktSkickatDatum ? (
+        <>
+          {apartment.kontraktSkickatDatum}
+          {apartment.kontraktSkickatAv && (
+            <Typography variant="caption" color="text.secondary" sx={{ display: "block" }}>
+              av {apartment.kontraktSkickatAv}
+            </Typography>
+          )}
+        </>
+      ) : isEkonomi ? (
+        <Button
+          size="small"
+          variant="outlined"
+          disabled={isPending}
+          onClick={() => sendContract(apartment.id)}
+        >
+          Kontrakt skickat
+        </Button>
+      ) : (
+        "Ej skickat"
+      );
+    }
+    if (key === "kontraktSigneratDatum") {
+      return apartment.kontraktSigneratDatum ? (
+        <>
+          {apartment.kontraktSigneratDatum}
+          {apartment.kontraktSigneratAv && (
+            <Typography variant="caption" color="text.secondary" sx={{ display: "block" }}>
+              av {apartment.kontraktSigneratAv}
+            </Typography>
+          )}
+        </>
+      ) : isEkonomi ? (
+        <Button
+          size="small"
+          variant="contained"
+          disabled={isPending || !apartment.kontraktSkickatDatum}
+          onClick={() => signContract(apartment.id)}
+        >
+          Kontrakt signerat
+        </Button>
+      ) : (
+        "Ej signerat"
+      );
+    }
+    return columnValue[key](apartment);
+  }
+
   function handleExport() {
     exportRowsToXlsx(
       `redo-for-kontrakt-${new Date().toISOString().slice(0, 10)}.xlsx`,
@@ -236,18 +304,20 @@ export default function ContractsReadyTable({ apartments }: Props) {
     <>
       <Stack
         direction="row"
-        sx={{ justifyContent: "space-between", alignItems: "center", mb: 3, gap: 2 }}
+        sx={{ justifyContent: "space-between", alignItems: "center", mb: 3, gap: 2, flexWrap: "wrap" }}
       >
         <Typography variant="h4" component="h1" sx={{ fontWeight: 600 }}>
           Redo för kontrakt
         </Typography>
-        <Button
-          variant="outlined"
-          startIcon={<FileDownloadIcon />}
-          onClick={handleExport}
-        >
-          Exportera
-        </Button>
+        <Stack direction="row" sx={{ gap: 1 }}>
+          <Button
+            variant="outlined"
+            startIcon={<FileDownloadIcon />}
+            onClick={handleExport}
+          >
+            Exportera
+          </Button>
+        </Stack>
       </Stack>
 
       <Stack
@@ -298,11 +368,15 @@ export default function ContractsReadyTable({ apartments }: Props) {
         </Alert>
       )}
 
+      <Box sx={{ display: { xs: "none", sm: "block" } }}>
       <TableContainer component={Paper}>
         <Table aria-label="Redo för kontrakt" size="small">
           <TableHead>
             <TableRow>
-              {columns.map((column) => (
+              <TableCell padding="checkbox">
+                <ColumnVisibilityMenu columns={columns} isVisible={isVisible} onToggle={toggle} />
+              </TableCell>
+              {visibleColumnDefs.map((column) => (
                 <TableCell
                   key={column.key}
                   align={column.align}
@@ -324,7 +398,7 @@ export default function ContractsReadyTable({ apartments }: Props) {
             {visibleApartments.length === 0 ? (
               <TableRow>
                 <TableCell
-                  colSpan={columns.length + (isHusforman ? 1 : 0)}
+                  colSpan={visibleColumnDefs.length + (isHusforman ? 1 : 0) + 1}
                   align="center"
                 >
                   {apartments.length === 0
@@ -335,79 +409,12 @@ export default function ContractsReadyTable({ apartments }: Props) {
             ) : (
               visibleApartments.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage).map((apartment) => (
                 <TableRow key={apartment.id}>
-                  <TableCell>{apartment.lagenhetsnummer}</TableCell>
-                  <TableCell>{apartment.fastighet}</TableCell>
-                  <TableCell>{apartment.storlek}</TableCell>
-                  <TableCell>{apartment.objekttyp}</TableCell>
-                  <TableCell align="right">{apartment.antalRum}</TableCell>
-                  <TableCell>{apartment.ledigFrom}</TableCell>
-                  <TableCell align="right">
-                    {currency.format(apartment.arshyra)}
-                  </TableCell>
-                  <TableCell align="right">
-                    {currency.format(apartment.hyresrabatt)}
-                  </TableCell>
-                  <TableCell align="right">
-                    {currency.format(apartment.hyresreduktion)}
-                  </TableCell>
-                  <TableCell align="right">
-                    {currency.format(apartment.arshyraMedRed)}
-                  </TableCell>
-                  <TableCell align="right">
-                    {currency.format(apartment.manadshyra)}
-                  </TableCell>
-                  <TableCell>{apartment.hyresgastNamn}</TableCell>
-                  <TableCell>{apartment.personnummer}</TableCell>
-                  <TableCell>{apartment.epost}</TableCell>
-                  <TableCell>{apartment.telefonnummer}</TableCell>
-                  <TableCell>{apartment.kontonummer}</TableCell>
-                  <TableCell>{apartment.klartFranHusfmDatum}</TableCell>
-                  <TableCell>
-                    {apartment.kontraktSkickatDatum ? (
-                      <>
-                        {apartment.kontraktSkickatDatum}
-                        {apartment.kontraktSkickatAv && (
-                          <Typography variant="caption" color="text.secondary" sx={{ display: "block" }}>
-                            av {apartment.kontraktSkickatAv}
-                          </Typography>
-                        )}
-                      </>
-                    ) : isEkonomi ? (
-                      <Button
-                        size="small"
-                        variant="outlined"
-                        disabled={isPending}
-                        onClick={() => sendContract(apartment.id)}
-                      >
-                        Kontrakt skickat
-                      </Button>
-                    ) : (
-                      "Ej skickat"
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    {apartment.kontraktSigneratDatum ? (
-                      <>
-                        {apartment.kontraktSigneratDatum}
-                        {apartment.kontraktSigneratAv && (
-                          <Typography variant="caption" color="text.secondary" sx={{ display: "block" }}>
-                            av {apartment.kontraktSigneratAv}
-                          </Typography>
-                        )}
-                      </>
-                    ) : isEkonomi ? (
-                      <Button
-                        size="small"
-                        variant="contained"
-                        disabled={isPending || !apartment.kontraktSkickatDatum}
-                        onClick={() => signContract(apartment.id)}
-                      >
-                        Kontrakt signerat
-                      </Button>
-                    ) : (
-                      "Ej signerat"
-                    )}
-                  </TableCell>
+                  <TableCell padding="checkbox" />
+                  {visibleColumnDefs.map((column) => (
+                    <TableCell key={column.key} align={column.align}>
+                      {renderCellValue(apartment, column.key)}
+                    </TableCell>
+                  ))}
                   {isHusforman && (
                     <TableCell align="right">
                       <Tooltip
@@ -439,6 +446,72 @@ export default function ContractsReadyTable({ apartments }: Props) {
           </TableBody>
         </Table>
       </TableContainer>
+      </Box>
+
+      <Box sx={{ display: { xs: "block", sm: "none" } }}>
+        <Stack direction="row" sx={{ justifyContent: "flex-end", mb: 1 }}>
+          <ColumnVisibilityMenu columns={columns} isVisible={isVisible} onToggle={toggle} />
+        </Stack>
+        {visibleApartments.length === 0 ? (
+          <Typography variant="body2" color="text.secondary" sx={{ textAlign: "center", py: 4 }}>
+            {apartments.length === 0 ? "Inga lägenheter är redo för kontrakt just nu." : "Inga träffar."}
+          </Typography>
+        ) : (
+          <Stack spacing={1.5}>
+            {visibleApartments.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage).map((apartment) => (
+              <Card key={apartment.id} variant="outlined">
+                <CardContent sx={{ "&:last-child": { pb: 2 } }}>
+                  {isHusforman && (
+                    <Stack direction="row" sx={{ justifyContent: "flex-end", mb: 1 }}>
+                      <Tooltip
+                        title={
+                          apartment.kontraktSigneratDatum
+                            ? "Kontraktet är signerat och kan inte tas bort härifrån"
+                            : "Ta bort från Redo för kontrakt (lägger tillbaka som ledig)"
+                        }
+                      >
+                        <span>
+                          <IconButton
+                            aria-label="Ta bort från Redo för kontrakt"
+                            size="small"
+                            disabled={!!apartment.kontraktSigneratDatum}
+                            onClick={() => {
+                              setRemoveError(null);
+                              setRemovingApartment(apartment);
+                            }}
+                          >
+                            <DeleteIcon fontSize="small" />
+                          </IconButton>
+                        </span>
+                      </Tooltip>
+                    </Stack>
+                  )}
+                  <Box sx={{ display: "grid", gridTemplateColumns: "1fr 1fr", columnGap: 2, rowGap: 1 }}>
+                    {visibleColumnDefs.map((column) => (
+                      <Box
+                        key={column.key}
+                        sx={{
+                          minWidth: 0,
+                          gridColumn:
+                            column.key === "kontraktSkickatDatum" || column.key === "kontraktSigneratDatum"
+                              ? "1 / -1"
+                              : undefined,
+                        }}
+                      >
+                        <Typography variant="caption" color="text.secondary" sx={{ display: "block" }}>
+                          {column.label}
+                        </Typography>
+                        <Box sx={{ overflowWrap: "break-word" }}>{renderCellValue(apartment, column.key)}</Box>
+                      </Box>
+                    ))}
+                  </Box>
+                </CardContent>
+              </Card>
+            ))}
+          </Stack>
+        )}
+      </Box>
+
       <TablePagination
         component="div"
         count={visibleApartments.length}

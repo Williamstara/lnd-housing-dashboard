@@ -159,6 +159,64 @@ export async function markBetalningGjord(nationsId: string, id: string, utfordAv
   );
 }
 
+export type BulkActionResult = { updated: number; skipped: number };
+
+// Only touches rows not already marked, so re-running over an overlapping
+// selection is harmless — already-marked rows are simply counted as skipped
+// rather than having their date/utfordAv overwritten.
+export async function markKlarForBetalningBulk(
+  nationsId: string,
+  ids: string[],
+  utfordAv: string
+): Promise<BulkActionResult> {
+  const col = await getCollection();
+  const objectIds = ids.map((id) => new ObjectId(id));
+  const result = await col.updateMany(
+    { _id: { $in: objectIds }, nationsID: nationsId, klarForBetalningDatum: null },
+    { $set: { klarForBetalningDatum: new Date().toISOString().slice(0, 10), klarForBetalningAv: utfordAv } }
+  );
+  return { updated: result.modifiedCount, skipped: ids.length - result.modifiedCount };
+}
+
+// Mirrors the single-row rule (payment can't be marked done before it's
+// marked ready) — rows missing klarForBetalningDatum are skipped, not errored.
+export async function markBetalningGjordBulk(
+  nationsId: string,
+  ids: string[],
+  utfordAv: string
+): Promise<BulkActionResult> {
+  const col = await getCollection();
+  const objectIds = ids.map((id) => new ObjectId(id));
+  const result = await col.updateMany(
+    {
+      _id: { $in: objectIds },
+      nationsID: nationsId,
+      klarForBetalningDatum: { $ne: null },
+      betalningGjordDatum: null,
+    },
+    { $set: { betalningGjordDatum: new Date().toISOString().slice(0, 10), betalningGjordAv: utfordAv } }
+  );
+  return { updated: result.modifiedCount, skipped: ids.length - result.modifiedCount };
+}
+
+// Mirrors archiveBesiktning's rule (payment must be done first) but skips
+// ineligible rows instead of throwing, since a bulk selection commonly mixes
+// ready and not-yet-ready rows.
+export async function archiveBesiktningarBulk(nationsId: string, ids: string[]): Promise<BulkActionResult> {
+  const col = await getCollection();
+  const objectIds = ids.map((id) => new ObjectId(id));
+  const result = await col.updateMany(
+    {
+      _id: { $in: objectIds },
+      nationsID: nationsId,
+      betalningGjordDatum: { $ne: null },
+      status: { $ne: "arkiverad" },
+    },
+    { $set: { status: "arkiverad" as BesiktningStatus } }
+  );
+  return { updated: result.modifiedCount, skipped: ids.length - result.modifiedCount };
+}
+
 // Upserts one row per (lägenhetsnummer, besiktningsdatum) among non-archived
 // besiktningar — matches an existing row from the Excel import and updates
 // it, or creates a new "aktiv" row if none matches.

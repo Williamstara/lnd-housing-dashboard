@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, useTransition } from "react";
+import { useMemo, useRef, useState, useTransition } from "react";
 import UploadFileIcon from "@mui/icons-material/UploadFile";
 import Alert from "@mui/material/Alert";
 import Box from "@mui/material/Box";
@@ -20,6 +20,7 @@ import Typography from "@mui/material/Typography";
 import { read, utils } from "xlsx";
 import { importAndrahandsgasterFromExcelAction } from "@/app/hyresgastlista/actions";
 import type { AndrahandsgastInput } from "@/lib/andrahandsgaster";
+import { describeMapping, mappingToLookup, type ImportFieldConfig } from "@/lib/table-columns";
 
 const FASTIGHET_MAP: Record<string, string> = {
   "arkivet": "Arkivet (223 59, Lund)",
@@ -37,12 +38,10 @@ function cellStr(row: unknown[], index: number): string {
   return val == null ? "" : String(val).trim();
 }
 
-// Same column layout as the hyresgästlista import (ExcelImportDialog.tsx):
-// B = fastighet, D = lägenhetsnummer, E = namn, F = personnummer, G = e-post,
-// H = telefon.
 function parseRows(
   data: ArrayBuffer,
-  fastigheter: string[]
+  fastigheter: string[],
+  col: Record<string, number>
 ): { rows: AndrahandsgastInput[]; skipped: number } {
   const wb = read(data, { type: "array" });
   const ws = wb.Sheets[wb.SheetNames[0]];
@@ -52,12 +51,12 @@ function parseRows(
   const rows: AndrahandsgastInput[] = [];
 
   for (const row of raw) {
-    const fastighetsRaw = cellStr(row as unknown[], 1); // col B
-    const lagenhetsnummer = cellStr(row as unknown[], 3); // col D
-    const namn = cellStr(row as unknown[], 4); // col E
-    const personnummer = cellStr(row as unknown[], 5); // col F
-    const mejladress = cellStr(row as unknown[], 6); // col G
-    const telefonnummer = cellStr(row as unknown[], 7); // col H
+    const fastighetsRaw = cellStr(row as unknown[], col.fastighet!);
+    const lagenhetsnummer = cellStr(row as unknown[], col.lagenhetsnummer!);
+    const namn = cellStr(row as unknown[], col.namn!);
+    const personnummer = cellStr(row as unknown[], col.personnummer!);
+    const mejladress = cellStr(row as unknown[], col.mejladress!);
+    const telefonnummer = cellStr(row as unknown[], col.telefonnummer!);
 
     if (!namn || !lagenhetsnummer) {
       skipped++;
@@ -79,12 +78,15 @@ function parseRows(
 type Props = {
   open: boolean;
   fastigheter: string[];
+  mapping: ImportFieldConfig[];
   onClose: () => void;
 };
 
 type Stage = "pick" | "preview" | "done";
 
-export default function AndrahandsgastExcelImportDialog({ open, fastigheter, onClose }: Props) {
+export default function AndrahandsgastExcelImportDialog({ open, fastigheter, mapping, onClose }: Props) {
+  const col = useMemo(() => mappingToLookup({ fields: mapping }), [mapping]);
+  const description = useMemo(() => describeMapping({ fields: mapping }), [mapping]);
   const fileRef = useRef<HTMLInputElement>(null);
   const [stage, setStage] = useState<Stage>("pick");
   const [rows, setRows] = useState<AndrahandsgastInput[]>([]);
@@ -114,9 +116,9 @@ export default function AndrahandsgastExcelImportDialog({ open, fastigheter, onC
     const reader = new FileReader();
     reader.onload = (ev) => {
       try {
-        const { rows: parsed, skipped: sk } = parseRows(ev.target!.result as ArrayBuffer, fastigheter);
+        const { rows: parsed, skipped: sk } = parseRows(ev.target!.result as ArrayBuffer, fastigheter, col);
         if (parsed.length === 0) {
-          setError("Inga giltiga rader hittades i filen. Kontrollera kolumnerna B, D–H.");
+          setError(`Inga giltiga rader hittades i filen. Kontrollera kolumnerna: ${description}.`);
           return;
         }
         setRows(parsed);
@@ -152,8 +154,7 @@ export default function AndrahandsgastExcelImportDialog({ open, fastigheter, onC
         {stage === "pick" && (
           <Box sx={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 2, py: 1 }}>
             <Typography variant="body2" color="text.secondary">
-              Välj en xlsx-fil. Kolumn B = fastighet, D = lägenhetsnummer, E = namn,
-              F = personnummer, G = e-post, H = telefon.
+              Välj en xlsx-fil. Kolumn {description}.
             </Typography>
             <Button
               variant="outlined"

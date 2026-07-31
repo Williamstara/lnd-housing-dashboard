@@ -10,12 +10,15 @@ import Typography from "@mui/material/Typography";
 import { alpha } from "@mui/material/styles";
 import Link from "next/link";
 import { navLinks } from "@/lib/nav-links";
-import { ROLES, hasRole } from "@/lib/roles";
+import { ROLES, hasRole, isRestrictedToTodo } from "@/lib/roles";
 
 export default function NavGrid() {
   const { user } = useUser();
   const isAdmin = hasRole(user, ROLES.ADMIN);
-  const visibleLinks = navLinks.filter((link) => !link.adminOnly || isAdmin);
+  const restrictedToTodo = isRestrictedToTodo(user);
+  const visibleLinks = navLinks.filter(
+    (link) => (!link.adminOnly || isAdmin) && (!restrictedToTodo || link.href === "/todo")
+  );
 
   return (
     <Box

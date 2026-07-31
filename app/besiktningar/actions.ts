@@ -3,14 +3,18 @@
 import { revalidatePath } from "next/cache";
 import {
   archiveBesiktning,
+  archiveBesiktningarBulk,
   bulkUpsertBesiktningar,
   createManualBesiktning,
   deleteBesiktning,
   markBetalningGjord,
+  markBetalningGjordBulk,
   markKlarForBetalning,
+  markKlarForBetalningBulk,
   updateBesiktning,
   type BesiktningEditInput,
   type BesiktningImportInput,
+  type BulkActionResult,
   type BulkUpsertResult,
 } from "@/lib/besiktningar";
 import { auth0 } from "@/lib/auth0";
@@ -71,10 +75,34 @@ export async function markBetalningGjordAction(id: string) {
   revalidateBesiktningarPages();
 }
 
+export async function markKlarForBetalningBulkAction(ids: string[]): Promise<BulkActionResult> {
+  const { nationsId, userName } = await requireHusvdOrEkonomiRole();
+  if (ids.length === 0) return { updated: 0, skipped: 0 };
+  const result = await markKlarForBetalningBulk(nationsId, ids, userName);
+  revalidateBesiktningarPages();
+  return result;
+}
+
+export async function markBetalningGjordBulkAction(ids: string[]): Promise<BulkActionResult> {
+  const { nationsId, userName } = await requireHusvdOrEkonomiRole();
+  if (ids.length === 0) return { updated: 0, skipped: 0 };
+  const result = await markBetalningGjordBulk(nationsId, ids, userName);
+  revalidateBesiktningarPages();
+  return result;
+}
+
 export async function archiveBesiktningAction(id: string) {
   const nationsId = await requireArchiveRole();
   await archiveBesiktning(nationsId, id);
   revalidateBesiktningarPages();
+}
+
+export async function archiveBesiktningarBulkAction(ids: string[]): Promise<BulkActionResult> {
+  const nationsId = await requireArchiveRole();
+  if (ids.length === 0) return { updated: 0, skipped: 0 };
+  const result = await archiveBesiktningarBulk(nationsId, ids);
+  revalidateBesiktningarPages();
+  return result;
 }
 
 export async function deleteBesiktningAction(id: string) {

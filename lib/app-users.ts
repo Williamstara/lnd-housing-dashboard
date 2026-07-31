@@ -1,6 +1,7 @@
 import "server-only";
 
 export type AppUser = { sub: string; name: string; email: string };
+export type AppRole = { id: string; name: string };
 
 const USERS_CACHE_TTL_MS = 5 * 60 * 1000;
 
@@ -133,5 +134,39 @@ export async function deleteUser(sub: string): Promise<void> {
   });
   if (!response.ok) {
     await throwForResponse(response, "Failed to delete user");
+  }
+}
+
+// Roles live in Auth0's own RBAC feature (Dashboard > User Management >
+// Roles), separate from app_metadata — a role's *name* is what ends up in
+// the "https://lnd-housing-dashboard/roles" ID token claim (see lib/roles.ts
+// and hasRole()), but assigning one to a user needs its role_id.
+export async function getAvailableRoles(): Promise<AppRole[]> {
+  const domain = requireEnv("AUTH0_DOMAIN");
+  const token = await getManagementToken();
+  const url = new URL(`https://${domain}/api/v2/roles`);
+  url.searchParams.set("per_page", "100");
+
+  const response = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+  if (!response.ok) {
+    await throwForResponse(response, "Failed to fetch roles from Auth0");
+  }
+
+  const data = (await response.json()) as Array<{ id: string; name: string }>;
+  return data
+    .map((r) => ({ id: r.id, name: r.name }))
+    .sort((a, b) => a.name.localeCompare(b.name, "sv", { sensitivity: "base" }));
+}
+
+export async function assignRoles(sub: string, roleIds: string[]): Promise<void> {
+  const domain = requireEnv("AUTH0_DOMAIN");
+  const token = await getManagementToken();
+  const response = await fetch(`https://${domain}/api/v2/users/${encodeURIComponent(sub)}/roles`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ roles: roleIds }),
+  });
+  if (!response.ok) {
+    await throwForResponse(response, "Failed to assign roles");
   }
 }

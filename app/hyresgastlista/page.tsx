@@ -4,6 +4,12 @@ import { auth0 } from "@/lib/auth0";
 import { getAndrahandsgaster } from "@/lib/andrahandsgaster";
 import { getFastighetNamn } from "@/lib/fastigheter";
 import { requireNationsIdOrRedirect } from "@/lib/nations";
+import {
+  DEFAULT_ANDRAHANDSGAST_IMPORT,
+  DEFAULT_TENANT_IMPORT,
+  getNationSettings,
+  resolveImportMapping,
+} from "@/lib/nation-settings";
 import { getTenants, type Tenant } from "@/lib/tenants";
 import AndrahandsgasterTable from "@/components/AndrahandsgasterTable";
 import TenantsTable from "@/components/TenantsTable";
@@ -24,11 +30,20 @@ const HyresgastlistaPage = auth0.withPageAuthRequired(
   async function HyresgastlistaPage() {
     const session = await auth0.getSession();
     const nationsId = requireNationsIdOrRedirect(session?.user);
-    const [{ tenants, error }, fastigheter, andrahandsgaster] = await Promise.all([
+    const [{ tenants, error }, fastigheter, andrahandsgaster, nationSettings] = await Promise.all([
       loadTenants(nationsId),
       getFastighetNamn(nationsId),
       getAndrahandsgaster(nationsId),
+      getNationSettings(nationsId),
     ]);
+    const tenantImportMapping = resolveImportMapping(
+      DEFAULT_TENANT_IMPORT,
+      nationSettings?.imports?.tenants
+    ).fields;
+    const andrahandsgastImportMapping = resolveImportMapping(
+      DEFAULT_ANDRAHANDSGAST_IMPORT,
+      nationSettings?.imports?.andrahandsgaster
+    ).fields;
 
     return (
       <Container maxWidth={false} sx={{ py: 6, width: "80%", mx: "auto" }}>
@@ -38,8 +53,12 @@ const HyresgastlistaPage = auth0.withPageAuthRequired(
           </Alert>
         )}
 
-        <TenantsTable tenants={tenants} fastigheter={fastigheter} />
-        <AndrahandsgasterTable andrahandsgaster={andrahandsgaster} fastigheter={fastigheter} />
+        <TenantsTable tenants={tenants} fastigheter={fastigheter} importMapping={tenantImportMapping} />
+        <AndrahandsgasterTable
+          andrahandsgaster={andrahandsgaster}
+          fastigheter={fastigheter}
+          importMapping={andrahandsgastImportMapping}
+        />
       </Container>
     );
   },

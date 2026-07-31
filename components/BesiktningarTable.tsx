@@ -1,7 +1,7 @@
 "use client";
 
 import { useUser } from "@auth0/nextjs-auth0";
-import { useMemo, useState, useTransition, type ChangeEvent } from "react";
+import { useMemo, useState, useTransition, type ChangeEvent, type ReactNode } from "react";
 import AddIcon from "@mui/icons-material/Add";
 import ArchiveIcon from "@mui/icons-material/Archive";
 import DeleteIcon from "@mui/icons-material/Delete";
@@ -9,7 +9,11 @@ import EditIcon from "@mui/icons-material/Edit";
 import FileDownloadIcon from "@mui/icons-material/FileDownload";
 import UploadFileIcon from "@mui/icons-material/UploadFile";
 import Alert from "@mui/material/Alert";
+import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
+import Card from "@mui/material/Card";
+import CardContent from "@mui/material/CardContent";
+import Checkbox from "@mui/material/Checkbox";
 import Dialog from "@mui/material/Dialog";
 import DialogActions from "@mui/material/DialogActions";
 import DialogContent from "@mui/material/DialogContent";
@@ -32,19 +36,26 @@ import Tooltip from "@mui/material/Tooltip";
 import Typography from "@mui/material/Typography";
 import {
   archiveBesiktningAction,
+  archiveBesiktningarBulkAction,
   createBesiktningAction,
   deleteBesiktningAction,
   markBetalningGjordAction,
+  markBetalningGjordBulkAction,
   markKlarForBetalningAction,
+  markKlarForBetalningBulkAction,
   updateBesiktningAction,
 } from "@/app/besiktningar/actions";
 import BesiktningarExcelImportDialog from "@/components/BesiktningarExcelImportDialog";
+import ColumnVisibilityMenu from "@/components/ColumnVisibilityMenu";
 import { exportRowsToXlsx } from "@/lib/export-xlsx";
 import type { Besiktning, BesiktningEditInput, BesiktningImportInput } from "@/lib/besiktningar";
 import { ARCHIVE_ROLES, ROLES, hasAnyRole, hasRole } from "@/lib/roles";
+import type { ImportFieldConfig } from "@/lib/table-columns";
+import { useColumnVisibility } from "@/lib/use-column-visibility";
 
 type Props = {
   besiktningar: Besiktning[];
+  importMapping: ImportFieldConfig[];
 };
 
 type ColumnKey =
@@ -134,7 +145,7 @@ function emptyAddForm(): AddForm {
   };
 }
 
-export default function BesiktningarTable({ besiktningar }: Props) {
+export default function BesiktningarTable({ besiktningar, importMapping }: Props) {
   const { user } = useUser();
   const canArchive = hasAnyRole(user, ARCHIVE_ROLES);
   const canManagePayment = hasRole(user, ROLES.HUSVD) || hasRole(user, ROLES.EKONOMI);
@@ -167,6 +178,13 @@ export default function BesiktningarTable({ besiktningar }: Props) {
   const [addError, setAddError] = useState<string | null>(null);
   const [isAdding, startAddTransition] = useTransition();
 
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [isBulkPending, startBulkTransition] = useTransition();
+  const [bulkMessage, setBulkMessage] = useState<string | null>(null);
+
+  const { isVisible, toggle } = useColumnVisibility("besiktningar");
+  const visibleColumnDefs = columns.filter((c) => isVisible(c.key));
+
   const visibleRows = useMemo(() => {
     const query = search.trim().toLocaleLowerCase("sv");
     const filtered = besiktningar.filter((b) => matchesSearch(b, query));
@@ -174,6 +192,10 @@ export default function BesiktningarTable({ besiktningar }: Props) {
     const getValue = columnValue[orderBy];
     return filtered.sort((a, b) => direction * compareValues(getValue(a), getValue(b)));
   }, [besiktningar, search, orderBy, order]);
+
+  const pageRows = visibleRows.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage);
+  const allOnPageSelected = pageRows.length > 0 && pageRows.every((row) => selectedIds.has(row.id));
+  const someOnPageSelected = pageRows.some((row) => selectedIds.has(row.id));
 
   function handleSort(column: ColumnKey) {
     if (orderBy === column) {
@@ -245,6 +267,71 @@ export default function BesiktningarTable({ besiktningar }: Props) {
     });
   }
 
+  function toggleSelected(id: string) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function toggleSelectPage(checked: boolean) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      for (const row of pageRows) {
+        if (checked) next.add(row.id);
+        else next.delete(row.id);
+      }
+      return next;
+    });
+  }
+
+  function clearSelection() {
+    setSelectedIds(new Set());
+  }
+
+  function bulkMarkKlarForBetalning() {
+    const ids = [...selectedIds];
+    setBulkMessage(null);
+    startBulkTransition(async () => {
+      const result = await markKlarForBetalningBulkAction(ids);
+      setBulkMessage(
+        `${result.updated} markerade som klara för betalning.` +
+          (result.skipped > 0 ? ` ${result.skipped} hoppades över (redan klara).` : "")
+      );
+      clearSelection();
+    });
+  }
+
+  function bulkMarkBetalningGjord() {
+    const ids = [...selectedIds];
+    setBulkMessage(null);
+    startBulkTransition(async () => {
+      const result = await markBetalningGjordBulkAction(ids);
+      setBulkMessage(
+        `${result.updated} markerade som betalda.` +
+          (result.skipped > 0
+            ? ` ${result.skipped} hoppades över (ej klara för betalning eller redan betalda).`
+            : "")
+      );
+      clearSelection();
+    });
+  }
+
+  function bulkArchive() {
+    const ids = [...selectedIds];
+    setBulkMessage(null);
+    startBulkTransition(async () => {
+      const result = await archiveBesiktningarBulkAction(ids);
+      setBulkMessage(
+        `${result.updated} arkiverade.` +
+          (result.skipped > 0 ? ` ${result.skipped} hoppades över (betalning ej gjord ännu).` : "")
+      );
+      clearSelection();
+    });
+  }
+
   function openAdd() {
     setAddError(null);
     setAddForm(emptyAddForm());
@@ -291,6 +378,13 @@ export default function BesiktningarTable({ besiktningar }: Props) {
     });
   }
 
+  function renderCellValue(row: Besiktning, key: ColumnKey): ReactNode {
+    if (key === "kostnadStadning" || key === "totaltAvdrag") {
+      return currency.format(row[key]);
+    }
+    return columnValue[key](row);
+  }
+
   function openDelete(row: Besiktning) {
     setDeleteError(null);
     setDeletingRow(row);
@@ -314,7 +408,7 @@ export default function BesiktningarTable({ besiktningar }: Props) {
     <>
       <Stack
         direction="row"
-        sx={{ justifyContent: "space-between", alignItems: "center", mb: 3, gap: 2 }}
+        sx={{ justifyContent: "space-between", alignItems: "center", mb: 3, gap: 2, flexWrap: "wrap" }}
       >
         <Typography variant="h4" component="h1" sx={{ fontWeight: 600 }}>
           Besiktningar
@@ -348,11 +442,70 @@ export default function BesiktningarTable({ besiktningar }: Props) {
         fullWidth
       />
 
+      {bulkMessage && (
+        <Alert severity="info" sx={{ mb: 2 }} onClose={() => setBulkMessage(null)}>
+          {bulkMessage}
+        </Alert>
+      )}
+
+      {selectedIds.size > 0 && (
+        <Stack direction="row" sx={{ alignItems: "center", gap: 1, mb: 2, flexWrap: "wrap" }}>
+          <Typography variant="body2" sx={{ fontWeight: 600 }}>
+            {selectedIds.size} valda
+          </Typography>
+          {canManagePayment && (
+            <Button
+              size="small"
+              variant="outlined"
+              disabled={isBulkPending}
+              onClick={bulkMarkKlarForBetalning}
+            >
+              Klar för betalning
+            </Button>
+          )}
+          {canManagePayment && (
+            <Button
+              size="small"
+              variant="contained"
+              disabled={isBulkPending}
+              onClick={bulkMarkBetalningGjord}
+            >
+              Betalning gjord
+            </Button>
+          )}
+          {canArchive && (
+            <Button
+              size="small"
+              variant="outlined"
+              startIcon={<ArchiveIcon fontSize="small" />}
+              disabled={isBulkPending}
+              onClick={bulkArchive}
+            >
+              Arkivera
+            </Button>
+          )}
+          <Button size="small" onClick={clearSelection} disabled={isBulkPending}>
+            Avmarkera alla
+          </Button>
+        </Stack>
+      )}
+
+      <Box sx={{ display: { xs: "none", sm: "block" } }}>
       <TableContainer component={Paper} sx={{ overflowX: "auto" }}>
         <Table aria-label="Besiktningar" size="small" sx={{ minWidth: 1200 }}>
           <TableHead>
             <TableRow>
-              {columns.map((column) => (
+              <TableCell padding="checkbox">
+                <Checkbox
+                  checked={allOnPageSelected}
+                  indeterminate={someOnPageSelected && !allOnPageSelected}
+                  onChange={(e) => toggleSelectPage(e.target.checked)}
+                />
+              </TableCell>
+              <TableCell padding="checkbox">
+                <ColumnVisibilityMenu columns={columns} isVisible={isVisible} onToggle={toggle} />
+              </TableCell>
+              {visibleColumnDefs.map((column) => (
                 <TableCell
                   key={column.key}
                   align={column.align}
@@ -375,16 +528,14 @@ export default function BesiktningarTable({ besiktningar }: Props) {
           <TableBody>
             {visibleRows.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={columns.length + 3} align="center">
+                <TableCell colSpan={visibleColumnDefs.length + 5} align="center">
                   {besiktningar.length === 0
                     ? "Inga besiktningar registrerade."
                     : "Inga träffar."}
                 </TableCell>
               </TableRow>
             ) : (
-              visibleRows
-                .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
-                .map((row) => (
+              pageRows.map((row) => (
                   <TableRow
                     key={row.id}
                     sx={
@@ -405,17 +556,23 @@ export default function BesiktningarTable({ besiktningar }: Props) {
                         : undefined
                     }
                   >
-                    <TableCell>{row.besiktningsdatum}</TableCell>
-                    <TableCell>{row.lagenhetsnummer}</TableCell>
-                    <TableCell align="right">{currency.format(row.kostnadStadning)}</TableCell>
-                    <TableCell sx={{ maxWidth: 200, whiteSpace: "normal" }}>
-                      {row.vaktmastareAnteckning}
+                    <TableCell padding="checkbox">
+                      <Checkbox checked={selectedIds.has(row.id)} onChange={() => toggleSelected(row.id)} />
                     </TableCell>
-                    <TableCell>{godkandLabel(row.godkand)}</TableCell>
-                    <TableCell sx={{ maxWidth: 200, whiteSpace: "normal" }}>
-                      {row.husformanAnteckning}
-                    </TableCell>
-                    <TableCell align="right">{currency.format(row.totaltAvdrag)}</TableCell>
+                    <TableCell padding="checkbox" />
+                    {visibleColumnDefs.map((column) => (
+                      <TableCell
+                        key={column.key}
+                        align={column.align}
+                        sx={
+                          column.key === "vaktmastareAnteckning" || column.key === "husformanAnteckning"
+                            ? { maxWidth: 200, whiteSpace: "normal" }
+                            : undefined
+                        }
+                      >
+                        {renderCellValue(row, column.key)}
+                      </TableCell>
+                    ))}
                     <TableCell>
                       {row.klarForBetalningDatum ? (
                         <>
@@ -508,6 +665,153 @@ export default function BesiktningarTable({ besiktningar }: Props) {
           </TableBody>
         </Table>
       </TableContainer>
+      </Box>
+
+      <Box sx={{ display: { xs: "block", sm: "none" } }}>
+        <Stack direction="row" sx={{ justifyContent: "space-between", alignItems: "center", mb: 1 }}>
+          <Stack direction="row" sx={{ alignItems: "center", gap: 0.5 }}>
+            <Checkbox
+              checked={allOnPageSelected}
+              indeterminate={someOnPageSelected && !allOnPageSelected}
+              onChange={(e) => toggleSelectPage(e.target.checked)}
+              size="small"
+            />
+            <Typography variant="caption" color="text.secondary">
+              Markera alla
+            </Typography>
+          </Stack>
+          <ColumnVisibilityMenu columns={columns} isVisible={isVisible} onToggle={toggle} />
+        </Stack>
+        {visibleRows.length === 0 ? (
+          <Typography variant="body2" color="text.secondary" sx={{ textAlign: "center", py: 4 }}>
+            {besiktningar.length === 0 ? "Inga besiktningar registrerade." : "Inga träffar."}
+          </Typography>
+        ) : (
+          <Stack spacing={1.5}>
+            {pageRows.map((row) => (
+              <Card
+                key={row.id}
+                variant="outlined"
+                sx={
+                  row.betalningGjordDatum
+                    ? { borderColor: "success.main", borderWidth: 2 }
+                    : row.klarForBetalningDatum
+                    ? { borderColor: "warning.main", borderWidth: 2 }
+                    : undefined
+                }
+              >
+                <CardContent sx={{ "&:last-child": { pb: 2 } }}>
+                  <Stack direction="row" sx={{ justifyContent: "space-between", alignItems: "center", gap: 0.5, mb: 1 }}>
+                    <Checkbox checked={selectedIds.has(row.id)} onChange={() => toggleSelected(row.id)} size="small" />
+                    <Stack direction="row" sx={{ gap: 0.5 }}>
+                    <IconButton aria-label="Redigera" size="small" onClick={() => openEdit(row)}>
+                      <EditIcon fontSize="small" />
+                    </IconButton>
+                    {canArchive && (
+                      <Tooltip
+                        title={
+                          row.betalningGjordDatum
+                            ? "Arkivera"
+                            : "Kan inte arkiveras förrän betalning är gjord"
+                        }
+                      >
+                        <span>
+                          <IconButton
+                            aria-label="Arkivera"
+                            size="small"
+                            disabled={!row.betalningGjordDatum}
+                            onClick={() => openArchive(row)}
+                          >
+                            <ArchiveIcon fontSize="small" />
+                          </IconButton>
+                        </span>
+                      </Tooltip>
+                    )}
+                    {canArchive && (
+                      <IconButton aria-label="Ta bort" size="small" onClick={() => openDelete(row)}>
+                        <DeleteIcon fontSize="small" />
+                      </IconButton>
+                    )}
+                    </Stack>
+                  </Stack>
+                  <Box sx={{ display: "grid", gridTemplateColumns: "1fr 1fr", columnGap: 2, rowGap: 1 }}>
+                    {visibleColumnDefs.map((column) => (
+                      <Box
+                        key={column.key}
+                        sx={{
+                          minWidth: 0,
+                          gridColumn:
+                            column.key === "vaktmastareAnteckning" || column.key === "husformanAnteckning"
+                              ? "1 / -1"
+                              : undefined,
+                        }}
+                      >
+                        <Typography variant="caption" color="text.secondary" sx={{ display: "block" }}>
+                          {column.label}
+                        </Typography>
+                        <Box sx={{ overflowWrap: "break-word" }}>{renderCellValue(row, column.key)}</Box>
+                      </Box>
+                    ))}
+                    <Box sx={{ minWidth: 0 }}>
+                      <Typography variant="caption" color="text.secondary" sx={{ display: "block" }}>
+                        Klar för betalning
+                      </Typography>
+                      {row.klarForBetalningDatum ? (
+                        <>
+                          {row.klarForBetalningDatum}
+                          {row.klarForBetalningAv && (
+                            <Typography variant="caption" color="text.secondary" sx={{ display: "block" }}>
+                              av {row.klarForBetalningAv}
+                            </Typography>
+                          )}
+                        </>
+                      ) : canManagePayment ? (
+                        <Button
+                          size="small"
+                          variant="outlined"
+                          disabled={isPending}
+                          onClick={() => sendKlarForBetalning(row.id)}
+                        >
+                          Klar för betalning
+                        </Button>
+                      ) : (
+                        "Ej klar"
+                      )}
+                    </Box>
+                    <Box sx={{ minWidth: 0 }}>
+                      <Typography variant="caption" color="text.secondary" sx={{ display: "block" }}>
+                        Betalning gjord
+                      </Typography>
+                      {row.betalningGjordDatum ? (
+                        <>
+                          {row.betalningGjordDatum}
+                          {row.betalningGjordAv && (
+                            <Typography variant="caption" color="text.secondary" sx={{ display: "block" }}>
+                              av {row.betalningGjordAv}
+                            </Typography>
+                          )}
+                        </>
+                      ) : canManagePayment ? (
+                        <Button
+                          size="small"
+                          variant="contained"
+                          disabled={isPending || !row.klarForBetalningDatum}
+                          onClick={() => sendBetalningGjord(row.id)}
+                        >
+                          Betalning gjord
+                        </Button>
+                      ) : (
+                        "Ej betald"
+                      )}
+                    </Box>
+                  </Box>
+                </CardContent>
+              </Card>
+            ))}
+          </Stack>
+        )}
+      </Box>
+
       <TablePagination
         component="div"
         count={visibleRows.length}
@@ -715,7 +1019,11 @@ export default function BesiktningarTable({ besiktningar }: Props) {
         </DialogActions>
       </Dialog>
 
-      <BesiktningarExcelImportDialog open={importOpen} onClose={() => setImportOpen(false)} />
+      <BesiktningarExcelImportDialog
+        open={importOpen}
+        mapping={importMapping}
+        onClose={() => setImportOpen(false)}
+      />
     </>
   );
 }

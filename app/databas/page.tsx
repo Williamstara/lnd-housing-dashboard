@@ -4,7 +4,14 @@ import { auth0 } from "@/lib/auth0";
 import { getFastighetNamn } from "@/lib/fastigheter";
 import { requireNationsIdOrRedirect } from "@/lib/nations";
 import { getNationSettings } from "@/lib/nation-settings";
-import { DEFAULT_RENTALOBJECT_COLUMNS, resolveColumns } from "@/lib/table-columns";
+import {
+  DEFAULT_RENTALOBJECT_COLUMNS,
+  DEFAULT_RENTALOBJECT_SINGLE_IMPORT,
+  DEFAULT_RENTALOBJECT_TAB_GROUPS,
+  resolveColumns,
+  resolveImportMapping,
+  resolveTabGroups,
+} from "@/lib/table-columns";
 import { getRentalObjects, type RentalObject } from "@/lib/rentalobjects";
 import RentalObjectsTable from "@/components/RentalObjectsTable";
 
@@ -29,6 +36,15 @@ const DatabасPage = auth0.withPageAuthRequired(
       getNationSettings(nationsId),
     ]);
     const columnSettings = resolveColumns(DEFAULT_RENTALOBJECT_COLUMNS, nationSettings?.tables.rentalobjects);
+    const importSingleFields = resolveImportMapping(
+      DEFAULT_RENTALOBJECT_SINGLE_IMPORT,
+      nationSettings?.imports?.rentalobjects_single
+    ).fields;
+    const importTabGroups = resolveTabGroups(
+      DEFAULT_RENTALOBJECT_TAB_GROUPS,
+      nationSettings?.rentalobjectsTabGroups
+    );
+    const importMultiTab = nationSettings?.rentalobjectsMultiTab ?? false;
 
     return (
       <Container maxWidth="xl" sx={{ py: 6 }}>
@@ -37,7 +53,14 @@ const DatabасPage = auth0.withPageAuthRequired(
             {error}
           </Alert>
         )}
-        <RentalObjectsTable objects={objects} fastigheter={fastigheter} columnSettings={columnSettings} />
+        <RentalObjectsTable
+          objects={objects}
+          fastigheter={fastigheter}
+          columnSettings={columnSettings}
+          importSingleFields={importSingleFields}
+          importTabGroups={importTabGroups}
+          importMultiTab={importMultiTab}
+        />
       </Container>
     );
   },

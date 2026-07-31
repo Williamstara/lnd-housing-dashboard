@@ -20,9 +20,9 @@ import TableSortLabel from "@mui/material/TableSortLabel";
 import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
 import { assignNationsIdAction, deleteUserAction } from "@/app/admin/actions";
-import type { AppUser } from "@/lib/app-users";
+import type { AppRole, AppUser } from "@/lib/app-users";
 
-type Props = { initialUsers: AppUser[]; nationIds: string[] };
+type Props = { initialUsers: AppUser[]; nationIds: string[]; availableRoles: AppRole[] };
 
 type SortKey = "name" | "email";
 
@@ -31,9 +31,10 @@ function matchesSearch(user: AppUser, query: string): boolean {
   return [user.name, user.email].join(" ").toLocaleLowerCase("sv").includes(query);
 }
 
-export default function AdminUsersPanel({ initialUsers, nationIds }: Props) {
+export default function AdminUsersPanel({ initialUsers, nationIds, availableRoles }: Props) {
   const [users, setUsers] = useState(initialUsers);
   const [selection, setSelection] = useState<Record<string, string>>({});
+  const [roleSelection, setRoleSelection] = useState<Record<string, AppRole[]>>({});
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
@@ -69,9 +70,10 @@ export default function AdminUsersPanel({ initialUsers, nationIds }: Props) {
       return;
     }
     setError(null);
+    const roleIds = (roleSelection[user.sub] ?? []).map((r) => r.id);
     startTransition(async () => {
       try {
-        await assignNationsIdAction(user.sub, nationsId);
+        await assignNationsIdAction(user.sub, nationsId, roleIds);
         setUsers((prev) => prev.filter((u) => u.sub !== user.sub));
       } catch (err) {
         setError(err instanceof Error ? err.message : "Något gick fel.");
@@ -148,13 +150,14 @@ export default function AdminUsersPanel({ initialUsers, nationIds }: Props) {
                     </TableSortLabel>
                   </TableCell>
                   <TableCell>Tilldela nationsID</TableCell>
+                  <TableCell>Roller</TableCell>
                   <TableCell align="right">Åtgärder</TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
                 {visible.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={4} align="center">
+                    <TableCell colSpan={5} align="center">
                       Inga träffar.
                     </TableCell>
                   </TableRow>
@@ -176,6 +179,23 @@ export default function AdminUsersPanel({ initialUsers, nationIds }: Props) {
                             disabled={isPending}
                             renderInput={(params) => (
                               <TextField {...params} size="small" placeholder="nationsID" />
+                            )}
+                            sx={{ minWidth: 220 }}
+                          />
+                        </TableCell>
+                        <TableCell>
+                          <Autocomplete
+                            multiple
+                            options={availableRoles}
+                            getOptionLabel={(role) => role.name}
+                            isOptionEqualToValue={(option, value) => option.id === value.id}
+                            value={roleSelection[user.sub] ?? []}
+                            onChange={(_event, value) =>
+                              setRoleSelection((prev) => ({ ...prev, [user.sub]: value }))
+                            }
+                            disabled={isPending}
+                            renderInput={(params) => (
+                              <TextField {...params} size="small" placeholder="Roller" />
                             )}
                             sx={{ minWidth: 220 }}
                           />

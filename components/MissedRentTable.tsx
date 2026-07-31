@@ -1,14 +1,17 @@
 "use client";
 
 import { useUser } from "@auth0/nextjs-auth0";
-import { useMemo, useState, useTransition, type ChangeEvent } from "react";
+import { useMemo, useState, useTransition, type ChangeEvent, type ReactNode } from "react";
 import AddIcon from "@mui/icons-material/Add";
 import DeleteIcon from "@mui/icons-material/Delete";
 import EditIcon from "@mui/icons-material/Edit";
 import FileDownloadIcon from "@mui/icons-material/FileDownload";
 import Alert from "@mui/material/Alert";
 import Autocomplete from "@mui/material/Autocomplete";
+import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
+import Card from "@mui/material/Card";
+import CardContent from "@mui/material/CardContent";
 import Dialog from "@mui/material/Dialog";
 import DialogActions from "@mui/material/DialogActions";
 import DialogContent from "@mui/material/DialogContent";
@@ -33,9 +36,11 @@ import {
   updateMissedRentAction,
 } from "@/app/statistik/actions";
 import type { Apartment } from "@/lib/apartments";
+import ColumnVisibilityMenu from "@/components/ColumnVisibilityMenu";
 import { exportRowsToXlsx } from "@/lib/export-xlsx";
 import type { MissedRentRow } from "@/lib/missed-rent";
 import { ROLES, hasRole } from "@/lib/roles";
+import { useColumnVisibility } from "@/lib/use-column-visibility";
 
 type Props = {
   rows: MissedRentRow[];
@@ -93,6 +98,17 @@ const columnValue: Record<ColumnKey, (r: MissedRentRow) => string | number> = {
 
 const currency = new Intl.NumberFormat("sv-SE", { maximumFractionDigits: 0 });
 
+const CURRENCY_KEYS = new Set<ColumnKey>([
+  "arshyra",
+  "hyresrabatt",
+  "hyresreduktion",
+  "arshyraMedRed",
+  "manadshyra",
+  "missadIntakt",
+  "ovrigaMissadeKostnader",
+  "totalMissat",
+]);
+
 function compareValues(a: string | number, b: string | number): number {
   if (typeof a === "number" && typeof b === "number") return a - b;
   return String(a).localeCompare(String(b), "sv", { sensitivity: "base" });
@@ -142,6 +158,9 @@ export default function MissedRentTable({ rows, availableApartments }: Props) {
   const [addError, setAddError] = useState<string | null>(null);
   const [isAdding, startAddTransition] = useTransition();
 
+  const { isVisible, toggle } = useColumnVisibility("missed-rent");
+  const visibleColumnDefs = columns.filter((c) => isVisible(c.key));
+
   const ansvarigOptions = useMemo(
     () => Array.from(new Set(rows.map((r) => r.ansvarig).filter(Boolean))).sort(),
     [rows]
@@ -178,6 +197,15 @@ export default function MissedRentTable({ rows, availableApartments }: Props) {
         })
       )
     );
+  }
+
+  function renderCellValue(row: MissedRentRow, key: ColumnKey): ReactNode {
+    if (key === "faktisktInflyttDatum") return row.faktisktInflyttDatum ?? "Pågående";
+    if (CURRENCY_KEYS.has(key)) {
+      const formatted = currency.format(columnValue[key](row) as number);
+      return key === "totalMissat" ? <strong>{formatted}</strong> : formatted;
+    }
+    return columnValue[key](row);
   }
 
   function openEdit(row: MissedRentRow) {
@@ -242,7 +270,7 @@ export default function MissedRentTable({ rows, availableApartments }: Props) {
     <>
       <Stack
         direction="row"
-        sx={{ justifyContent: "space-between", alignItems: "center", mb: 3, gap: 2 }}
+        sx={{ justifyContent: "space-between", alignItems: "center", mb: 3, gap: 2, flexWrap: "wrap" }}
       >
         <Typography variant="h4" component="h1" sx={{ fontWeight: 600 }}>
           Missade hyror
@@ -273,11 +301,15 @@ export default function MissedRentTable({ rows, availableApartments }: Props) {
         fullWidth
       />
 
+      <Box sx={{ display: { xs: "none", sm: "block" } }}>
       <TableContainer component={Paper} sx={{ overflowX: "auto" }}>
         <Table aria-label="Missade hyror" size="small">
           <TableHead>
             <TableRow>
-              {columns.map((column) => (
+              <TableCell padding="checkbox">
+                <ColumnVisibilityMenu columns={columns} isVisible={isVisible} onToggle={toggle} />
+              </TableCell>
+              {visibleColumnDefs.map((column) => (
                 <TableCell
                   key={column.key}
                   align={column.align}
@@ -298,7 +330,7 @@ export default function MissedRentTable({ rows, availableApartments }: Props) {
           <TableBody>
             {visibleRows.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={columns.length + 1} align="center">
+                <TableCell colSpan={visibleColumnDefs.length + 2} align="center">
                   {rows.length === 0
                     ? "Inga missade hyror registrerade."
                     : "Inga träffar."}
@@ -309,23 +341,16 @@ export default function MissedRentTable({ rows, availableApartments }: Props) {
                 .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
                 .map((row) => (
                   <TableRow key={row.id}>
-                    <TableCell>{row.lagenhetsnummer}</TableCell>
-                    <TableCell>{row.ledigFrom}</TableCell>
-                    <TableCell>{row.faktisktInflyttDatum ?? "Pågående"}</TableCell>
-                    <TableCell align="right">{currency.format(row.arshyra)}</TableCell>
-                    <TableCell align="right">{currency.format(row.hyresrabatt)}</TableCell>
-                    <TableCell align="right">{currency.format(row.hyresreduktion)}</TableCell>
-                    <TableCell align="right">{currency.format(row.arshyraMedRed)}</TableCell>
-                    <TableCell align="right">{currency.format(row.manadshyra)}</TableCell>
-                    <TableCell align="right">{currency.format(row.missadIntakt)}</TableCell>
-                    <TableCell align="right">{currency.format(row.ovrigaMissadeKostnader)}</TableCell>
-                    <TableCell align="right">
-                      <strong>{currency.format(row.totalMissat)}</strong>
-                    </TableCell>
-                    <TableCell sx={{ maxWidth: 200, whiteSpace: "normal" }}>
-                      {row.kommentar}
-                    </TableCell>
-                    <TableCell>{row.ansvarig}</TableCell>
+                    <TableCell padding="checkbox" />
+                    {visibleColumnDefs.map((column) => (
+                      <TableCell
+                        key={column.key}
+                        align={column.align}
+                        sx={column.key === "kommentar" ? { maxWidth: 200, whiteSpace: "normal" } : undefined}
+                      >
+                        {renderCellValue(row, column.key)}
+                      </TableCell>
+                    ))}
                     <TableCell align="right">
                       <Stack direction="row" sx={{ justifyContent: "flex-end" }}>
                         <IconButton
@@ -352,6 +377,51 @@ export default function MissedRentTable({ rows, availableApartments }: Props) {
           </TableBody>
         </Table>
       </TableContainer>
+      </Box>
+
+      <Box sx={{ display: { xs: "block", sm: "none" } }}>
+        <Stack direction="row" sx={{ justifyContent: "flex-end", mb: 1 }}>
+          <ColumnVisibilityMenu columns={columns} isVisible={isVisible} onToggle={toggle} />
+        </Stack>
+        {visibleRows.length === 0 ? (
+          <Typography variant="body2" color="text.secondary" sx={{ textAlign: "center", py: 4 }}>
+            {rows.length === 0 ? "Inga missade hyror registrerade." : "Inga träffar."}
+          </Typography>
+        ) : (
+          <Stack spacing={1.5}>
+            {visibleRows.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage).map((row) => (
+              <Card key={row.id} variant="outlined">
+                <CardContent sx={{ "&:last-child": { pb: 2 } }}>
+                  <Stack direction="row" sx={{ justifyContent: "flex-end", gap: 0.5, mb: 1 }}>
+                    <IconButton aria-label="Redigera" size="small" onClick={() => openEdit(row)}>
+                      <EditIcon fontSize="small" />
+                    </IconButton>
+                    {isHusforman && (
+                      <IconButton aria-label="Ta bort" size="small" onClick={() => setDeletingRow(row)}>
+                        <DeleteIcon fontSize="small" />
+                      </IconButton>
+                    )}
+                  </Stack>
+                  <Box sx={{ display: "grid", gridTemplateColumns: "1fr 1fr", columnGap: 2, rowGap: 1 }}>
+                    {visibleColumnDefs.map((column) => (
+                      <Box
+                        key={column.key}
+                        sx={{ minWidth: 0, gridColumn: column.key === "kommentar" ? "1 / -1" : undefined }}
+                      >
+                        <Typography variant="caption" color="text.secondary" sx={{ display: "block" }}>
+                          {column.label}
+                        </Typography>
+                        <Box sx={{ overflowWrap: "break-word" }}>{renderCellValue(row, column.key)}</Box>
+                      </Box>
+                    ))}
+                  </Box>
+                </CardContent>
+              </Card>
+            ))}
+          </Stack>
+        )}
+      </Box>
+
       <TablePagination
         component="div"
         count={visibleRows.length}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, useTransition } from "react";
+import { useMemo, useRef, useState, useTransition } from "react";
 import UploadFileIcon from "@mui/icons-material/UploadFile";
 import Alert from "@mui/material/Alert";
 import Box from "@mui/material/Box";
@@ -20,6 +20,7 @@ import Typography from "@mui/material/Typography";
 import { read, utils } from "xlsx";
 import { importBesiktningarFromExcelAction } from "@/app/besiktningar/actions";
 import type { BesiktningImportInput } from "@/lib/besiktningar";
+import { describeMapping, mappingToLookup, type ImportFieldConfig } from "@/lib/table-columns";
 
 function cellStr(row: unknown[], index: number): string {
   const val = (row as Record<number, unknown>)[index];
@@ -69,7 +70,10 @@ function formatDateCell(value: unknown): string {
   return str;
 }
 
-function parseRows(data: ArrayBuffer): { rows: BesiktningImportInput[]; skipped: number } {
+function parseRows(
+  data: ArrayBuffer,
+  col: Record<string, number>
+): { rows: BesiktningImportInput[]; skipped: number } {
   const wb = read(data, { type: "array", cellDates: true });
   const ws = wb.Sheets[wb.SheetNames[0]];
   const raw = utils.sheet_to_json<unknown[]>(ws, { header: 1, defval: "" });
@@ -79,13 +83,13 @@ function parseRows(data: ArrayBuffer): { rows: BesiktningImportInput[]; skipped:
   let currentDate = "";
 
   for (const row of raw) {
-    const lagenhetsnummer = cellStr(row, 1);
-    const dateCellRaw = cellStr(row, 0).toLocaleLowerCase("sv");
+    const lagenhetsnummer = cellStr(row, col.lagenhetsnummer!);
+    const dateCellRaw = cellStr(row, col.besiktningsdatum!).toLocaleLowerCase("sv");
     if (lagenhetsnummer.toLocaleLowerCase("sv") === "lägenhetsnummer" || dateCellRaw === "datum") {
       continue; // header row
     }
 
-    const dateCell = (row as Record<number, unknown>)[0];
+    const dateCell = (row as Record<number, unknown>)[col.besiktningsdatum!];
     if (dateCell !== "" && dateCell != null) {
       currentDate = formatDateCell(dateCell);
     }
@@ -100,11 +104,11 @@ function parseRows(data: ArrayBuffer): { rows: BesiktningImportInput[]; skipped:
     rows.push({
       besiktningsdatum: currentDate,
       lagenhetsnummer,
-      kostnadStadning: parseNumber(cellStr(row, 2)),
-      vaktmastareAnteckning: cellStr(row, 3),
-      godkand: parseGodkand(cellStr(row, 4)),
-      husformanAnteckning: cellStr(row, 5),
-      totaltAvdrag: parseNumber(cellStr(row, 6)),
+      kostnadStadning: parseNumber(cellStr(row, col.kostnadStadning!)),
+      vaktmastareAnteckning: cellStr(row, col.vaktmastareAnteckning!),
+      godkand: parseGodkand(cellStr(row, col.godkand!)),
+      husformanAnteckning: cellStr(row, col.husformanAnteckning!),
+      totaltAvdrag: parseNumber(cellStr(row, col.totaltAvdrag!)),
     });
   }
 
@@ -113,12 +117,15 @@ function parseRows(data: ArrayBuffer): { rows: BesiktningImportInput[]; skipped:
 
 type Props = {
   open: boolean;
+  mapping: ImportFieldConfig[];
   onClose: () => void;
 };
 
 type Stage = "pick" | "preview" | "done";
 
-export default function BesiktningarExcelImportDialog({ open, onClose }: Props) {
+export default function BesiktningarExcelImportDialog({ open, mapping, onClose }: Props) {
+  const col = useMemo(() => mappingToLookup({ fields: mapping }), [mapping]);
+  const description = useMemo(() => describeMapping({ fields: mapping }), [mapping]);
   const fileRef = useRef<HTMLInputElement>(null);
   const [stage, setStage] = useState<Stage>("pick");
   const [rows, setRows] = useState<BesiktningImportInput[]>([]);
@@ -148,9 +155,9 @@ export default function BesiktningarExcelImportDialog({ open, onClose }: Props) 
     const reader = new FileReader();
     reader.onload = (ev) => {
       try {
-        const { rows: parsed, skipped: sk } = parseRows(ev.target!.result as ArrayBuffer);
+        const { rows: parsed, skipped: sk } = parseRows(ev.target!.result as ArrayBuffer, col);
         if (parsed.length === 0) {
-          setError("Inga giltiga rader hittades i filen. Kontrollera kolumnerna A–G.");
+          setError(`Inga giltiga rader hittades i filen. Kontrollera kolumnerna: ${description}.`);
           return;
         }
         setRows(parsed);
@@ -186,10 +193,8 @@ export default function BesiktningarExcelImportDialog({ open, onClose }: Props) 
         {stage === "pick" && (
           <Box sx={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 2, py: 1 }}>
             <Typography variant="body2" color="text.secondary">
-              Välj en xlsx-fil strukturerad som tabellen: kolumn A = besiktningsdatum (kan stå på
-              första raden för varje datumgrupp, resten lämnas tomma), B = lägenhetsnummer,
-              C = kostnad städ, D = kommentar vaktmästare, E = godkänd (Ja/Nej),
-              F = husförman kommentar, G = totalt avdrag.
+              Välj en xlsx-fil strukturerad som tabellen: kolumn {description}. Besiktningsdatum
+              kan stå på första raden för varje datumgrupp, resten lämnas tomma.
             </Typography>
             <Button
               variant="outlined"

@@ -1,12 +1,39 @@
 import "server-only";
 import { getDb } from "@/lib/mongodb";
-import type { NationSettings, TableColumnConfig, TableKey } from "@/lib/table-columns";
+import type {
+  ImportKey,
+  ImportMapping,
+  NationSettings,
+  RentalObjectTabGroup,
+  TableColumnConfig,
+  TableKey,
+} from "@/lib/table-columns";
 
-export type { NationSettings, NationTableSettings, TableColumnConfig, TableKey } from "@/lib/table-columns";
+export type {
+  ImportFieldConfig,
+  ImportKey,
+  ImportMapping,
+  NationSettings,
+  NationTableSettings,
+  RentalObjectTabGroup,
+  TableColumnConfig,
+  TableKey,
+} from "@/lib/table-columns";
 export {
+  DEFAULT_ANDRAHANDSGAST_IMPORT,
   DEFAULT_APARTMENT_COLUMNS,
+  DEFAULT_BESIKTNING_IMPORT,
   DEFAULT_RENTALOBJECT_COLUMNS,
+  DEFAULT_RENTALOBJECT_SINGLE_IMPORT,
+  DEFAULT_RENTALOBJECT_TAB_GROUPS,
+  DEFAULT_TENANT_IMPORT,
+  columnIndexToLetter,
+  columnLetterToIndex,
+  describeMapping,
+  mappingToLookup,
   resolveColumns,
+  resolveImportMapping,
+  resolveTabGroups,
 } from "@/lib/table-columns";
 
 type NationSettingsDoc = NationSettings & { updatedAt: Date };
@@ -19,7 +46,15 @@ async function getCollection() {
 export async function getNationSettings(nationsId: string): Promise<NationSettings | null> {
   const col = await getCollection();
   const doc = await col.findOne({ nationsID: nationsId }, { projection: { _id: 0 } });
-  return doc ? { nationsID: doc.nationsID, tables: doc.tables } : null;
+  return doc
+    ? {
+        nationsID: doc.nationsID,
+        tables: doc.tables,
+        imports: doc.imports,
+        rentalobjectsMultiTab: doc.rentalobjectsMultiTab,
+        rentalobjectsTabGroups: doc.rentalobjectsTabGroups,
+      }
+    : null;
 }
 
 export async function createNation(nationsId: string): Promise<void> {
@@ -40,6 +75,40 @@ export async function saveTableSettings(
   await col.updateOne(
     { nationsID: nationsId },
     { $set: { [`tables.${table}`]: { columns }, updatedAt: new Date() } },
+    { upsert: true }
+  );
+}
+
+export async function saveImportMapping(
+  nationsId: string,
+  key: ImportKey,
+  fields: ImportMapping["fields"]
+): Promise<void> {
+  const col = await getCollection();
+  await col.updateOne(
+    { nationsID: nationsId },
+    { $set: { [`imports.${key}`]: { fields }, updatedAt: new Date() } },
+    { upsert: true }
+  );
+}
+
+export async function setRentalobjectsMultiTab(nationsId: string, multiTab: boolean): Promise<void> {
+  const col = await getCollection();
+  await col.updateOne(
+    { nationsID: nationsId },
+    { $set: { rentalobjectsMultiTab: multiTab, updatedAt: new Date() } },
+    { upsert: true }
+  );
+}
+
+export async function saveRentalobjectTabGroups(
+  nationsId: string,
+  groups: RentalObjectTabGroup[]
+): Promise<void> {
+  const col = await getCollection();
+  await col.updateOne(
+    { nationsID: nationsId },
+    { $set: { rentalobjectsTabGroups: groups, updatedAt: new Date() } },
     { upsert: true }
   );
 }

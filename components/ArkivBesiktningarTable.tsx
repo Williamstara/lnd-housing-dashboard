@@ -1,8 +1,11 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import FileDownloadIcon from "@mui/icons-material/FileDownload";
+import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
+import Card from "@mui/material/Card";
+import CardContent from "@mui/material/CardContent";
 import Paper from "@mui/material/Paper";
 import Stack from "@mui/material/Stack";
 import Table from "@mui/material/Table";
@@ -15,8 +18,10 @@ import TableRow from "@mui/material/TableRow";
 import TableSortLabel from "@mui/material/TableSortLabel";
 import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
+import ColumnVisibilityMenu from "@/components/ColumnVisibilityMenu";
 import { exportRowsToXlsx } from "@/lib/export-xlsx";
 import type { Besiktning } from "@/lib/besiktningar";
+import { useColumnVisibility } from "@/lib/use-column-visibility";
 
 type Props = {
   besiktningar: Besiktning[];
@@ -87,6 +92,8 @@ export default function ArkivBesiktningarTable({ besiktningar }: Props) {
   const [order, setOrder] = useState<Order>("desc");
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(25);
+  const { isVisible, toggle } = useColumnVisibility("arkiv-besiktningar");
+  const visibleColumnDefs = columns.filter((c) => isVisible(c.key));
 
   const visibleRows = useMemo(() => {
     const query = search.trim().toLocaleLowerCase("sv");
@@ -106,6 +113,37 @@ export default function ArkivBesiktningarTable({ besiktningar }: Props) {
     setPage(0);
   }
 
+  function renderCellValue(row: Besiktning, key: ColumnKey): ReactNode {
+    if (key === "kostnadStadning" || key === "totaltAvdrag") {
+      return currency.format(row[key]);
+    }
+    if (key === "klarForBetalningDatum") {
+      return (
+        <>
+          {row.klarForBetalningDatum}
+          {row.klarForBetalningAv && (
+            <Typography variant="caption" color="text.secondary" sx={{ display: "block" }}>
+              av {row.klarForBetalningAv}
+            </Typography>
+          )}
+        </>
+      );
+    }
+    if (key === "betalningGjordDatum") {
+      return (
+        <>
+          {row.betalningGjordDatum}
+          {row.betalningGjordAv && (
+            <Typography variant="caption" color="text.secondary" sx={{ display: "block" }}>
+              av {row.betalningGjordAv}
+            </Typography>
+          )}
+        </>
+      );
+    }
+    return columnValue[key](row);
+  }
+
   function handleExport() {
     exportRowsToXlsx(
       `besiktningar-arkiv-${new Date().toISOString().slice(0, 10)}.xlsx`,
@@ -122,14 +160,16 @@ export default function ArkivBesiktningarTable({ besiktningar }: Props) {
     <>
       <Stack
         direction="row"
-        sx={{ justifyContent: "space-between", alignItems: "center", mb: 3, mt: 6, gap: 2 }}
+        sx={{ justifyContent: "space-between", alignItems: "center", mb: 3, mt: 6, gap: 2, flexWrap: "wrap" }}
       >
         <Typography variant="h4" component="h1" sx={{ fontWeight: 600 }}>
           Arkiverade besiktningar
         </Typography>
-        <Button variant="outlined" startIcon={<FileDownloadIcon />} onClick={handleExport}>
-          Exportera
-        </Button>
+        <Stack direction="row" sx={{ gap: 1 }}>
+          <Button variant="outlined" startIcon={<FileDownloadIcon />} onClick={handleExport}>
+            Exportera
+          </Button>
+        </Stack>
       </Stack>
 
       <TextField
@@ -144,11 +184,15 @@ export default function ArkivBesiktningarTable({ besiktningar }: Props) {
         fullWidth
       />
 
+      <Box sx={{ display: { xs: "none", sm: "block" } }}>
       <TableContainer component={Paper} sx={{ overflowX: "auto" }}>
         <Table aria-label="Arkiverade besiktningar" size="small">
           <TableHead>
             <TableRow>
-              {columns.map((column) => (
+              <TableCell padding="checkbox">
+                <ColumnVisibilityMenu columns={columns} isVisible={isVisible} onToggle={toggle} />
+              </TableCell>
+              {visibleColumnDefs.map((column) => (
                 <TableCell
                   key={column.key}
                   align={column.align}
@@ -168,7 +212,7 @@ export default function ArkivBesiktningarTable({ besiktningar }: Props) {
           <TableBody>
             {visibleRows.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={columns.length} align="center">
+                <TableCell colSpan={visibleColumnDefs.length + 1} align="center">
                   {besiktningar.length === 0
                     ? "Inga arkiverade besiktningar ännu."
                     : "Inga träffar."}
@@ -179,39 +223,67 @@ export default function ArkivBesiktningarTable({ besiktningar }: Props) {
                 .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
                 .map((row) => (
                   <TableRow key={row.id}>
-                    <TableCell>{row.besiktningsdatum}</TableCell>
-                    <TableCell>{row.lagenhetsnummer}</TableCell>
-                    <TableCell align="right">{currency.format(row.kostnadStadning)}</TableCell>
-                    <TableCell sx={{ maxWidth: 200, whiteSpace: "normal" }}>
-                      {row.vaktmastareAnteckning}
-                    </TableCell>
-                    <TableCell>{godkandLabel(row.godkand)}</TableCell>
-                    <TableCell sx={{ maxWidth: 200, whiteSpace: "normal" }}>
-                      {row.husformanAnteckning}
-                    </TableCell>
-                    <TableCell align="right">{currency.format(row.totaltAvdrag)}</TableCell>
-                    <TableCell>
-                      {row.klarForBetalningDatum}
-                      {row.klarForBetalningAv && (
-                        <Typography variant="caption" color="text.secondary" sx={{ display: "block" }}>
-                          av {row.klarForBetalningAv}
-                        </Typography>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      {row.betalningGjordDatum}
-                      {row.betalningGjordAv && (
-                        <Typography variant="caption" color="text.secondary" sx={{ display: "block" }}>
-                          av {row.betalningGjordAv}
-                        </Typography>
-                      )}
-                    </TableCell>
+                    <TableCell padding="checkbox" />
+                    {visibleColumnDefs.map((column) => (
+                      <TableCell
+                        key={column.key}
+                        align={column.align}
+                        sx={
+                          column.key === "vaktmastareAnteckning" || column.key === "husformanAnteckning"
+                            ? { maxWidth: 200, whiteSpace: "normal" }
+                            : undefined
+                        }
+                      >
+                        {renderCellValue(row, column.key)}
+                      </TableCell>
+                    ))}
                   </TableRow>
                 ))
             )}
           </TableBody>
         </Table>
       </TableContainer>
+      </Box>
+
+      <Box sx={{ display: { xs: "block", sm: "none" } }}>
+        <Stack direction="row" sx={{ justifyContent: "flex-end", mb: 1 }}>
+          <ColumnVisibilityMenu columns={columns} isVisible={isVisible} onToggle={toggle} />
+        </Stack>
+        {visibleRows.length === 0 ? (
+          <Typography variant="body2" color="text.secondary" sx={{ textAlign: "center", py: 4 }}>
+            {besiktningar.length === 0 ? "Inga arkiverade besiktningar ännu." : "Inga träffar."}
+          </Typography>
+        ) : (
+          <Stack spacing={1.5}>
+            {visibleRows.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage).map((row) => (
+              <Card key={row.id} variant="outlined">
+                <CardContent sx={{ "&:last-child": { pb: 2 } }}>
+                  <Box sx={{ display: "grid", gridTemplateColumns: "1fr 1fr", columnGap: 2, rowGap: 1 }}>
+                    {visibleColumnDefs.map((column) => (
+                      <Box
+                        key={column.key}
+                        sx={{
+                          minWidth: 0,
+                          gridColumn:
+                            column.key === "vaktmastareAnteckning" || column.key === "husformanAnteckning"
+                              ? "1 / -1"
+                              : undefined,
+                        }}
+                      >
+                        <Typography variant="caption" color="text.secondary" sx={{ display: "block" }}>
+                          {column.label}
+                        </Typography>
+                        <Box sx={{ overflowWrap: "break-word" }}>{renderCellValue(row, column.key)}</Box>
+                      </Box>
+                    ))}
+                  </Box>
+                </CardContent>
+              </Card>
+            ))}
+          </Stack>
+        )}
+      </Box>
+
       <TablePagination
         component="div"
         count={visibleRows.length}

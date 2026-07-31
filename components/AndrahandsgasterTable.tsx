@@ -8,7 +8,10 @@ import FileDownloadIcon from "@mui/icons-material/FileDownload";
 import LocalLaundryServiceIcon from "@mui/icons-material/LocalLaundryService";
 import SearchIcon from "@mui/icons-material/Search";
 import UploadFileIcon from "@mui/icons-material/UploadFile";
+import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
+import Card from "@mui/material/Card";
+import CardContent from "@mui/material/CardContent";
 import Dialog from "@mui/material/Dialog";
 import DialogActions from "@mui/material/DialogActions";
 import DialogContent from "@mui/material/DialogContent";
@@ -35,13 +38,17 @@ import {
 } from "@/app/hyresgastlista/actions";
 import { exportRowsToXlsx } from "@/lib/export-xlsx";
 import type { Andrahandsgast, AndrahandsgastInput } from "@/lib/andrahandsgaster";
+import type { ImportFieldConfig } from "@/lib/table-columns";
 import AndrahandsgastExcelImportDialog from "@/components/AndrahandsgastExcelImportDialog";
 import AndrahandsgastFormDialog from "@/components/AndrahandsgastFormDialog";
 import AndrahandsgastLaundryAccountDialog from "@/components/AndrahandsgastLaundryAccountDialog";
+import ColumnVisibilityMenu from "@/components/ColumnVisibilityMenu";
+import { useColumnVisibility } from "@/lib/use-column-visibility";
 
 type Props = {
   andrahandsgaster: Andrahandsgast[];
   fastigheter: string[];
+  importMapping: ImportFieldConfig[];
 };
 
 type SortableColumn = Exclude<keyof Andrahandsgast, "id">;
@@ -64,7 +71,7 @@ function matchesSearch(row: Andrahandsgast, query: string): boolean {
   return haystack.includes(query);
 }
 
-export default function AndrahandsgasterTable({ andrahandsgaster, fastigheter }: Props) {
+export default function AndrahandsgasterTable({ andrahandsgaster, fastigheter, importMapping }: Props) {
   const [formOpen, setFormOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [editingRow, setEditingRow] = useState<Andrahandsgast | null>(null);
@@ -79,6 +86,8 @@ export default function AndrahandsgasterTable({ andrahandsgaster, fastigheter }:
   const [order, setOrder] = useState<Order>("asc");
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(25);
+  const { isVisible, toggle } = useColumnVisibility("andrahandsgaster");
+  const visibleColumnDefs = columns.filter((c) => isVisible(c.key));
 
   const visibleRows = useMemo(() => {
     const query = search.trim().toLocaleLowerCase("sv");
@@ -140,7 +149,7 @@ export default function AndrahandsgasterTable({ andrahandsgaster, fastigheter }:
     <>
       <Stack
         direction="row"
-        sx={{ justifyContent: "space-between", alignItems: "center", mb: 3, mt: 6, gap: 2 }}
+        sx={{ justifyContent: "space-between", alignItems: "center", mb: 3, mt: 6, gap: 2, flexWrap: "wrap" }}
       >
         <Typography variant="h4" component="h1" sx={{ fontWeight: 600 }}>
           Andrahandsgäster / inneboende
@@ -188,6 +197,7 @@ export default function AndrahandsgasterTable({ andrahandsgaster, fastigheter }:
         }}
       />
 
+      <Box sx={{ display: { xs: "none", sm: "block" } }}>
       <TableContainer component={Paper} sx={{ overflowX: "auto" }}>
         <Table
           aria-label="Andrahandsgäster"
@@ -199,7 +209,10 @@ export default function AndrahandsgasterTable({ andrahandsgaster, fastigheter }:
         >
           <TableHead>
             <TableRow>
-              {columns.map((column) => (
+              <TableCell padding="checkbox">
+                <ColumnVisibilityMenu columns={columns} isVisible={isVisible} onToggle={toggle} />
+              </TableCell>
+              {visibleColumnDefs.map((column) => (
                 <TableCell
                   key={column.key}
                   sortDirection={orderBy === column.key ? order : false}
@@ -219,7 +232,7 @@ export default function AndrahandsgasterTable({ andrahandsgaster, fastigheter }:
           <TableBody>
             {visibleRows.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={columns.length + 1} align="center">
+                <TableCell colSpan={visibleColumnDefs.length + 2} align="center">
                   {andrahandsgaster.length === 0
                     ? "Inga andrahandsgäster hittades."
                     : "Inga träffar för sökningen."}
@@ -228,12 +241,10 @@ export default function AndrahandsgasterTable({ andrahandsgaster, fastigheter }:
             ) : (
               visibleRows.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage).map((row) => (
                 <TableRow key={row.id}>
-                  <TableCell>{row.lagenhetsnummer}</TableCell>
-                  <TableCell>{row.fastighet}</TableCell>
-                  <TableCell>{row.namn}</TableCell>
-                  <TableCell>{row.personnummer}</TableCell>
-                  <TableCell>{row.mejladress}</TableCell>
-                  <TableCell>{row.telefonnummer}</TableCell>
+                  <TableCell padding="checkbox" />
+                  {visibleColumnDefs.map((column) => (
+                    <TableCell key={column.key}>{row[column.key]}</TableCell>
+                  ))}
                   <TableCell align="right">
                     <IconButton
                       aria-label="Skapa tvättstugekonto"
@@ -264,6 +275,54 @@ export default function AndrahandsgasterTable({ andrahandsgaster, fastigheter }:
           </TableBody>
         </Table>
       </TableContainer>
+      </Box>
+
+      <Box sx={{ display: { xs: "block", sm: "none" } }}>
+        <Stack direction="row" sx={{ justifyContent: "flex-end", mb: 1 }}>
+          <ColumnVisibilityMenu columns={columns} isVisible={isVisible} onToggle={toggle} />
+        </Stack>
+        {visibleRows.length === 0 ? (
+          <Typography variant="body2" color="text.secondary" sx={{ textAlign: "center", py: 4 }}>
+            {andrahandsgaster.length === 0 ? "Inga andrahandsgäster hittades." : "Inga träffar för sökningen."}
+          </Typography>
+        ) : (
+          <Stack spacing={1.5}>
+            {visibleRows.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage).map((row) => (
+              <Card key={row.id} variant="outlined">
+                <CardContent sx={{ "&:last-child": { pb: 2 } }}>
+                  <Stack direction="row" sx={{ justifyContent: "flex-end", gap: 0.5, mb: 1 }}>
+                    <IconButton
+                      aria-label="Skapa tvättstugekonto"
+                      size="small"
+                      onClick={() => setLaundryRow(row)}
+                      title="Skapa tvättstugekonto"
+                    >
+                      <LocalLaundryServiceIcon fontSize="small" />
+                    </IconButton>
+                    <IconButton aria-label="Redigera" size="small" onClick={() => openEditDialog(row)}>
+                      <EditIcon fontSize="small" />
+                    </IconButton>
+                    <IconButton aria-label="Ta bort" size="small" onClick={() => setDeletingRow(row)}>
+                      <DeleteIcon fontSize="small" />
+                    </IconButton>
+                  </Stack>
+                  <Box sx={{ display: "grid", gridTemplateColumns: "1fr 1fr", columnGap: 2, rowGap: 1 }}>
+                    {visibleColumnDefs.map((column) => (
+                      <Box key={column.key} sx={{ minWidth: 0 }}>
+                        <Typography variant="caption" color="text.secondary" sx={{ display: "block" }}>
+                          {column.label}
+                        </Typography>
+                        <Box sx={{ overflowWrap: "break-word" }}>{row[column.key]}</Box>
+                      </Box>
+                    ))}
+                  </Box>
+                </CardContent>
+              </Card>
+            ))}
+          </Stack>
+        )}
+      </Box>
+
       <TablePagination
         component="div"
         count={visibleRows.length}
@@ -279,6 +338,7 @@ export default function AndrahandsgasterTable({ andrahandsgaster, fastigheter }:
       <AndrahandsgastExcelImportDialog
         open={importOpen}
         fastigheter={fastigheter}
+        mapping={importMapping}
         onClose={() => setImportOpen(false)}
       />
 

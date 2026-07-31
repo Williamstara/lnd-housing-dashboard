@@ -13,6 +13,8 @@ import VisibilityIcon from "@mui/icons-material/Visibility";
 import VisibilityOffIcon from "@mui/icons-material/VisibilityOff";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
+import Card from "@mui/material/Card";
+import CardContent from "@mui/material/CardContent";
 import Chip from "@mui/material/Chip";
 import Dialog from "@mui/material/Dialog";
 import DialogActions from "@mui/material/DialogActions";
@@ -57,8 +59,10 @@ import type {
 import type { TableColumnConfig } from "@/lib/table-columns";
 import ApartmentFormDialog from "@/components/ApartmentFormDialog";
 import ApartmentInterestDialog from "@/components/ApartmentInterestDialog";
+import ColumnVisibilityMenu from "@/components/ColumnVisibilityMenu";
 import { exportRowsToXlsx } from "@/lib/export-xlsx";
 import { ROLES, hasRole } from "@/lib/roles";
+import { useColumnVisibility } from "@/lib/use-column-visibility";
 
 type Props = {
   apartments: Apartment[];
@@ -151,7 +155,9 @@ export default function ApartmentsTable({
   const { user } = useUser();
   const isHusforman = hasRole(user, ROLES.HUSFORMAN);
   const missedRentIds = useMemo(() => new Set(missedRentApartmentIds), [missedRentApartmentIds]);
-  const visibleColumns = useMemo(() => columnSettings.filter((c) => c.visible), [columnSettings]);
+  const nationColumns = useMemo(() => columnSettings.filter((c) => c.visible), [columnSettings]);
+  const { isVisible, toggle } = useColumnVisibility("apartments");
+  const visibleColumns = nationColumns.filter((c) => isVisible(c.key));
   const customFieldDefs = useMemo(
     () => columnSettings.filter((c) => c.isCustom).map((c) => ({ key: c.key, label: c.label })),
     [columnSettings]
@@ -274,12 +280,15 @@ export default function ApartmentsTable({
     });
   }
 
+  // Export always uses every nation-visible column, regardless of what the
+  // user has personally hidden for on-screen readability — hiding a column
+  // to declutter your own view shouldn't silently drop it from an export.
   function handleExport() {
     exportRowsToXlsx(
       `lediga-lagenheter-${new Date().toISOString().slice(0, 10)}.xlsx`,
-      visibleColumns.map((c) => c.label),
+      nationColumns.map((c) => c.label),
       visibleApartments.map((apartment) =>
-        visibleColumns.map((c) => getColumnValue(apartment, c))
+        nationColumns.map((c) => getColumnValue(apartment, c))
       )
     );
   }
@@ -339,7 +348,7 @@ export default function ApartmentsTable({
     <>
       <Stack
         direction="row"
-        sx={{ justifyContent: "space-between", alignItems: "center", mb: 3, gap: 2 }}
+        sx={{ justifyContent: "space-between", alignItems: "center", mb: 3, gap: 2, flexWrap: "wrap" }}
       >
         <Typography variant="h4" component="h1" sx={{ fontWeight: 600 }}>
           Lediga lägenheter
@@ -386,6 +395,7 @@ export default function ApartmentsTable({
         />
       </Stack>
 
+      <Box sx={{ display: { xs: "none", sm: "block" } }}>
       <TableContainer component={Paper}>
         <Table
           aria-label="Lediga lägenheter"
@@ -400,6 +410,9 @@ export default function ApartmentsTable({
         >
           <TableHead>
             <TableRow>
+              <TableCell padding="checkbox">
+                <ColumnVisibilityMenu columns={nationColumns} isVisible={isVisible} onToggle={toggle} />
+              </TableCell>
               {visibleColumns.map((col) => (
                 <TableCell
                   key={col.key}
@@ -424,7 +437,7 @@ export default function ApartmentsTable({
           <TableBody>
             {visibleApartments.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={visibleColumns.length + 1} align="center">
+                <TableCell colSpan={visibleColumns.length + 2} align="center">
                   {apartments.length === 0
                     ? "Inga lediga lägenheter just nu."
                     : "Inga träffar."}
@@ -441,6 +454,7 @@ export default function ApartmentsTable({
                     apartment.hidden ? { opacity: 0.5 } : null,
                   ]}
                 >
+                  <TableCell padding="checkbox" />
                   {visibleColumns.map((col) => (
                     <TableCell
                       key={col.key}
@@ -478,7 +492,7 @@ export default function ApartmentsTable({
                         <IconButton
                           aria-label="Nyckel inlämnad"
                           size="small"
-                          color={apartment.nyckelInlamnad ? "primary" : "default"}
+                          color={apartment.nyckelInlamnad ? "success" : "default"}
                           disabled={isTogglingNyckel}
                           onClick={() => toggleNyckelInlamnad(apartment)}
                         >
@@ -498,7 +512,7 @@ export default function ApartmentsTable({
                           <IconButton
                             aria-label="Nyckel hämtad"
                             size="small"
-                            color={apartment.nyckelHamtad ? "primary" : "default"}
+                            color={apartment.nyckelHamtad ? "success" : "default"}
                             disabled={isTogglingNyckel || !apartment.nyckelInlamnad}
                             onClick={() => toggleNyckelHamtad(apartment)}
                           >
@@ -542,6 +556,128 @@ export default function ApartmentsTable({
           </TableBody>
         </Table>
       </TableContainer>
+      </Box>
+
+      <Box sx={{ display: { xs: "block", sm: "none" } }}>
+        <Stack direction="row" sx={{ justifyContent: "flex-end", mb: 1 }}>
+          <ColumnVisibilityMenu columns={nationColumns} isVisible={isVisible} onToggle={toggle} />
+        </Stack>
+        {visibleApartments.length === 0 ? (
+          <Typography variant="body2" color="text.secondary" sx={{ textAlign: "center", py: 4 }}>
+            {apartments.length === 0 ? "Inga lediga lägenheter just nu." : "Inga träffar."}
+          </Typography>
+        ) : (
+          <Stack spacing={1.5}>
+            {visibleApartments.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage).map((apartment) => (
+              <Card
+                key={apartment.id}
+                variant="outlined"
+                sx={[
+                  missedRentIds.has(apartment.id)
+                    ? { bgcolor: (theme) => alpha(theme.palette.error.main, 0.08) }
+                    : null,
+                  apartment.hidden ? { opacity: 0.5 } : null,
+                ]}
+              >
+                <CardContent sx={{ "&:last-child": { pb: 2 } }}>
+                  <Stack direction="row" sx={{ justifyContent: "flex-end", flexWrap: "wrap", gap: 0.5, mb: 1 }}>
+                    {(apartment.status === "ledig" || apartment.status === "kontaktad") && (
+                      <Tooltip title="Intresserad / kontraktsinfo">
+                        <IconButton
+                          aria-label="Intresserad / kontraktsinfo"
+                          size="small"
+                          onClick={() => openInterestDialog(apartment)}
+                        >
+                          <PersonAddIcon fontSize="small" />
+                        </IconButton>
+                      </Tooltip>
+                    )}
+                    <Tooltip
+                      title={
+                        apartment.nyckelInlamnad
+                          ? "Nyckel inlämnad (klicka för att ångra)"
+                          : "Markera nyckel inlämnad"
+                      }
+                    >
+                      <IconButton
+                        aria-label="Nyckel inlämnad"
+                        size="small"
+                        color={apartment.nyckelInlamnad ? "success" : "default"}
+                        disabled={isTogglingNyckel}
+                        onClick={() => toggleNyckelInlamnad(apartment)}
+                      >
+                        <KeyIcon fontSize="small" />
+                      </IconButton>
+                    </Tooltip>
+                    <Tooltip
+                      title={
+                        !apartment.nyckelInlamnad
+                          ? "Nyckeln måste lämnas in innan den kan hämtas"
+                          : apartment.nyckelHamtad
+                            ? "Nyckel hämtad (klicka för att ångra)"
+                            : "Markera nyckel hämtad"
+                      }
+                    >
+                      <span>
+                        <IconButton
+                          aria-label="Nyckel hämtad"
+                          size="small"
+                          color={apartment.nyckelHamtad ? "success" : "default"}
+                          disabled={isTogglingNyckel || !apartment.nyckelInlamnad}
+                          onClick={() => toggleNyckelHamtad(apartment)}
+                        >
+                          <AssignmentTurnedInIcon fontSize="small" />
+                        </IconButton>
+                      </span>
+                    </Tooltip>
+                    <Tooltip title={apartment.hidden ? "Visa" : "Dölj"}>
+                      <IconButton
+                        aria-label={apartment.hidden ? "Visa" : "Dölj"}
+                        size="small"
+                        disabled={isTogglingHidden}
+                        onClick={() => toggleHidden(apartment)}
+                      >
+                        {apartment.hidden ? (
+                          <VisibilityIcon fontSize="small" />
+                        ) : (
+                          <VisibilityOffIcon fontSize="small" />
+                        )}
+                      </IconButton>
+                    </Tooltip>
+                    <IconButton aria-label="Redigera" size="small" onClick={() => openEditDialog(apartment)}>
+                      <EditIcon fontSize="small" />
+                    </IconButton>
+                    <IconButton
+                      aria-label="Ta bort"
+                      size="small"
+                      onClick={() => setDeletingApartment(apartment)}
+                    >
+                      <DeleteIcon fontSize="small" />
+                    </IconButton>
+                  </Stack>
+                  <Box sx={{ display: "grid", gridTemplateColumns: "1fr 1fr", columnGap: 2, rowGap: 1 }}>
+                    {visibleColumns.map((col) => (
+                      <Box
+                        key={col.key}
+                        sx={{
+                          minWidth: 0,
+                          gridColumn: !col.isCustom && col.key === "status" ? "1 / -1" : undefined,
+                        }}
+                      >
+                        <Typography variant="caption" color="text.secondary" sx={{ display: "block" }}>
+                          {col.label}
+                        </Typography>
+                        <Box sx={{ overflowWrap: "break-word" }}>{renderCell(apartment, col)}</Box>
+                      </Box>
+                    ))}
+                  </Box>
+                </CardContent>
+              </Card>
+            ))}
+          </Stack>
+        )}
+      </Box>
+
       <TablePagination
         component="div"
         count={visibleApartments.length}

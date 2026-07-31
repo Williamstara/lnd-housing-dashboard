@@ -6,7 +6,10 @@ import DeleteIcon from "@mui/icons-material/Delete";
 import EditIcon from "@mui/icons-material/Edit";
 import FileDownloadIcon from "@mui/icons-material/FileDownload";
 import UploadFileIcon from "@mui/icons-material/UploadFile";
+import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
+import Card from "@mui/material/Card";
+import CardContent from "@mui/material/CardContent";
 import Dialog from "@mui/material/Dialog";
 import DialogActions from "@mui/material/DialogActions";
 import DialogContent from "@mui/material/DialogContent";
@@ -34,14 +37,19 @@ import {
 } from "@/app/databas/actions";
 import { exportRowsToXlsx } from "@/lib/export-xlsx";
 import type { RentalObject, RentalObjectInput } from "@/lib/rentalobjects";
-import type { TableColumnConfig } from "@/lib/table-columns";
+import type { ImportFieldConfig, RentalObjectTabGroup, TableColumnConfig } from "@/lib/table-columns";
+import ColumnVisibilityMenu from "@/components/ColumnVisibilityMenu";
 import RentalObjectExcelImport from "@/components/RentalObjectExcelImport";
 import RentalObjectFormDialog from "@/components/RentalObjectFormDialog";
+import { useColumnVisibility } from "@/lib/use-column-visibility";
 
 type Props = {
   objects: RentalObject[];
   fastigheter: string[];
   columnSettings: TableColumnConfig[];
+  importSingleFields: ImportFieldConfig[];
+  importTabGroups: RentalObjectTabGroup[];
+  importMultiTab: boolean;
 };
 
 // Built-in numeric fields — null renders as "—", and the currency subset
@@ -102,7 +110,14 @@ function matchesSearch(o: RentalObject, q: string): boolean {
 
 const currency = new Intl.NumberFormat("sv-SE", { maximumFractionDigits: 0 });
 
-export default function RentalObjectsTable({ objects, fastigheter, columnSettings }: Props) {
+export default function RentalObjectsTable({
+  objects,
+  fastigheter,
+  columnSettings,
+  importSingleFields,
+  importTabGroups,
+  importMultiTab,
+}: Props) {
   const [search, setSearch] = useState("");
   const [orderBy, setOrderBy] = useState("lagenhetsnummer");
   const [order, setOrder] = useState<"asc" | "desc">("asc");
@@ -116,7 +131,9 @@ export default function RentalObjectsTable({ objects, fastigheter, columnSetting
   const [deletingLabel, setDeletingLabel] = useState("");
   const [isDeleting, startDeleteTransition] = useTransition();
 
-  const visibleColumns = useMemo(() => columnSettings.filter((c) => c.visible), [columnSettings]);
+  const nationColumns = useMemo(() => columnSettings.filter((c) => c.visible), [columnSettings]);
+  const { isVisible, toggle } = useColumnVisibility("rentalobjects");
+  const visibleColumns = nationColumns.filter((c) => isVisible(c.key));
   const customFieldDefs = useMemo(
     () => columnSettings.filter((c) => c.isCustom).map((c) => ({ key: c.key, label: c.label })),
     [columnSettings]
@@ -165,11 +182,13 @@ export default function RentalObjectsTable({ objects, fastigheter, columnSetting
     });
   }
 
+  // Export always uses every nation-visible column, regardless of what the
+  // user has personally hidden for on-screen readability.
   function handleExport() {
     exportRowsToXlsx(
       `databas-${new Date().toISOString().slice(0, 10)}.xlsx`,
-      visibleColumns.map((c) => c.label),
-      visible.map((o) => visibleColumns.map((c) => getColumnValue(o, c)))
+      nationColumns.map((c) => c.label),
+      visible.map((o) => nationColumns.map((c) => getColumnValue(o, c)))
     );
   }
 
@@ -189,7 +208,7 @@ export default function RentalObjectsTable({ objects, fastigheter, columnSetting
     <>
       <Stack
         direction="row"
-        sx={{ justifyContent: "space-between", alignItems: "center", mb: 3, gap: 2 }}
+        sx={{ justifyContent: "space-between", alignItems: "center", mb: 3, gap: 2, flexWrap: "wrap" }}
       >
         <Typography variant="h4" component="h1" sx={{ fontWeight: 600 }}>
           Databas
@@ -233,6 +252,7 @@ export default function RentalObjectsTable({ objects, fastigheter, columnSetting
         }}
       />
 
+      <Box sx={{ display: { xs: "none", sm: "block" } }}>
       <TableContainer component={Paper}>
         <Table
           size="small"
@@ -241,6 +261,9 @@ export default function RentalObjectsTable({ objects, fastigheter, columnSetting
         >
           <TableHead>
             <TableRow>
+              <TableCell padding="checkbox">
+                <ColumnVisibilityMenu columns={nationColumns} isVisible={isVisible} onToggle={toggle} />
+              </TableCell>
               {visibleColumns.map((col) => (
                 <TableCell
                   key={col.key}
@@ -262,7 +285,7 @@ export default function RentalObjectsTable({ objects, fastigheter, columnSetting
           <TableBody>
             {visible.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={visibleColumns.length + 1} align="center">
+                <TableCell colSpan={visibleColumns.length + 2} align="center">
                   {objects.length === 0
                     ? "Inga hyresobjekt. Importera från Excel för att komma igång."
                     : "Inga träffar."}
@@ -273,6 +296,7 @@ export default function RentalObjectsTable({ objects, fastigheter, columnSetting
                 .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
                 .map((o) => (
                   <TableRow key={o.id}>
+                    <TableCell padding="checkbox" />
                     {visibleColumns.map((col) => (
                       <TableCell key={col.key} align={NUMERIC_KEYS.has(col.key) ? "right" : undefined}>
                         {renderCell(o, col)}
@@ -303,6 +327,57 @@ export default function RentalObjectsTable({ objects, fastigheter, columnSetting
           </TableBody>
         </Table>
       </TableContainer>
+      </Box>
+
+      <Box sx={{ display: { xs: "block", sm: "none" } }}>
+        <Stack direction="row" sx={{ justifyContent: "flex-end", mb: 1 }}>
+          <ColumnVisibilityMenu columns={nationColumns} isVisible={isVisible} onToggle={toggle} />
+        </Stack>
+        {visible.length === 0 ? (
+          <Typography variant="body2" color="text.secondary" sx={{ textAlign: "center", py: 4 }}>
+            {objects.length === 0
+              ? "Inga hyresobjekt. Importera från Excel för att komma igång."
+              : "Inga träffar."}
+          </Typography>
+        ) : (
+          <Stack spacing={1.5}>
+            {visible
+              .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
+              .map((o) => (
+                <Card key={o.id} variant="outlined">
+                  <CardContent sx={{ "&:last-child": { pb: 2 } }}>
+                    <Stack direction="row" sx={{ justifyContent: "flex-end", gap: 0.5, mb: 1 }}>
+                      <IconButton aria-label="Redigera" size="small" onClick={() => openEdit(o)}>
+                        <EditIcon fontSize="small" />
+                      </IconButton>
+                      <IconButton
+                        aria-label="Ta bort"
+                        size="small"
+                        onClick={() => {
+                          setDeletingId(o.id);
+                          setDeletingLabel(o.lagenhetsnummer);
+                        }}
+                      >
+                        <DeleteIcon fontSize="small" />
+                      </IconButton>
+                    </Stack>
+                    <Box sx={{ display: "grid", gridTemplateColumns: "1fr 1fr", columnGap: 2, rowGap: 1 }}>
+                      {visibleColumns.map((col) => (
+                        <Box key={col.key} sx={{ minWidth: 0 }}>
+                          <Typography variant="caption" color="text.secondary" sx={{ display: "block" }}>
+                            {col.label}
+                          </Typography>
+                          <Box sx={{ overflowWrap: "break-word" }}>{renderCell(o, col)}</Box>
+                        </Box>
+                      ))}
+                    </Box>
+                  </CardContent>
+                </Card>
+              ))}
+          </Stack>
+        )}
+      </Box>
+
       <TablePagination
         component="div"
         count={visible.length}
@@ -325,7 +400,13 @@ export default function RentalObjectsTable({ objects, fastigheter, columnSetting
         onSubmit={handleFormSubmit}
       />
 
-      <RentalObjectExcelImport open={importOpen} onClose={() => setImportOpen(false)} />
+      <RentalObjectExcelImport
+        open={importOpen}
+        singleFields={importSingleFields}
+        multiTab={importMultiTab}
+        tabGroups={importTabGroups}
+        onClose={() => setImportOpen(false)}
+      />
 
       <Dialog open={!!deletingId} onClose={() => setDeletingId(null)}>
         <DialogTitle>Ta bort objekt</DialogTitle>

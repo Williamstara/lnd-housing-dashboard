@@ -8,7 +8,10 @@ import FileDownloadIcon from "@mui/icons-material/FileDownload";
 import LocalLaundryServiceIcon from "@mui/icons-material/LocalLaundryService";
 import SearchIcon from "@mui/icons-material/Search";
 import UploadFileIcon from "@mui/icons-material/UploadFile";
+import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
+import Card from "@mui/material/Card";
+import CardContent from "@mui/material/CardContent";
 import Dialog from "@mui/material/Dialog";
 import DialogActions from "@mui/material/DialogActions";
 import DialogContent from "@mui/material/DialogContent";
@@ -34,14 +37,18 @@ import {
   updateTenantAction,
 } from "@/app/hyresgastlista/actions";
 import { exportRowsToXlsx } from "@/lib/export-xlsx";
+import type { ImportFieldConfig } from "@/lib/table-columns";
 import type { Tenant, TenantInput } from "@/lib/tenants";
+import ColumnVisibilityMenu from "@/components/ColumnVisibilityMenu";
 import ExcelImportDialog from "@/components/ExcelImportDialog";
 import LaundryAccountDialog from "@/components/LaundryAccountDialog";
 import TenantFormDialog from "@/components/TenantFormDialog";
+import { useColumnVisibility } from "@/lib/use-column-visibility";
 
 type Props = {
   tenants: Tenant[];
   fastigheter: string[];
+  importMapping: ImportFieldConfig[];
 };
 
 type SortableColumn = Exclude<keyof Tenant, "id">;
@@ -71,7 +78,7 @@ function matchesSearch(tenant: Tenant, query: string): boolean {
   return haystack.includes(query);
 }
 
-export default function TenantsTable({ tenants, fastigheter }: Props) {
+export default function TenantsTable({ tenants, fastigheter, importMapping }: Props) {
   const [formOpen, setFormOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [editingTenant, setEditingTenant] = useState<Tenant | null>(null);
@@ -86,6 +93,8 @@ export default function TenantsTable({ tenants, fastigheter }: Props) {
   const [order, setOrder] = useState<Order>("asc");
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(25);
+  const { isVisible, toggle } = useColumnVisibility("tenants");
+  const visibleColumnDefs = columns.filter((c) => isVisible(c.key));
 
   const visibleTenants = useMemo(() => {
     const query = search.trim().toLocaleLowerCase("sv");
@@ -148,7 +157,7 @@ export default function TenantsTable({ tenants, fastigheter }: Props) {
     <>
       <Stack
         direction="row"
-        sx={{ justifyContent: "space-between", alignItems: "center", mb: 3, gap: 2 }}
+        sx={{ justifyContent: "space-between", alignItems: "center", mb: 3, gap: 2, flexWrap: "wrap" }}
       >
         <Typography variant="h4" component="h1" sx={{ fontWeight: 600 }}>
           Hyresgästlista
@@ -196,6 +205,7 @@ export default function TenantsTable({ tenants, fastigheter }: Props) {
         }}
       />
 
+      <Box sx={{ display: { xs: "none", sm: "block" } }}>
       <TableContainer component={Paper} sx={{ overflowX: "auto" }}>
         <Table
           aria-label="Hyresgästlista"
@@ -207,7 +217,10 @@ export default function TenantsTable({ tenants, fastigheter }: Props) {
         >
           <TableHead>
             <TableRow>
-              {columns.map((column) => (
+              <TableCell padding="checkbox">
+                <ColumnVisibilityMenu columns={columns} isVisible={isVisible} onToggle={toggle} />
+              </TableCell>
+              {visibleColumnDefs.map((column) => (
                 <TableCell
                   key={column.key}
                   sortDirection={orderBy === column.key ? order : false}
@@ -227,7 +240,7 @@ export default function TenantsTable({ tenants, fastigheter }: Props) {
           <TableBody>
             {visibleTenants.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={7} align="center">
+                <TableCell colSpan={visibleColumnDefs.length + 2} align="center">
                   {tenants.length === 0
                     ? "Inga hyresgäster hittades."
                     : "Inga träffar för sökningen."}
@@ -236,12 +249,10 @@ export default function TenantsTable({ tenants, fastigheter }: Props) {
             ) : (
               visibleTenants.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage).map((tenant) => (
                 <TableRow key={tenant.id}>
-                  <TableCell>{tenant.lagenhetsnummer}</TableCell>
-                  <TableCell>{tenant.fastighet}</TableCell>
-                  <TableCell>{tenant.namn}</TableCell>
-                  <TableCell>{tenant.personnummer}</TableCell>
-                  <TableCell>{tenant.mejladress}</TableCell>
-                  <TableCell>{tenant.telefonnummer}</TableCell>
+                  <TableCell padding="checkbox" />
+                  {visibleColumnDefs.map((column) => (
+                    <TableCell key={column.key}>{tenant[column.key]}</TableCell>
+                  ))}
                   <TableCell align="right">
                     <IconButton
                       aria-label="Skapa tvättstugekonto"
@@ -272,6 +283,54 @@ export default function TenantsTable({ tenants, fastigheter }: Props) {
           </TableBody>
         </Table>
       </TableContainer>
+      </Box>
+
+      <Box sx={{ display: { xs: "block", sm: "none" } }}>
+        <Stack direction="row" sx={{ justifyContent: "flex-end", mb: 1 }}>
+          <ColumnVisibilityMenu columns={columns} isVisible={isVisible} onToggle={toggle} />
+        </Stack>
+        {visibleTenants.length === 0 ? (
+          <Typography variant="body2" color="text.secondary" sx={{ textAlign: "center", py: 4 }}>
+            {tenants.length === 0 ? "Inga hyresgäster hittades." : "Inga träffar för sökningen."}
+          </Typography>
+        ) : (
+          <Stack spacing={1.5}>
+            {visibleTenants.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage).map((tenant) => (
+              <Card key={tenant.id} variant="outlined">
+                <CardContent sx={{ "&:last-child": { pb: 2 } }}>
+                  <Stack direction="row" sx={{ justifyContent: "flex-end", gap: 0.5, mb: 1 }}>
+                    <IconButton
+                      aria-label="Skapa tvättstugekonto"
+                      size="small"
+                      onClick={() => setLaundryTenant(tenant)}
+                      title="Skapa tvättstugekonto"
+                    >
+                      <LocalLaundryServiceIcon fontSize="small" />
+                    </IconButton>
+                    <IconButton aria-label="Redigera" size="small" onClick={() => openEditDialog(tenant)}>
+                      <EditIcon fontSize="small" />
+                    </IconButton>
+                    <IconButton aria-label="Ta bort" size="small" onClick={() => setDeletingTenant(tenant)}>
+                      <DeleteIcon fontSize="small" />
+                    </IconButton>
+                  </Stack>
+                  <Box sx={{ display: "grid", gridTemplateColumns: "1fr 1fr", columnGap: 2, rowGap: 1 }}>
+                    {visibleColumnDefs.map((column) => (
+                      <Box key={column.key} sx={{ minWidth: 0 }}>
+                        <Typography variant="caption" color="text.secondary" sx={{ display: "block" }}>
+                          {column.label}
+                        </Typography>
+                        <Box sx={{ overflowWrap: "break-word" }}>{tenant[column.key]}</Box>
+                      </Box>
+                    ))}
+                  </Box>
+                </CardContent>
+              </Card>
+            ))}
+          </Stack>
+        )}
+      </Box>
+
       <TablePagination
         component="div"
         count={visibleTenants.length}
@@ -287,6 +346,7 @@ export default function TenantsTable({ tenants, fastigheter }: Props) {
       <ExcelImportDialog
         open={importOpen}
         fastigheter={fastigheter}
+        mapping={importMapping}
         onClose={() => setImportOpen(false)}
       />
 

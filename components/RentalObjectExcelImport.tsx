@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, useTransition } from "react";
+import { useMemo, useRef, useState, useTransition } from "react";
 import UploadFileIcon from "@mui/icons-material/UploadFile";
 import Alert from "@mui/material/Alert";
 import Box from "@mui/material/Box";
@@ -21,6 +21,12 @@ import Typography from "@mui/material/Typography";
 import { read, utils } from "xlsx";
 import { importRentalObjectsAction } from "@/app/databas/actions";
 import type { RentalObjectInput } from "@/lib/rentalobjects";
+import {
+  describeMapping,
+  mappingToLookup,
+  type ImportFieldConfig,
+  type RentalObjectTabGroup,
+} from "@/lib/table-columns";
 
 // ─── helpers ────────────────────────────────────────────────────────────────
 
@@ -65,107 +71,52 @@ function normalizeRenoveringsbehov(renov: number | null): number {
 
 // ─── tab detection ───────────────────────────────────────────────────────────
 
-type TabType = "GH" | "NH" | "FH" | "ArkivetB" | "ArkivetC" | "ArkivetD";
-
-function detectTab(name: string): TabType | null {
-  const n = name.trim().toLowerCase();
-  if (n.includes("finn")) return "FH";
-  if (n.includes("gh") || n.includes("st35") || n.includes("st 35")) return "GH";
-  if (n.includes("nh") || n.includes("st39") || n.includes("st 39")) return "NH";
-  if (n.includes("arkivet")) {
-    if (/ b$| b |^b$/i.test(" " + n) || n.endsWith(" b")) return "ArkivetB";
-    if (/ c$| c |^c$/i.test(" " + n) || n.endsWith(" c")) return "ArkivetC";
-    if (/ d$| d |^d$/i.test(" " + n) || n.endsWith(" d")) return "ArkivetD";
-    // fallback: check last non-space char
-    const last = n.replace(/\s+$/, "").slice(-1);
-    if (last === "b") return "ArkivetB";
-    if (last === "c") return "ArkivetC";
-    if (last === "d") return "ArkivetD";
+// First group (in admin-defined order) whose matchers include a substring of
+// the sheet name — replaces the old hardcoded GH/NH/Finn/Arkivet regex logic
+// with something an admin can fully redefine per nation.
+function detectGroup(sheetName: string, groups: RentalObjectTabGroup[]): RentalObjectTabGroup | null {
+  const lower = sheetName.trim().toLowerCase();
+  for (const group of groups) {
+    if (group.matchers.some((m) => m.trim() && lower.includes(m.trim().toLowerCase()))) {
+      return group;
+    }
   }
   return null;
 }
 
-// ─── per-tab parsers ─────────────────────────────────────────────────────────
+// ─── generic sheet parser ────────────────────────────────────────────────────
 
-function parseGHNH(rows: unknown[][], prefix: "GH" | "NH"): RentalObjectInput[] {
+// One parser for both standard (single-sheet) and multi-tab mode. A column
+// of -1 ("not present on this sheet") makes str()/num() read past the end of
+// the row and come back empty/null, so fields a nation's layout doesn't have
+// (e.g. Finn huset's missing renoveringsbehov) just come out null — no
+// special-casing needed per tab.
+function parseSheet(rows: unknown[][], prefix: string, col: Record<string, number>): RentalObjectInput[] {
   const out: RentalObjectInput[] = [];
   for (const row of rows) {
-    const lgh = str(row, 1);
+    const lgh = str(row, col.lagenhetsnummer!);
     if (!lgh || !/\d/.test(lgh)) continue; // only rows that actually have a lägenhetsnummer
-    const malbild = num(row, 5);
-    const renov = num(row, 9);
-    // K (col 10) = hyresrabatt amount from Excel; fall back to calculation
-    const rabattRaw = num(row, 10);
+    const malbild = num(row, col.malbildshyra!);
+    const renov = num(row, col.renoveringsbehov!);
+    // hyresrabatt column = amount from Excel; fall back to calculation
+    const rabattRaw = num(row, col.hyresrabatt!);
     const hyresrabatt = rabattRaw != null ? Math.abs(rabattRaw) : renovToRabatt(renov, malbild);
-    const hyresred = num(row, 11);
+    const hyresred = num(row, col.hyresred!);
     const hyresredAbs = hyresred != null ? Math.abs(hyresred) : null;
     const individuell =
       malbild != null
         ? (malbild - (hyresrabatt ?? 0)) - (hyresredAbs ?? 0)
         : null;
     out.push({
-      fastighet: mapFastighet(str(row, 0)),
+      fastighet: mapFastighet(str(row, col.fastighet!)),
       lagenhetsnummer: prefix + lgh,
-      area: num(row, 2),
-      areaInkKorr: num(row, 3),
-      typ: str(row, 4),
+      area: num(row, col.area!),
+      areaInkKorr: num(row, col.areaInkKorr!),
+      typ: str(row, col.typ!),
       malbildshyra: malbild,
       renoveringsbehov: normalizeRenoveringsbehov(renov),
       hyresrabatt,
       hyresred: hyresredAbs,
-      individuellArshyra: individuell,
-      manadshyra: individuell != null ? Math.round(individuell / 12) : null,
-      planritning: null,
-    });
-  }
-  return out;
-}
-
-function parseFinn(rows: unknown[][]): RentalObjectInput[] {
-  const out: RentalObjectInput[] = [];
-  for (const row of rows) {
-    const lgh = str(row, 1);
-    if (!lgh || !/\d/.test(lgh)) continue; // only rows that actually have a lägenhetsnummer
-    const malbild = num(row, 3);
-    const individuell = malbild;
-    out.push({
-      fastighet: mapFastighet(str(row, 0)),
-      lagenhetsnummer: "FH" + lgh,
-      area: num(row, 6),
-      areaInkKorr: null,
-      typ: str(row, 8),
-      malbildshyra: malbild,
-      renoveringsbehov: normalizeRenoveringsbehov(null),
-      hyresrabatt: null,
-      hyresred: null,
-      individuellArshyra: individuell,
-      manadshyra: individuell != null ? Math.round(individuell / 12) : null,
-      planritning: null,
-    });
-  }
-  return out;
-}
-
-function parseArkivet(rows: unknown[][], suffix: "B" | "C" | "D"): RentalObjectInput[] {
-  const out: RentalObjectInput[] = [];
-  for (const row of rows) {
-    const lgh = str(row, 1);
-    if (!lgh || !/\d/.test(lgh)) continue; // only rows that actually have a lägenhetsnummer
-    const malbild = num(row, 6);
-    const renov = num(row, 11);
-    const rabattRaw = num(row, 12);
-    const hyresrabatt = rabattRaw != null ? Math.abs(rabattRaw) : renovToRabatt(renov, malbild);
-    const individuell = malbild != null ? malbild - (hyresrabatt ?? 0) : null;
-    out.push({
-      fastighet: mapFastighet(str(row, 0)),
-      lagenhetsnummer: suffix + lgh,
-      area: num(row, 2),
-      areaInkKorr: num(row, 3),
-      typ: str(row, 4),
-      malbildshyra: malbild,
-      renoveringsbehov: normalizeRenoveringsbehov(renov),
-      hyresrabatt,
-      hyresred: null,
       individuellArshyra: individuell,
       manadshyra: individuell != null ? Math.round(individuell / 12) : null,
       planritning: null,
@@ -182,29 +133,42 @@ type ParseResult = {
   skippedTabs: string[];
 };
 
-function parseWorkbook(data: ArrayBuffer): ParseResult {
+// Standard mode (default): everything on one sheet — reads only the first
+// sheet, no fliknamn detection required. Multi-tab mode (opt-in per nation)
+// routes each sheet to whichever admin-defined tab group matches its name.
+function parseWorkbook(
+  data: ArrayBuffer,
+  singleFields: ImportFieldConfig[],
+  multiTab: boolean,
+  tabGroups: RentalObjectTabGroup[]
+): ParseResult {
   const wb = read(data, { type: "array" });
   const rows: RentalObjectInput[] = [];
   const tabSummary: Array<{ name: string; count: number }> = [];
   const skippedTabs: string[] = [];
 
+  if (!multiTab) {
+    const [sheetName, ...restSheets] = wb.SheetNames;
+    if (sheetName) {
+      const ws = wb.Sheets[sheetName];
+      const raw = utils.sheet_to_json<unknown[]>(ws, { header: 1, defval: "" });
+      const parsedRows = parseSheet(raw, "", mappingToLookup({ fields: singleFields }));
+      rows.push(...parsedRows);
+      tabSummary.push({ name: sheetName, count: parsedRows.length });
+    }
+    skippedTabs.push(...restSheets);
+    return { rows, tabSummary, skippedTabs };
+  }
+
   for (const sheetName of wb.SheetNames) {
-    const tabType = detectTab(sheetName);
-    if (!tabType) {
+    const group = detectGroup(sheetName, tabGroups);
+    if (!group) {
       skippedTabs.push(sheetName);
       continue;
     }
     const ws = wb.Sheets[sheetName];
     const raw = utils.sheet_to_json<unknown[]>(ws, { header: 1, defval: "" });
-
-    let parsed: RentalObjectInput[];
-    if (tabType === "GH") parsed = parseGHNH(raw, "GH");
-    else if (tabType === "NH") parsed = parseGHNH(raw, "NH");
-    else if (tabType === "FH") parsed = parseFinn(raw);
-    else if (tabType === "ArkivetB") parsed = parseArkivet(raw, "B");
-    else if (tabType === "ArkivetC") parsed = parseArkivet(raw, "C");
-    else parsed = parseArkivet(raw, "D");
-
+    const parsed = parseSheet(raw, group.prefix, mappingToLookup({ fields: group.fields }));
     rows.push(...parsed);
     tabSummary.push({ name: sheetName, count: parsed.length });
   }
@@ -214,10 +178,26 @@ function parseWorkbook(data: ArrayBuffer): ParseResult {
 
 // ─── component ───────────────────────────────────────────────────────────────
 
-type Props = { open: boolean; onClose: () => void };
+type Props = {
+  open: boolean;
+  singleFields: ImportFieldConfig[];
+  multiTab: boolean;
+  tabGroups: RentalObjectTabGroup[];
+  onClose: () => void;
+};
 type Stage = "pick" | "preview" | "done";
 
-export default function RentalObjectExcelImport({ open, onClose }: Props) {
+export default function RentalObjectExcelImport({
+  open,
+  singleFields,
+  multiTab,
+  tabGroups,
+  onClose,
+}: Props) {
+  const description = useMemo(() => {
+    if (!multiTab) return describeMapping({ fields: singleFields });
+    return tabGroups.map((g) => `${g.name}: ${describeMapping({ fields: g.fields })}`).join(" · ");
+  }, [singleFields, multiTab, tabGroups]);
   const fileRef = useRef<HTMLInputElement>(null);
   const [stage, setStage] = useState<Stage>("pick");
   const [parsed, setParsed] = useState<ParseResult | null>(null);
@@ -245,10 +225,12 @@ export default function RentalObjectExcelImport({ open, onClose }: Props) {
     const reader = new FileReader();
     reader.onload = (ev) => {
       try {
-        const result = parseWorkbook(ev.target!.result as ArrayBuffer);
+        const result = parseWorkbook(ev.target!.result as ArrayBuffer, singleFields, multiTab, tabGroups);
         if (result.rows.length === 0) {
           setError(
-            "Inga giltiga rader hittades. Kontrollera att filens fliknamn matchar GH ST35, NH ST39, Finn huset eller Arkivet B/C/D."
+            multiTab
+              ? `Inga giltiga rader hittades. Kontrollera att filens fliknamn matchar: ${tabGroups.map((g) => g.name).join(", ")}.`
+              : `Inga giltiga rader hittades. Kontrollera kolumnerna: ${description}.`
           );
           return;
         }
@@ -287,8 +269,13 @@ export default function RentalObjectExcelImport({ open, onClose }: Props) {
         {stage === "pick" && (
           <Box sx={{ display: "flex", flexDirection: "column", gap: 2, py: 1 }}>
             <Typography variant="body2" color="text.secondary">
-              Välj en xlsx-fil med flikarna GH ST35, NH ST39, Finn huset och/eller Arkivet B/C/D.
-              Befintliga objekt med samma lägenhetsnummer uppdateras.
+              {multiTab
+                ? `Välj en xlsx-fil med flikarna: ${tabGroups.map((g) => g.name).join(", ")}.`
+                : "Välj en xlsx-fil. All information läses från det första bladet."}
+              {" "}Befintliga objekt med samma lägenhetsnummer uppdateras.
+            </Typography>
+            <Typography variant="body2" color="text.secondary">
+              {multiTab ? `Kolumner per flik — ${description}.` : `Kolumn ${description}.`}
             </Typography>
             <Button
               variant="outlined"

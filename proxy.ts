@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { auth0 } from "@/lib/auth0";
 import { getNationsId } from "@/lib/nations";
+import { isRestrictedToTodo } from "@/lib/roles";
 
 // Paths where an authenticated-but-nationsID-less user shouldn't be bounced:
 // the Auth0 SDK's own routes, API routes (which return JSON 401/403 errors
@@ -34,6 +35,12 @@ export async function proxy(request: NextRequest) {
   const session = await auth0.getSession(request);
   if (session?.user && !getNationsId(session.user)) {
     return NextResponse.redirect(new URL("/nationsid-saknas", request.url));
+  }
+
+  // vaktmästare is access-restricted rather than access-granting — see
+  // isRestrictedToTodo in lib/roles.ts.
+  if (session?.user && isRestrictedToTodo(session.user) && !pathname.startsWith("/todo")) {
+    return NextResponse.redirect(new URL("/todo", request.url));
   }
 
   return authResponse;
