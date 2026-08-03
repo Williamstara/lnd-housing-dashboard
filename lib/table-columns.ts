@@ -35,6 +35,12 @@ export type RentalObjectTabGroup = {
   fields: ImportFieldConfig[];
 };
 
+// Maps a raw spreadsheet "Fastighet" cell value (matched trimmed,
+// case-insensitively) to the canonical fastighet name stored in the
+// fastigheter collection — for nations whose sheet uses abbreviations or
+// alternate spellings that don't literally match the registered name.
+export type FastighetAlias = { alias: string; fastighet: string };
+
 export type NationSettings = {
   nationsID: string;
   tables: Partial<Record<TableKey, NationTableSettings>>;
@@ -43,6 +49,7 @@ export type NationSettings = {
   // the opt-in exception.
   rentalobjectsMultiTab?: boolean;
   rentalobjectsTabGroups?: RentalObjectTabGroup[];
+  fastighetAliases?: FastighetAlias[];
 };
 
 // Today's exact hardcoded column set for each table — what a nation with no
@@ -263,6 +270,45 @@ export function resolveImportMapping(
   saved: ImportMapping | undefined
 ): ImportMapping {
   return saved ?? defaults;
+}
+
+// Today's known raw spreadsheet spellings for LND's fastigheter, pointed at
+// the actual registered names — the seed a nation with no saved aliases
+// gets, so nothing changes until an admin edits it.
+export const DEFAULT_FASTIGHET_ALIASES: FastighetAlias[] = [
+  { alias: "arkivet", fastighet: "Arkivet" },
+  { alias: "sankt thomas 35", fastighet: "Sankt Thomas 35" },
+  { alias: "sankt thomas 39 b", fastighet: "Sankt Thomas 39 B" },
+  { alias: "sankt thomas 39", fastighet: "Sankt Thomas 39" },
+];
+
+export function resolveFastighetAliases(
+  defaults: FastighetAlias[],
+  saved: FastighetAlias[] | undefined
+): FastighetAlias[] {
+  return saved ?? defaults;
+}
+
+// Runs a raw "Fastighet" cell through the admin-configured alias table
+// (trimmed, case-insensitive match) — an unmatched value passes through
+// unchanged so the caller can still try matching it directly.
+export function applyFastighetAlias(raw: string, aliases: FastighetAlias[]): string {
+  const trimmed = raw.trim();
+  const match = aliases.find((a) => a.alias.trim().toLowerCase() === trimmed.toLowerCase());
+  return match ? match.fastighet.trim() : trimmed;
+}
+
+// Alias, then a trimmed case-insensitive match against the nation's actual
+// registered fastigheter — returns the registry's own casing so imported
+// rows always store the canonical name, or null if nothing matches at all.
+export function resolveFastighetName(
+  raw: string,
+  fastigheter: string[],
+  aliases: FastighetAlias[]
+): string | null {
+  const candidate = applyFastighetAlias(raw, aliases);
+  if (!candidate) return null;
+  return fastigheter.find((f) => f.toLowerCase() === candidate.toLowerCase()) ?? null;
 }
 
 // Spreadsheet column letters: A=0, Z=25, AA=26, ...

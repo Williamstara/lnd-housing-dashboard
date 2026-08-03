@@ -6,8 +6,10 @@ import { getFastighetNamn } from "@/lib/fastigheter";
 import { requireNationsIdOrRedirect } from "@/lib/nations";
 import {
   DEFAULT_ANDRAHANDSGAST_IMPORT,
+  DEFAULT_FASTIGHET_ALIASES,
   DEFAULT_TENANT_IMPORT,
   getNationSettings,
+  resolveFastighetAliases,
   resolveImportMapping,
 } from "@/lib/nation-settings";
 import { getTenants, type Tenant } from "@/lib/tenants";
@@ -44,6 +46,10 @@ const HyresgastlistaPage = auth0.withPageAuthRequired(
       DEFAULT_ANDRAHANDSGAST_IMPORT,
       nationSettings?.imports?.andrahandsgaster
     ).fields;
+    const fastighetAliases = resolveFastighetAliases(
+      DEFAULT_FASTIGHET_ALIASES,
+      nationSettings?.fastighetAliases
+    );
 
     return (
       <Container maxWidth={false} sx={{ py: 6, width: "80%", mx: "auto" }}>
@@ -53,10 +59,16 @@ const HyresgastlistaPage = auth0.withPageAuthRequired(
           </Alert>
         )}
 
-        <TenantsTable tenants={tenants} fastigheter={fastigheter} importMapping={tenantImportMapping} />
+        <TenantsTable
+          tenants={tenants}
+          fastigheter={fastigheter}
+          aliases={fastighetAliases}
+          importMapping={tenantImportMapping}
+        />
         <AndrahandsgasterTable
           andrahandsgaster={andrahandsgaster}
           fastigheter={fastigheter}
+          aliases={fastighetAliases}
           importMapping={andrahandsgastImportMapping}
         />
       </Container>

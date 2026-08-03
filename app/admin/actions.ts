@@ -7,10 +7,12 @@ import { assignNationsId, assignRoles, deleteUser, getAvailableRoles, type AppRo
 import {
   createNation,
   getNationSettings,
+  saveFastighetAliases,
   saveImportMapping,
   saveRentalobjectTabGroups,
   saveTableSettings,
   setRentalobjectsMultiTab,
+  type FastighetAlias,
   type ImportFieldConfig,
   type ImportKey,
   type NationSettings,
@@ -74,6 +76,16 @@ export async function saveRentalobjectTabGroupsAction(
 ): Promise<void> {
   await requireAdmin();
   await saveRentalobjectTabGroups(nationsId, groups);
+  revalidatePath("/databas");
+}
+
+export async function saveFastighetAliasesAction(
+  nationsId: string,
+  aliases: FastighetAlias[]
+): Promise<void> {
+  await requireAdmin();
+  await saveFastighetAliases(nationsId, aliases);
+  revalidatePath("/hyresgastlista");
   revalidatePath("/databas");
 }
 

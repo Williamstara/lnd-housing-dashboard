@@ -1,6 +1,7 @@
 import "server-only";
 import { getDb } from "@/lib/mongodb";
 import type {
+  FastighetAlias,
   ImportKey,
   ImportMapping,
   NationSettings,
@@ -10,6 +11,7 @@ import type {
 } from "@/lib/table-columns";
 
 export type {
+  FastighetAlias,
   ImportFieldConfig,
   ImportKey,
   ImportMapping,
@@ -23,15 +25,19 @@ export {
   DEFAULT_ANDRAHANDSGAST_IMPORT,
   DEFAULT_APARTMENT_COLUMNS,
   DEFAULT_BESIKTNING_IMPORT,
+  DEFAULT_FASTIGHET_ALIASES,
   DEFAULT_RENTALOBJECT_COLUMNS,
   DEFAULT_RENTALOBJECT_SINGLE_IMPORT,
   DEFAULT_RENTALOBJECT_TAB_GROUPS,
   DEFAULT_TENANT_IMPORT,
+  applyFastighetAlias,
   columnIndexToLetter,
   columnLetterToIndex,
   describeMapping,
   mappingToLookup,
   resolveColumns,
+  resolveFastighetAliases,
+  resolveFastighetName,
   resolveImportMapping,
   resolveTabGroups,
 } from "@/lib/table-columns";
@@ -53,6 +59,7 @@ export async function getNationSettings(nationsId: string): Promise<NationSettin
         imports: doc.imports,
         rentalobjectsMultiTab: doc.rentalobjectsMultiTab,
         rentalobjectsTabGroups: doc.rentalobjectsTabGroups,
+        fastighetAliases: doc.fastighetAliases,
       }
     : null;
 }
@@ -109,6 +116,18 @@ export async function saveRentalobjectTabGroups(
   await col.updateOne(
     { nationsID: nationsId },
     { $set: { rentalobjectsTabGroups: groups, updatedAt: new Date() } },
+    { upsert: true }
+  );
+}
+
+export async function saveFastighetAliases(
+  nationsId: string,
+  aliases: FastighetAlias[]
+): Promise<void> {
+  const col = await getCollection();
+  await col.updateOne(
+    { nationsID: nationsId },
+    { $set: { fastighetAliases: aliases, updatedAt: new Date() } },
     { upsert: true }
   );
 }

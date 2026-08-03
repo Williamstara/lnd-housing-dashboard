@@ -20,18 +20,13 @@ import Typography from "@mui/material/Typography";
 import { read, utils } from "xlsx";
 import { importAndrahandsgasterFromExcelAction } from "@/app/hyresgastlista/actions";
 import type { AndrahandsgastInput } from "@/lib/andrahandsgaster";
-import { describeMapping, mappingToLookup, type ImportFieldConfig } from "@/lib/table-columns";
-
-const FASTIGHET_MAP: Record<string, string> = {
-  "arkivet": "Arkivet (223 59, Lund)",
-  "sankt thomas 35": "Gamla huset (223 51, Lund)",
-  "sankt thomas 39 b": "Finn huset (223 51, Lund)",
-  "sankt thomas 39": "Nya huset (223 51, Lund)",
-};
-
-function mapFastighet(raw: string): string {
-  return FASTIGHET_MAP[raw.trim().toLowerCase()] ?? raw.trim();
-}
+import {
+  describeMapping,
+  mappingToLookup,
+  resolveFastighetName,
+  type FastighetAlias,
+  type ImportFieldConfig,
+} from "@/lib/table-columns";
 
 function cellStr(row: unknown[], index: number): string {
   const val = (row as Record<number, unknown>)[index];
@@ -41,6 +36,7 @@ function cellStr(row: unknown[], index: number): string {
 function parseRows(
   data: ArrayBuffer,
   fastigheter: string[],
+  aliases: FastighetAlias[],
   col: Record<string, number>
 ): { rows: AndrahandsgastInput[]; skipped: number } {
   const wb = read(data, { type: "array" });
@@ -63,8 +59,8 @@ function parseRows(
       continue;
     }
 
-    const fastighet = mapFastighet(fastighetsRaw);
-    if (!fastigheter.includes(fastighet)) {
+    const fastighet = resolveFastighetName(fastighetsRaw, fastigheter, aliases);
+    if (!fastighet) {
       skipped++;
       continue;
     }
@@ -78,13 +74,20 @@ function parseRows(
 type Props = {
   open: boolean;
   fastigheter: string[];
+  aliases: FastighetAlias[];
   mapping: ImportFieldConfig[];
   onClose: () => void;
 };
 
 type Stage = "pick" | "preview" | "done";
 
-export default function AndrahandsgastExcelImportDialog({ open, fastigheter, mapping, onClose }: Props) {
+export default function AndrahandsgastExcelImportDialog({
+  open,
+  fastigheter,
+  aliases,
+  mapping,
+  onClose,
+}: Props) {
   const col = useMemo(() => mappingToLookup({ fields: mapping }), [mapping]);
   const description = useMemo(() => describeMapping({ fields: mapping }), [mapping]);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -116,7 +119,12 @@ export default function AndrahandsgastExcelImportDialog({ open, fastigheter, map
     const reader = new FileReader();
     reader.onload = (ev) => {
       try {
-        const { rows: parsed, skipped: sk } = parseRows(ev.target!.result as ArrayBuffer, fastigheter, col);
+        const { rows: parsed, skipped: sk } = parseRows(
+          ev.target!.result as ArrayBuffer,
+          fastigheter,
+          aliases,
+          col
+        );
         if (parsed.length === 0) {
           setError(`Inga giltiga rader hittades i filen. Kontrollera kolumnerna: ${description}.`);
           return;

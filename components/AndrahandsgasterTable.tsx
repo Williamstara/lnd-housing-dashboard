@@ -38,7 +38,7 @@ import {
 } from "@/app/hyresgastlista/actions";
 import { exportRowsToXlsx } from "@/lib/export-xlsx";
 import type { Andrahandsgast, AndrahandsgastInput } from "@/lib/andrahandsgaster";
-import type { ImportFieldConfig } from "@/lib/table-columns";
+import type { FastighetAlias, ImportFieldConfig } from "@/lib/table-columns";
 import AndrahandsgastExcelImportDialog from "@/components/AndrahandsgastExcelImportDialog";
 import AndrahandsgastFormDialog from "@/components/AndrahandsgastFormDialog";
 import AndrahandsgastLaundryAccountDialog from "@/components/AndrahandsgastLaundryAccountDialog";
@@ -48,6 +48,7 @@ import { useColumnVisibility } from "@/lib/use-column-visibility";
 type Props = {
   andrahandsgaster: Andrahandsgast[];
   fastigheter: string[];
+  aliases: FastighetAlias[];
   importMapping: ImportFieldConfig[];
 };
 
@@ -71,7 +72,12 @@ function matchesSearch(row: Andrahandsgast, query: string): boolean {
   return haystack.includes(query);
 }
 
-export default function AndrahandsgasterTable({ andrahandsgaster, fastigheter, importMapping }: Props) {
+export default function AndrahandsgasterTable({
+  andrahandsgaster,
+  fastigheter,
+  aliases,
+  importMapping,
+}: Props) {
   const [formOpen, setFormOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [editingRow, setEditingRow] = useState<Andrahandsgast | null>(null);
@@ -338,6 +344,7 @@ export default function AndrahandsgasterTable({ andrahandsgaster, fastigheter, i
       <AndrahandsgastExcelImportDialog
         open={importOpen}
         fastigheter={fastigheter}
+        aliases={aliases}
         mapping={importMapping}
         onClose={() => setImportOpen(false)}
       />

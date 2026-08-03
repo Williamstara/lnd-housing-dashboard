@@ -5,10 +5,12 @@ import { getFastighetNamn } from "@/lib/fastigheter";
 import { requireNationsIdOrRedirect } from "@/lib/nations";
 import { getNationSettings } from "@/lib/nation-settings";
 import {
+  DEFAULT_FASTIGHET_ALIASES,
   DEFAULT_RENTALOBJECT_COLUMNS,
   DEFAULT_RENTALOBJECT_SINGLE_IMPORT,
   DEFAULT_RENTALOBJECT_TAB_GROUPS,
   resolveColumns,
+  resolveFastighetAliases,
   resolveImportMapping,
   resolveTabGroups,
 } from "@/lib/table-columns";
@@ -45,6 +47,10 @@ const DatabасPage = auth0.withPageAuthRequired(
       nationSettings?.rentalobjectsTabGroups
     );
     const importMultiTab = nationSettings?.rentalobjectsMultiTab ?? false;
+    const fastighetAliases = resolveFastighetAliases(
+      DEFAULT_FASTIGHET_ALIASES,
+      nationSettings?.fastighetAliases
+    );
 
     return (
       <Container maxWidth="xl" sx={{ py: 6 }}>
@@ -56,6 +62,7 @@ const DatabасPage = auth0.withPageAuthRequired(
         <RentalObjectsTable
           objects={objects}
           fastigheter={fastigheter}
+          aliases={fastighetAliases}
           columnSettings={columnSettings}
           importSingleFields={importSingleFields}
           importTabGroups={importTabGroups}

@@ -22,24 +22,15 @@ import { read, utils } from "xlsx";
 import { importRentalObjectsAction } from "@/app/databas/actions";
 import type { RentalObjectInput } from "@/lib/rentalobjects";
 import {
+  applyFastighetAlias,
   describeMapping,
   mappingToLookup,
+  type FastighetAlias,
   type ImportFieldConfig,
   type RentalObjectTabGroup,
 } from "@/lib/table-columns";
 
 // ─── helpers ────────────────────────────────────────────────────────────────
-
-const FASTIGHET_MAP: Record<string, string> = {
-  "arkivet": "Arkivet (223 59, Lund)",
-  "sankt thomas 35": "Gamla huset (223 51, Lund)",
-  "sankt thomas 39 b": "Finn huset (223 51, Lund)",
-  "sankt thomas 39": "Nya huset (223 51, Lund)",
-};
-
-function mapFastighet(raw: string): string {
-  return FASTIGHET_MAP[raw.trim().toLowerCase()] ?? raw.trim();
-}
 
 function str(row: unknown[], col: number): string {
   const v = (row as Record<number, unknown>)[col];
@@ -91,7 +82,12 @@ function detectGroup(sheetName: string, groups: RentalObjectTabGroup[]): RentalO
 // the row and come back empty/null, so fields a nation's layout doesn't have
 // (e.g. Finn huset's missing renoveringsbehov) just come out null — no
 // special-casing needed per tab.
-function parseSheet(rows: unknown[][], prefix: string, col: Record<string, number>): RentalObjectInput[] {
+function parseSheet(
+  rows: unknown[][],
+  prefix: string,
+  col: Record<string, number>,
+  aliases: FastighetAlias[]
+): RentalObjectInput[] {
   const out: RentalObjectInput[] = [];
   for (const row of rows) {
     const lgh = str(row, col.lagenhetsnummer!);
@@ -108,7 +104,7 @@ function parseSheet(rows: unknown[][], prefix: string, col: Record<string, numbe
         ? (malbild - (hyresrabatt ?? 0)) - (hyresredAbs ?? 0)
         : null;
     out.push({
-      fastighet: mapFastighet(str(row, col.fastighet!)),
+      fastighet: applyFastighetAlias(str(row, col.fastighet!), aliases),
       lagenhetsnummer: prefix + lgh,
       area: num(row, col.area!),
       areaInkKorr: num(row, col.areaInkKorr!),
@@ -140,7 +136,8 @@ function parseWorkbook(
   data: ArrayBuffer,
   singleFields: ImportFieldConfig[],
   multiTab: boolean,
-  tabGroups: RentalObjectTabGroup[]
+  tabGroups: RentalObjectTabGroup[],
+  aliases: FastighetAlias[]
 ): ParseResult {
   const wb = read(data, { type: "array" });
   const rows: RentalObjectInput[] = [];
@@ -152,7 +149,7 @@ function parseWorkbook(
     if (sheetName) {
       const ws = wb.Sheets[sheetName];
       const raw = utils.sheet_to_json<unknown[]>(ws, { header: 1, defval: "" });
-      const parsedRows = parseSheet(raw, "", mappingToLookup({ fields: singleFields }));
+      const parsedRows = parseSheet(raw, "", mappingToLookup({ fields: singleFields }), aliases);
       rows.push(...parsedRows);
       tabSummary.push({ name: sheetName, count: parsedRows.length });
     }
@@ -168,7 +165,7 @@ function parseWorkbook(
     }
     const ws = wb.Sheets[sheetName];
     const raw = utils.sheet_to_json<unknown[]>(ws, { header: 1, defval: "" });
-    const parsed = parseSheet(raw, group.prefix, mappingToLookup({ fields: group.fields }));
+    const parsed = parseSheet(raw, group.prefix, mappingToLookup({ fields: group.fields }), aliases);
     rows.push(...parsed);
     tabSummary.push({ name: sheetName, count: parsed.length });
   }
@@ -183,6 +180,7 @@ type Props = {
   singleFields: ImportFieldConfig[];
   multiTab: boolean;
   tabGroups: RentalObjectTabGroup[];
+  aliases: FastighetAlias[];
   onClose: () => void;
 };
 type Stage = "pick" | "preview" | "done";
@@ -192,6 +190,7 @@ export default function RentalObjectExcelImport({
   singleFields,
   multiTab,
   tabGroups,
+  aliases,
   onClose,
 }: Props) {
   const description = useMemo(() => {
@@ -225,7 +224,13 @@ export default function RentalObjectExcelImport({
     const reader = new FileReader();
     reader.onload = (ev) => {
       try {
-        const result = parseWorkbook(ev.target!.result as ArrayBuffer, singleFields, multiTab, tabGroups);
+        const result = parseWorkbook(
+          ev.target!.result as ArrayBuffer,
+          singleFields,
+          multiTab,
+          tabGroups,
+          aliases
+        );
         if (result.rows.length === 0) {
           setError(
             multiTab

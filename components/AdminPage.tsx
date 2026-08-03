@@ -23,6 +23,7 @@ import Typography from "@mui/material/Typography";
 import {
   createNationAction,
   getNationSettingsAction,
+  saveFastighetAliasesAction,
   saveImportMappingAction,
   saveRentalobjectTabGroupsAction,
   saveRentalobjectsMultiTabAction,
@@ -32,6 +33,7 @@ import {
   DEFAULT_ANDRAHANDSGAST_IMPORT,
   DEFAULT_APARTMENT_COLUMNS,
   DEFAULT_BESIKTNING_IMPORT,
+  DEFAULT_FASTIGHET_ALIASES,
   DEFAULT_RENTALOBJECT_COLUMNS,
   DEFAULT_RENTALOBJECT_SINGLE_IMPORT,
   DEFAULT_RENTALOBJECT_TAB_GROUPS,
@@ -39,8 +41,10 @@ import {
   columnIndexToLetter,
   columnLetterToIndex,
   resolveColumns,
+  resolveFastighetAliases,
   resolveImportMapping,
   resolveTabGroups,
+  type FastighetAlias,
   type ImportFieldConfig,
   type ImportKey,
   type NationSettings,
@@ -288,6 +292,99 @@ function ImportMappingEditor({
         </Alert>
       )}
       <Stack direction="row" spacing={2} sx={{ mt: 1.5, alignItems: "center" }}>
+        <Button size="small" variant="contained" disabled={isPending} onClick={handleSave}>
+          Spara
+        </Button>
+        {saved && !isPending && (
+          <Typography variant="body2" color="success.main">
+            Sparat.
+          </Typography>
+        )}
+      </Stack>
+    </Box>
+  );
+}
+
+// Maps a raw "Fastighet" spreadsheet value to the registered fastighet name
+// it means — shared by every importer that reads a Fastighet column, so it
+// lives once here rather than per import mapping.
+function FastighetAliasEditor({
+  nationsId,
+  initialAliases,
+}: {
+  nationsId: string;
+  initialAliases: FastighetAlias[];
+}) {
+  const [aliases, setAliases] = useState<FastighetAlias[]>(initialAliases);
+  const [saved, setSaved] = useState(false);
+  const [isPending, startTransition] = useTransition();
+
+  function update(index: number, patch: Partial<FastighetAlias>) {
+    setAliases((prev) => prev.map((a, i) => (i === index ? { ...a, ...patch } : a)));
+    setSaved(false);
+  }
+
+  function remove(index: number) {
+    setAliases((prev) => prev.filter((_, i) => i !== index));
+    setSaved(false);
+  }
+
+  function add() {
+    setAliases((prev) => [...prev, { alias: "", fastighet: "" }]);
+    setSaved(false);
+  }
+
+  function handleSave() {
+    startTransition(async () => {
+      await saveFastighetAliasesAction(
+        nationsId,
+        aliases.filter((a) => a.alias.trim() && a.fastighet.trim())
+      );
+      setSaved(true);
+    });
+  }
+
+  return (
+    <Box sx={{ mb: 3 }}>
+      <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 1 }}>
+        Fastighetsalias
+      </Typography>
+      <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+        Om kalkylbladets Fastighet-kolumn stavar en fastighet annorlunda än den registrerade
+        namnet (t.ex. förkortningar), mappa den här. Gäller alla Excel-importer.
+      </Typography>
+      <Stack spacing={0}>
+        {aliases.map((a, index) => (
+          <Stack
+            key={index}
+            direction="row"
+            spacing={1.5}
+            sx={{ alignItems: "center", py: 0.75, borderBottom: "1px solid", borderColor: "divider" }}
+          >
+            <TextField
+              size="small"
+              label="Text i kalkylbladet"
+              value={a.alias}
+              onChange={(event) => update(index, { alias: event.target.value })}
+              sx={{ flex: 1 }}
+            />
+            <TextField
+              size="small"
+              label="Registrerad fastighet"
+              value={a.fastighet}
+              onChange={(event) => update(index, { fastighet: event.target.value })}
+              sx={{ flex: 1 }}
+            />
+            <IconButton size="small" onClick={() => remove(index)}>
+              <DeleteIcon fontSize="small" />
+            </IconButton>
+          </Stack>
+        ))}
+      </Stack>
+      <Stack direction="row" spacing={2} sx={{ mt: 1.5, alignItems: "center" }}>
+        <Button size="small" startIcon={<AddIcon />} onClick={add}>
+          Lägg till alias
+        </Button>
         <Button size="small" variant="contained" disabled={isPending} onClick={handleSave}>
           Spara
         </Button>
@@ -649,6 +746,15 @@ export default function AdminPage({ initialNationIds }: Props) {
                 Vilken spreadsheet-kolumn (A, B, C…) varje fält läses från vid Excel-import. Ändra
                 här om nationens kalkylblad har en annan kolumnordning.
               </Typography>
+              <FastighetAliasEditor
+                key={`fastighetalias-${selectedNation}`}
+                nationsId={selectedNation}
+                initialAliases={resolveFastighetAliases(
+                  DEFAULT_FASTIGHET_ALIASES,
+                  settings?.fastighetAliases
+                )}
+              />
+              <Divider sx={{ my: 3 }} />
               <ImportMappingEditor
                 key={`tenants-${selectedNation}`}
                 nationsId={selectedNation}

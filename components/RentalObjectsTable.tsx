@@ -37,7 +37,12 @@ import {
 } from "@/app/databas/actions";
 import { exportRowsToXlsx } from "@/lib/export-xlsx";
 import type { RentalObject, RentalObjectInput } from "@/lib/rentalobjects";
-import type { ImportFieldConfig, RentalObjectTabGroup, TableColumnConfig } from "@/lib/table-columns";
+import type {
+  FastighetAlias,
+  ImportFieldConfig,
+  RentalObjectTabGroup,
+  TableColumnConfig,
+} from "@/lib/table-columns";
 import ColumnVisibilityMenu from "@/components/ColumnVisibilityMenu";
 import RentalObjectExcelImport from "@/components/RentalObjectExcelImport";
 import RentalObjectFormDialog from "@/components/RentalObjectFormDialog";
@@ -46,6 +51,7 @@ import { useColumnVisibility } from "@/lib/use-column-visibility";
 type Props = {
   objects: RentalObject[];
   fastigheter: string[];
+  aliases: FastighetAlias[];
   columnSettings: TableColumnConfig[];
   importSingleFields: ImportFieldConfig[];
   importTabGroups: RentalObjectTabGroup[];
@@ -113,6 +119,7 @@ const currency = new Intl.NumberFormat("sv-SE", { maximumFractionDigits: 0 });
 export default function RentalObjectsTable({
   objects,
   fastigheter,
+  aliases,
   columnSettings,
   importSingleFields,
   importTabGroups,
@@ -405,6 +412,7 @@ export default function RentalObjectsTable({
         singleFields={importSingleFields}
         multiTab={importMultiTab}
         tabGroups={importTabGroups}
+        aliases={aliases}
         onClose={() => setImportOpen(false)}
       />
 

@@ -37,7 +37,7 @@ import {
   updateTenantAction,
 } from "@/app/hyresgastlista/actions";
 import { exportRowsToXlsx } from "@/lib/export-xlsx";
-import type { ImportFieldConfig } from "@/lib/table-columns";
+import type { FastighetAlias, ImportFieldConfig } from "@/lib/table-columns";
 import type { Tenant, TenantInput } from "@/lib/tenants";
 import ColumnVisibilityMenu from "@/components/ColumnVisibilityMenu";
 import ExcelImportDialog from "@/components/ExcelImportDialog";
@@ -48,6 +48,7 @@ import { useColumnVisibility } from "@/lib/use-column-visibility";
 type Props = {
   tenants: Tenant[];
   fastigheter: string[];
+  aliases: FastighetAlias[];
   importMapping: ImportFieldConfig[];
 };
 
@@ -78,7 +79,7 @@ function matchesSearch(tenant: Tenant, query: string): boolean {
   return haystack.includes(query);
 }
 
-export default function TenantsTable({ tenants, fastigheter, importMapping }: Props) {
+export default function TenantsTable({ tenants, fastigheter, aliases, importMapping }: Props) {
   const [formOpen, setFormOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [editingTenant, setEditingTenant] = useState<Tenant | null>(null);
@@ -346,6 +347,7 @@ export default function TenantsTable({ tenants, fastigheter, importMapping }: Pr
       <ExcelImportDialog
         open={importOpen}
         fastigheter={fastigheter}
+        aliases={aliases}
         mapping={importMapping}
         onClose={() => setImportOpen(false)}
       />
