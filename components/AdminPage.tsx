@@ -32,6 +32,7 @@ import {
 import {
   DEFAULT_ANDRAHANDSGAST_IMPORT,
   DEFAULT_APARTMENT_COLUMNS,
+  DEFAULT_APARTMENT_IMPORT,
   DEFAULT_BESIKTNING_IMPORT,
   DEFAULT_FASTIGHET_ALIASES,
   DEFAULT_RENTALOBJECT_COLUMNS,
@@ -755,6 +756,16 @@ export default function AdminPage({ initialNationIds }: Props) {
                 )}
               />
               <Divider sx={{ my: 3 }} />
+              <ImportMappingEditor
+                key={`apartments-${selectedNation}`}
+                nationsId={selectedNation}
+                importKey="apartments"
+                title="Lediga lägenheter"
+                initialFields={
+                  resolveImportMapping(DEFAULT_APARTMENT_IMPORT, settings?.imports?.apartments).fields
+                }
+                allowBlank
+              />
               <ImportMappingEditor
                 key={`tenants-${selectedNation}`}
                 nationsId={selectedNation}

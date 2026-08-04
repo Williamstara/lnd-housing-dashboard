@@ -9,6 +9,7 @@ import AssignmentTurnedInIcon from "@mui/icons-material/AssignmentTurnedIn";
 import FileDownloadIcon from "@mui/icons-material/FileDownload";
 import KeyIcon from "@mui/icons-material/Key";
 import PersonAddIcon from "@mui/icons-material/PersonAdd";
+import UploadFileIcon from "@mui/icons-material/UploadFile";
 import VisibilityIcon from "@mui/icons-material/Visibility";
 import VisibilityOffIcon from "@mui/icons-material/VisibilityOff";
 import Box from "@mui/material/Box";
@@ -56,7 +57,8 @@ import type {
   ApartmentStatus,
   TenantAssignmentInput,
 } from "@/lib/apartments";
-import type { TableColumnConfig } from "@/lib/table-columns";
+import type { ImportFieldConfig, TableColumnConfig } from "@/lib/table-columns";
+import ApartmentExcelImport from "@/components/ApartmentExcelImport";
 import ApartmentFormDialog from "@/components/ApartmentFormDialog";
 import ApartmentInterestDialog from "@/components/ApartmentInterestDialog";
 import ColumnVisibilityMenu from "@/components/ColumnVisibilityMenu";
@@ -67,6 +69,8 @@ import { useColumnVisibility } from "@/lib/use-column-visibility";
 type Props = {
   apartments: Apartment[];
   fastigheter: string[];
+  fastighetPrefixes: Array<{ namn: string; prefixes: string[] }>;
+  importMapping: ImportFieldConfig[];
   missedRentApartmentIds: string[];
   columnSettings: TableColumnConfig[];
 };
@@ -149,6 +153,8 @@ function matchesSearch(apartment: Apartment, query: string): boolean {
 export default function ApartmentsTable({
   apartments,
   fastigheter,
+  fastighetPrefixes,
+  importMapping,
   missedRentApartmentIds,
   columnSettings,
 }: Props) {
@@ -164,6 +170,7 @@ export default function ApartmentsTable({
   );
 
   const [formOpen, setFormOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
   const [editingApartment, setEditingApartment] = useState<Apartment | null>(
     null
   );
@@ -360,6 +367,13 @@ export default function ApartmentsTable({
             onClick={handleExport}
           >
             Exportera
+          </Button>
+          <Button
+            variant="outlined"
+            startIcon={<UploadFileIcon />}
+            onClick={() => setImportOpen(true)}
+          >
+            Importera från Excel
           </Button>
           <Button
             variant="contained"
@@ -688,6 +702,13 @@ export default function ApartmentsTable({
         rowsPerPageOptions={[10, 25, 50, 100]}
         labelRowsPerPage="Rader per sida:"
         labelDisplayedRows={({ from, to, count }) => `${from}–${to} av ${count}`}
+      />
+
+      <ApartmentExcelImport
+        open={importOpen}
+        fastigheter={fastighetPrefixes}
+        mapping={importMapping}
+        onClose={() => setImportOpen(false)}
       />
 
       <ApartmentFormDialog

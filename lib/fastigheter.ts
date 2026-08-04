@@ -5,11 +5,16 @@ import { getDb } from "@/lib/mongodb";
 export type Fastighet = {
   id: string;
   namn: string;
+  // Lägenhetsnummer prefixes that identify this building (e.g. Arkivet's
+  // apartments start "B"/"C"/"D") — lets an import derive fastighet from
+  // lägenhetsnummer alone when the sheet has no Fastighet column.
+  prefixes: string[];
 };
 
 type FastighetDoc = {
   nationsID: string;
   namn: string;
+  prefixes?: string[];
 };
 
 async function getCollection() {
@@ -21,7 +26,7 @@ async function getCollection() {
 export async function getFastigheter(nationsId: string): Promise<Fastighet[]> {
   const col = await getCollection();
   const docs = await col.find({ nationsID: nationsId }).sort({ _id: 1 }).toArray();
-  return docs.map((doc) => ({ id: doc._id.toString(), namn: doc.namn }));
+  return docs.map((doc) => ({ id: doc._id.toString(), namn: doc.namn, prefixes: doc.prefixes ?? [] }));
 }
 
 export async function getFastighetNamn(nationsId: string): Promise<string[]> {
@@ -29,21 +34,26 @@ export async function getFastighetNamn(nationsId: string): Promise<string[]> {
   return fastigheter.map((f) => f.namn);
 }
 
-export async function createFastighet(nationsId: string, namn: string): Promise<Fastighet> {
+export async function createFastighet(
+  nationsId: string,
+  namn: string,
+  prefixes: string[] = []
+): Promise<Fastighet> {
   const col = await getCollection();
-  const result = await col.insertOne({ nationsID: nationsId, namn });
-  return { id: result.insertedId.toString(), namn };
+  const result = await col.insertOne({ nationsID: nationsId, namn, prefixes });
+  return { id: result.insertedId.toString(), namn, prefixes };
 }
 
 export async function updateFastighet(
   nationsId: string,
   id: string,
-  namn: string
+  namn: string,
+  prefixes: string[]
 ): Promise<void> {
   const col = await getCollection();
   await col.updateOne(
     { _id: new ObjectId(id), nationsID: nationsId },
-    { $set: { namn } }
+    { $set: { namn, prefixes } }
   );
 }
 

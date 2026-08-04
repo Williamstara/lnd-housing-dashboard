@@ -24,6 +24,7 @@ export type {
 export {
   DEFAULT_ANDRAHANDSGAST_IMPORT,
   DEFAULT_APARTMENT_COLUMNS,
+  DEFAULT_APARTMENT_IMPORT,
   DEFAULT_BESIKTNING_IMPORT,
   DEFAULT_FASTIGHET_ALIASES,
   DEFAULT_RENTALOBJECT_COLUMNS,
@@ -37,6 +38,7 @@ export {
   mappingToLookup,
   resolveColumns,
   resolveFastighetAliases,
+  resolveFastighetFromPrefix,
   resolveFastighetName,
   resolveImportMapping,
   resolveTabGroups,

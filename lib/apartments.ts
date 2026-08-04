@@ -171,6 +171,44 @@ export async function getArkiv(nationsId: string): Promise<Apartment[]> {
   return docs.map((d) => mapDoc(d as ApartmentDoc & { _id: ObjectId }));
 }
 
+// An import row can carry the same "who's interested" fields as
+// saveApartmentInterest, alongside the apartment specs — a nation's kladd
+// sheet often already has a name/personnummer/epost typed in per unit.
+export type ApartmentImportInput = ApartmentInput & Partial<TenantAssignmentInput>;
+
+// Upserts by lägenhetsnummer among non-archived rows, so re-running an
+// import updates the current listing instead of duplicating it or touching
+// archived history. Interest fields are only set when present on the row —
+// a blank cell leaves whatever's already stored untouched.
+export async function bulkUpsertApartments(
+  nationsId: string,
+  inputs: ApartmentImportInput[]
+): Promise<{ inserted: number; updated: number }> {
+  const col = await getCollection();
+  let inserted = 0;
+  let updated = 0;
+  for (const input of inputs) {
+    const { custom, hyresgastNamn, personnummer, epost, telefonnummer, kontonummer, ...rest } = input;
+    const interest: Partial<TenantAssignmentInput> = {};
+    if (hyresgastNamn) interest.hyresgastNamn = hyresgastNamn;
+    if (personnummer) interest.personnummer = personnummer;
+    if (epost) interest.epost = epost;
+    if (telefonnummer) interest.telefonnummer = telefonnummer;
+    if (kontonummer) interest.kontonummer = kontonummer;
+    const result = await col.updateOne(
+      { nationsID: nationsId, lagenhetsnummer: input.lagenhetsnummer, status: { $ne: "arkiverad" } },
+      {
+        $set: { ...rest, ...interest, custom: custom ?? {}, nationsID: nationsId },
+        $setOnInsert: { status: "ledig", hidden: false, nyckelInlamnad: false, nyckelHamtad: false },
+      },
+      { upsert: true }
+    );
+    if (result.upsertedCount > 0) inserted++;
+    else updated++;
+  }
+  return { inserted, updated };
+}
+
 export async function createApartment(nationsId: string, input: ApartmentInput): Promise<Apartment> {
   const col = await getCollection();
   const doc: ApartmentDoc = {

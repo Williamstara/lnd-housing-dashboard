@@ -62,6 +62,7 @@ export async function saveImportMappingAction(
   revalidatePath("/hyresgastlista");
   revalidatePath("/besiktningar");
   revalidatePath("/databas");
+  revalidatePath("/lediga-lagenheter");
 }
 
 export async function saveRentalobjectsMultiTabAction(nationsId: string, multiTab: boolean): Promise<void> {

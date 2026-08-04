@@ -14,7 +14,12 @@ export type TableColumnConfig = {
 
 export type NationTableSettings = { columns: TableColumnConfig[] };
 
-export type ImportKey = "tenants" | "andrahandsgaster" | "besiktningar" | "rentalobjects_single";
+export type ImportKey =
+  | "tenants"
+  | "andrahandsgaster"
+  | "besiktningar"
+  | "rentalobjects_single"
+  | "apartments";
 
 // column is 0-based (spreadsheet column A = 0); -1 means "not present in
 // this sheet" — the parser treats it as an always-empty cell, so downstream
@@ -148,6 +153,65 @@ export const DEFAULT_RENTALOBJECT_SINGLE_IMPORT: ImportMapping = {
     { field: "hyresred", label: "Hyresred", column: 8 },
   ],
 };
+
+// No legacy layout to match — sequential columns A-J. No Fastighet column:
+// it's derived from the lägenhetsnummer's prefix (see
+// resolveFastighetFromPrefix) instead of read from the sheet. The interest
+// fields (hyresgäst..kontonummer) default to "not present" (-1) since not
+// every nation's sheet has them — an admin points them at real columns only
+// if their kladd sheet already tracks an interested tenant per unit.
+export const DEFAULT_APARTMENT_IMPORT: ImportMapping = {
+  fields: [
+    { field: "lagenhetsnummer", label: "Lägenhetsnummer", column: 0 },
+    { field: "storlek", label: "Storlek", column: 1 },
+    { field: "objekttyp", label: "Objekttyp", column: 2 },
+    { field: "antalRum", label: "Antal rum", column: 3 },
+    { field: "ledigFrom", label: "Ledig fr.o.m.", column: 4 },
+    { field: "arshyra", label: "Årshyra", column: 5 },
+    { field: "hyresrabatt", label: "Hyresrabatt", column: 6 },
+    { field: "hyresreduktion", label: "Hyresreduktion", column: 7 },
+    { field: "arshyraMedRed", label: "Årshyra med red.", column: 8 },
+    { field: "manadshyra", label: "Månadshyra", column: 9 },
+    { field: "hyresgastNamn", label: "Hyresgäst (intresserad)", column: -1 },
+    { field: "personnummer", label: "Personnummer", column: -1 },
+    { field: "epost", label: "E-post", column: -1 },
+    { field: "telefonnummer", label: "Telefon", column: -1 },
+    { field: "kontonummer", label: "Kontonummer", column: -1 },
+  ],
+};
+
+// SheetJS's cellDates:true option reconstructs an Excel date cell as a JS
+// Date using the LOCAL timezone's midnight for that calendar day, not UTC
+// midnight — so it must be read back with local getters. Reading it with
+// getUTCFullYear/Month/Date (an easy mistake) silently shifts the date back
+// a day in any timezone ahead of UTC (e.g. Europe/Berlin in summer).
+export function excelDateCellToISO(value: Date): string {
+  const y = value.getFullYear();
+  const m = String(value.getMonth() + 1).padStart(2, "0");
+  const d = String(value.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+// Which fastighet a lägenhetsnummer belongs to, by longest matching
+// registered prefix (so "NH" beats a hypothetical "N" on the same nation).
+// Returns null when no fastighet's prefix matches — the caller should skip
+// the row rather than guess.
+export function resolveFastighetFromPrefix(
+  lagenhetsnummer: string,
+  fastigheter: Array<{ namn: string; prefixes: string[] }>
+): string | null {
+  const upper = lagenhetsnummer.trim().toUpperCase();
+  let best: { namn: string; prefix: string } | null = null;
+  for (const f of fastigheter) {
+    for (const prefix of f.prefixes) {
+      const p = prefix.trim().toUpperCase();
+      if (p && upper.startsWith(p) && (!best || p.length > best.prefix.length)) {
+        best = { namn: f.namn, prefix: p };
+      }
+    }
+  }
+  return best?.namn ?? null;
+}
 
 // Multi-tab mode (opt-in) seed — matches the layout this system replaced,
 // as a starting point an admin can rename, add to, remove from, or repoint

@@ -8,6 +8,7 @@ import { ARCHIVE_ROLES, ROLES, getUserDisplayName, hasAnyRole, hasRole } from "@
 import {
   archiveByLedigFrom,
   assignTenantAndSendToContract,
+  bulkUpsertApartments,
   createApartment,
   deleteApartment,
   findLatestApartmentSpecs,
@@ -20,6 +21,7 @@ import {
   setNyckelHamtad,
   setNyckelInlamnad,
   updateApartment,
+  type ApartmentImportInput,
   type ApartmentInput,
   type ApartmentSpecs,
   type TenantAssignmentInput,
@@ -202,6 +204,45 @@ export async function updateApartmentAction(
   await updateApartment(nationsId, id, sanitized);
   await syncPricingToDatabas(nationsId, sanitized);
   revalidateApartmentPages();
+}
+
+// Sanitizes each row independently so one bad row (typo'd fastighet, garbage
+// number) doesn't drop the rest of an otherwise-good import. Interest fields
+// (hyresgästnamn etc.) are trimmed but never required — a sheet without them
+// still imports fine.
+export async function importApartmentsFromExcelAction(
+  rows: ApartmentImportInput[]
+): Promise<{
+  inserted: number;
+  updated: number;
+  skipped: number;
+  skippedDetails: Array<{ lagenhetsnummer: string; reason: string }>;
+}> {
+  const { nationsId } = await requireUser();
+  if (rows.length === 0) throw new Error("Inga rader att importera.");
+  const sanitized: ApartmentImportInput[] = [];
+  const skippedDetails: Array<{ lagenhetsnummer: string; reason: string }> = [];
+  for (const row of rows) {
+    try {
+      const specs = await sanitizeApartmentInput(nationsId, row);
+      sanitized.push({
+        ...specs,
+        hyresgastNamn: row.hyresgastNamn?.trim() || undefined,
+        personnummer: row.personnummer?.trim() || undefined,
+        epost: row.epost?.trim() || undefined,
+        telefonnummer: row.telefonnummer?.trim() || undefined,
+        kontonummer: row.kontonummer?.trim() || undefined,
+      });
+    } catch (err) {
+      skippedDetails.push({
+        lagenhetsnummer: row.lagenhetsnummer,
+        reason: err instanceof Error ? err.message : "Okänt fel.",
+      });
+    }
+  }
+  const result = await bulkUpsertApartments(nationsId, sanitized);
+  revalidateApartmentPages();
+  return { ...result, skipped: skippedDetails.length, skippedDetails };
 }
 
 export async function deleteApartmentAction(id: string) {

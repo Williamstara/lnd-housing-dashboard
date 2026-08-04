@@ -35,19 +35,26 @@ export default function FastigheterTable({ fastigheter }: Props) {
   const isHusforman = hasRole(user, ROLES.HUSFORMAN);
 
   const [newNamn, setNewNamn] = useState("");
+  const [newPrefixes, setNewPrefixes] = useState("");
   const [editing, setEditing] = useState<Fastighet | null>(null);
   const [editNamn, setEditNamn] = useState("");
+  const [editPrefixes, setEditPrefixes] = useState("");
   const [deleting, setDeleting] = useState<Fastighet | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+
+  function splitPrefixes(value: string): string[] {
+    return value.split(",").map((p) => p.trim()).filter(Boolean);
+  }
 
   function handleAdd() {
     if (!newNamn.trim()) return;
     setError(null);
     startTransition(async () => {
       try {
-        await createFastighetAction(newNamn);
+        await createFastighetAction(newNamn, splitPrefixes(newPrefixes));
         setNewNamn("");
+        setNewPrefixes("");
       } catch (err) {
         setError(err instanceof Error ? err.message : "Något gick fel.");
       }
@@ -57,6 +64,7 @@ export default function FastigheterTable({ fastigheter }: Props) {
   function openEdit(f: Fastighet) {
     setEditing(f);
     setEditNamn(f.namn);
+    setEditPrefixes(f.prefixes.join(", "));
   }
 
   function handleEditSave() {
@@ -64,7 +72,7 @@ export default function FastigheterTable({ fastigheter }: Props) {
     setError(null);
     startTransition(async () => {
       try {
-        await updateFastighetAction(editing.id, editNamn);
+        await updateFastighetAction(editing.id, editNamn, splitPrefixes(editPrefixes));
         setEditing(null);
       } catch (err) {
         setError(err instanceof Error ? err.message : "Något gick fel.");
@@ -133,7 +141,10 @@ export default function FastigheterTable({ fastigheter }: Props) {
                   ) : undefined
                 }
               >
-                <ListItemText primary={f.namn} />
+                <ListItemText
+                  primary={f.namn}
+                  secondary={f.prefixes.length > 0 ? `Lägenhetsnummer-prefix: ${f.prefixes.join(", ")}` : undefined}
+                />
               </ListItem>
             ))
           )}
@@ -149,6 +160,13 @@ export default function FastigheterTable({ fastigheter }: Props) {
             onChange={(e) => setNewNamn(e.target.value)}
             fullWidth
           />
+          <TextField
+            placeholder="Lgh-nr-prefix, t.ex. B, C, D"
+            size="small"
+            value={newPrefixes}
+            onChange={(e) => setNewPrefixes(e.target.value)}
+            sx={{ minWidth: 200 }}
+          />
           <Button
             variant="contained"
             startIcon={<AddIcon />}
@@ -161,14 +179,24 @@ export default function FastigheterTable({ fastigheter }: Props) {
       )}
 
       <Dialog open={!!editing} onClose={() => setEditing(null)} fullWidth maxWidth="xs">
-        <DialogTitle>Byt namn</DialogTitle>
+        <DialogTitle>Redigera fastighet</DialogTitle>
         <DialogContent>
           <TextField
             autoFocus
             fullWidth
+            label="Namn"
             sx={{ mt: 1 }}
             value={editNamn}
             onChange={(e) => setEditNamn(e.target.value)}
+            disabled={isPending}
+          />
+          <TextField
+            fullWidth
+            label="Lägenhetsnummer-prefix (kommaseparerat)"
+            placeholder="t.ex. B, C, D"
+            sx={{ mt: 2 }}
+            value={editPrefixes}
+            onChange={(e) => setEditPrefixes(e.target.value)}
             disabled={isPending}
           />
         </DialogContent>

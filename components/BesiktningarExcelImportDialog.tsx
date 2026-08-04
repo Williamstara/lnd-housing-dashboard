@@ -20,7 +20,7 @@ import Typography from "@mui/material/Typography";
 import { read, utils } from "xlsx";
 import { importBesiktningarFromExcelAction } from "@/app/besiktningar/actions";
 import type { BesiktningImportInput } from "@/lib/besiktningar";
-import { describeMapping, mappingToLookup, type ImportFieldConfig } from "@/lib/table-columns";
+import { describeMapping, excelDateCellToISO, mappingToLookup, type ImportFieldConfig } from "@/lib/table-columns";
 
 function cellStr(row: unknown[], index: number): string {
   const val = (row as Record<number, unknown>)[index];
@@ -50,12 +50,7 @@ function parseNumber(raw: string): number {
 // so only the first row of each group has a value in column A — the rest
 // need to inherit the most recently seen date.
 function formatDateCell(value: unknown): string {
-  if (value instanceof Date) {
-    const y = value.getUTCFullYear();
-    const m = String(value.getUTCMonth() + 1).padStart(2, "0");
-    const d = String(value.getUTCDate()).padStart(2, "0");
-    return `${y}-${m}-${d}`;
-  }
+  if (value instanceof Date) return excelDateCellToISO(value);
   const str = String(value ?? "").trim();
   if (/^\d{4}-\d{2}-\d{2}/.test(str)) return str.slice(0, 10);
   // Cell holds a plain "YYMMDD" number/text (e.g. 260601), not an Excel date

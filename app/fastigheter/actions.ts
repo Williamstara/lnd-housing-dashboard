@@ -14,20 +14,26 @@ async function requireHusformanRole(): Promise<string> {
   return requireNationsId(session.user);
 }
 
-export async function createFastighetAction(namn: string) {
-  const nationsId = await requireHusformanRole();
-  const trimmed = namn.trim();
-  if (!trimmed) throw new Error("Namn krävs.");
-  await createFastighet(nationsId, trimmed);
-  revalidatePath("/fastigheter");
+function cleanPrefixes(prefixes: string[]): string[] {
+  return Array.from(new Set(prefixes.map((p) => p.trim().toUpperCase()).filter(Boolean)));
 }
 
-export async function updateFastighetAction(id: string, namn: string) {
+export async function createFastighetAction(namn: string, prefixes: string[] = []) {
   const nationsId = await requireHusformanRole();
   const trimmed = namn.trim();
   if (!trimmed) throw new Error("Namn krävs.");
-  await updateFastighet(nationsId, id, trimmed);
+  await createFastighet(nationsId, trimmed, cleanPrefixes(prefixes));
   revalidatePath("/fastigheter");
+  revalidatePath("/lediga-lagenheter");
+}
+
+export async function updateFastighetAction(id: string, namn: string, prefixes: string[]) {
+  const nationsId = await requireHusformanRole();
+  const trimmed = namn.trim();
+  if (!trimmed) throw new Error("Namn krävs.");
+  await updateFastighet(nationsId, id, trimmed, cleanPrefixes(prefixes));
+  revalidatePath("/fastigheter");
+  revalidatePath("/lediga-lagenheter");
 }
 
 export async function deleteFastighetAction(id: string) {
