@@ -85,3 +85,28 @@ not provide a useful inventory/occupancy overview.
 Run the authenticated app in a browser and review representative desktop
 (1440 px), tablet (768 px), and phone (390 px) widths. Fix only concrete
 layout, keyboard, or accessibility issues found, then commit when requested.
+
+## Out-of-milestone work done this session
+
+`/besiktningar` gained a "select by besiktningsdatum" control (a date field
+above the existing bulk selection bar) so a whole day's inspections can be
+selected without ticking each row by hand. It auto-selects on date change
+(no button — removed after user feedback) and the selection holds through
+manual per-row edits and through running any of the three bulk actions in
+sequence (klar för betalning → betalning gjord → arkivera), changing only
+when the date field changes or "Avmarkera alla" is pressed — a bug where
+each bulk action silently cleared the selection was found and fixed. This is
+unrelated to the responsive-redesign milestone above — the underlying bulk
+mark/archive Server Actions and UI (checkboxes, the "X valda" bar with
+"Klar för betalning"/"Betalning gjord"/"Arkivera") already existed before
+this session; only the date-based selection shortcut
+was added. See `docs/DECISIONS.md` for details and `docs/HANDOFF.md` for
+verification notes.
+
+`/besiktningar` also gained a "Status" card (Obehandlade/Klara för
+betalning/Betalda counts): tried as a reused `DonutChart`, then a new
+hand-rolled `LineChart`, both rejected by the user ("i want it like a status
+bar"). Final version is a plain MUI `Box`/`Stack` segmented/stacked
+progress bar with a legend — no chart component, just `flexGrow: value`
+per status. `LineChart.tsx` was deleted after being rejected. See
+`docs/DECISIONS.md` for the full three-attempt record.

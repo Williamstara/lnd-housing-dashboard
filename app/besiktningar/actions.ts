@@ -43,6 +43,17 @@ async function requireArchiveRole(): Promise<string> {
   return requireNationsId(session.user);
 }
 
+// Archiving besiktningar is husvd/admin only — ekonomi lost this right
+// (unlike deleteBesiktningAction above and every other "archive" feature in
+// the app, which still use the broader requireArchiveRole/ARCHIVE_ROLES).
+async function requireHusvdRole(): Promise<string> {
+  const session = await auth0.getSession();
+  if (!session?.user || !hasRole(session.user, ROLES.HUSVD)) {
+    throw new Error("Endast användare med rollen husvd eller admin har åtkomst.");
+  }
+  return requireNationsId(session.user);
+}
+
 function revalidateBesiktningarPages() {
   revalidatePath("/besiktningar");
   revalidatePath("/arkiv");
@@ -92,13 +103,13 @@ export async function markBetalningGjordBulkAction(ids: string[]): Promise<BulkA
 }
 
 export async function archiveBesiktningAction(id: string) {
-  const nationsId = await requireArchiveRole();
+  const nationsId = await requireHusvdRole();
   await archiveBesiktning(nationsId, id);
   revalidateBesiktningarPages();
 }
 
 export async function archiveBesiktningarBulkAction(ids: string[]): Promise<BulkActionResult> {
-  const nationsId = await requireArchiveRole();
+  const nationsId = await requireHusvdRole();
   if (ids.length === 0) return { updated: 0, skipped: 0 };
   const result = await archiveBesiktningarBulk(nationsId, ids);
   revalidateBesiktningarPages();

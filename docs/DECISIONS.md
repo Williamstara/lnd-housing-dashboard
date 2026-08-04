@@ -8,6 +8,108 @@ maintained.
 
 ---
 
+## Besiktningar's "Status" card is a plain segmented bar + legend, not a chart component
+
+- **Date**: 2026-08-04
+- **Status**: accepted (final of three attempts the same session — the
+  first two are recorded here only so a future agent doesn't re-try them)
+- **Context**: The user asked for a "counter/chart" on `/besiktningar`
+  showing how many besiktningar are Obehandlade (untouched), Klara för
+  betalning, and Betalda.
+  1. First pass reused the existing `DonutChart` (`components/charts/
+     DonutChart.tsx`) with those three segments.
+  2. User asked for "a line chart like the statistik page... just have one
+     line with all the different statuses". No line-chart component existed
+     in `components/charts/` and no charting library is installed
+     (`package.json` has no recharts/d3/visx/etc.), so a new hand-rolled SVG
+     `components/charts/LineChart.tsx` was added, drawing one polyline
+     through the three points.
+  3. User: **"That's not what i ment... i want it like a status bar."** The
+     line chart was rejected outright — a status bar means a single
+     horizontal bar divided into colored segments proportional to each
+     count (a segmented/stacked progress bar), not a point-and-line plot.
+     `LineChart.tsx` was deleted (unused anywhere else, so no dead code
+     risk in keeping it).
+- **Decision**: Implemented the segmented bar directly in
+  `BesiktningarTable.tsx` with plain MUI `Box`/`Stack` — no new chart
+  component. A flex `Box` with one child `Box` per non-zero status
+  (`flexGrow: value`, `bgcolor: status color`) naturally divides the bar
+  proportionally with no manual percentage math, plus a `role="img"` +
+  `aria-label` summary on the container and a native `title` per segment.
+  A legend row below shows every status (including zero-count ones) as a
+  colored dot + label + count. `statusSegments`/`statusCounts` (the same
+  memo from the two earlier attempts) feed both.
+- **Reason**: This is genuinely just a styled `<div>` with flex children —
+  reaching for an SVG chart component (as attempts 1 and 2 both did) was
+  over-engineering a proportional bar that flexbox already solves in a few
+  lines, and matches AGENTS.md's "prefer semantic MUI components... don't
+  rebuild a design system" guidance better than a bespoke chart would.
+- **Consequences**: `components/charts/LineChart.tsx` was added and then
+  removed within the same session — if a genuine multi-point trend/line
+  need comes up later, it will need to be rebuilt from scratch (or a
+  charting dependency reconsidered at that point), since the ladder for
+  *this* request (a proportional bar) never actually needed a chart
+  component. `STATUS.serious`/`warning`/`good` is still the intended color
+  mapping for obehandlade/klara-för-betalning/betalda respectively.
+- **Files**: `components/BesiktningarTable.tsx`;
+  `components/charts/LineChart.tsx` was added then deleted.
+
+---
+
+## Besiktningar bulk-mark/archive gained a "select by date" shortcut, not new bulk actions
+
+- **Date**: 2026-08-04
+- **Status**: accepted (revised twice the same day from direct user feedback
+  — see the two rounds below; this entry describes the final behavior)
+- **Context**: The user asked for a button to bulk-mark besiktningar as
+  "klara för betalning" and "utbetalda", pickable by besiktningsdatum, plus
+  the same for archiving. Investigation found the entire bulk backend
+  already existed and was already wired into the UI: `lib/besiktningar.ts`
+  (`markKlarForBetalningBulk`, `markBetalningGjordBulk`,
+  `archiveBesiktningarBulk`), the matching Server Actions in
+  `app/besiktningar/actions.ts`, and a full row-checkbox + "X valda" bulk
+  action bar (with "Klar för betalning"/"Betalning gjord"/"Arkivera"
+  buttons) already in `components/BesiktningarTable.tsx`, for both the
+  desktop table and the mobile card view. The only real gap: selecting a
+  whole day's rows meant manually ticking each checkbox (or "select all on
+  this page", which only covers the current page slice) — there was no way
+  to select "everything dated X" directly.
+- **Decision (round 1)**: Added a `bulkDate` date field + a separate
+  "Markera N st för datumet" button that *added* matching rows to the
+  existing selection on click.
+- **Decision (round 2, user feedback: "hold the markering until the date is
+  changed so I don't have to click again")**: Removed the button. The date
+  field's `onChange` (`handleBulkDateChange`) now *replaces* `selectedIds`
+  with exactly the rows matching the new date directly — no click needed —
+  and that selection holds through manual per-row adjustments until the
+  date field changes again or "Avmarkera alla" is pressed.
+- **Decision (round 3, user feedback: "the bulk marking doesn't work like it
+  should... this is so I can perform multiple actions for one date when
+  bulk working")**: `bulkMarkKlarForBetalning`, `bulkMarkBetalningGjord`,
+  and `bulkArchive` each called `clearSelection()` after their Server Action
+  resolved, silently wiping the date-driven selection after the *first*
+  action — defeating the entire point of holding it. Removed all three
+  `clearSelection()` calls; the selection now only changes via the date
+  field or "Avmarkera alla", exactly as stated in round 2's own comment,
+  which round 3 had accidentally broken.
+- **Reason**: The bulk mark/archive UI and backend were already correct and
+  tested-by-existing-use; inventing a parallel "bulk by date" action path
+  would have duplicated `markKlarForBetalningBulk`/`markBetalningGjordBulk`/
+  `archiveBesiktningarBulk` for no reason. The end goal (stated explicitly by
+  the user) is to run several bulk actions in sequence against one date's
+  selection — e.g. klar-för-betalning, then betalning gjord, then arkivera —
+  without re-picking the date between each step.
+- **Consequences**: Any future change to these three bulk handlers must not
+  reintroduce a `clearSelection()`/`setSelectedIds(new Set())` call on
+  success — that reproduces exactly the round-3 bug. Verified live in a real
+  authenticated browser against real `LND` data across both rounds 2 and 3;
+  the actual mark/archive buttons were **not** clicked during verification,
+  since that would mutate real inspection records — the underlying actions
+  were already in the codebase before this session and were not modified.
+- **Files**: `components/BesiktningarTable.tsx`.
+
+---
+
 ## Fastighet name resolution goes through an admin-configurable alias table, not a hardcoded map
 
 - **Date**: 2026-08-03

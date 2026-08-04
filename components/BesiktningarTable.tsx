@@ -47,6 +47,7 @@ import {
   updateBesiktningAction,
 } from "@/app/besiktningar/actions";
 import ColumnVisibilityMenu from "@/components/ColumnVisibilityMenu";
+import { STATUS } from "@/components/charts/palette";
 import { exportRowsToXlsx } from "@/lib/export-xlsx";
 import type { Besiktning, BesiktningEditInput, BesiktningImportInput } from "@/lib/besiktningar";
 import { ARCHIVE_ROLES, ROLES, hasAnyRole, hasRole } from "@/lib/roles";
@@ -152,7 +153,12 @@ function emptyAddForm(): AddForm {
 
 export default function BesiktningarTable({ besiktningar, importMapping }: Props) {
   const { user } = useUser();
-  const canArchive = hasAnyRole(user, ARCHIVE_ROLES);
+  // Archiving besiktningar is husvd/admin only — ekonomi lost this right,
+  // unlike every other "archive" feature in the app, which still shares
+  // ARCHIVE_ROLES (ekonomi/husvd/admin). Deleting is unaffected and still
+  // uses the broader set.
+  const canArchive = hasRole(user, ROLES.HUSVD);
+  const canDelete = hasAnyRole(user, ARCHIVE_ROLES);
   const canManagePayment = hasRole(user, ROLES.HUSVD) || hasRole(user, ROLES.EKONOMI);
 
   const [search, setSearch] = useState("");
@@ -186,6 +192,7 @@ export default function BesiktningarTable({ besiktningar, importMapping }: Props
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [isBulkPending, startBulkTransition] = useTransition();
   const [bulkMessage, setBulkMessage] = useState<string | null>(null);
+  const [bulkDate, setBulkDate] = useState("");
 
   const { isVisible, toggle } = useColumnVisibility("besiktningar");
   const visibleColumnDefs = columns.filter((c) => isVisible(c.key));
@@ -198,9 +205,35 @@ export default function BesiktningarTable({ besiktningar, importMapping }: Props
     return filtered.sort((a, b) => direction * compareValues(getValue(a), getValue(b)));
   }, [besiktningar, search, orderBy, order]);
 
+  // Mirrors the row-highlight rule below (success outline once betald,
+  // warning outline once klar för betalning, no outline otherwise) so the
+  // chart's three buckets always match what the table itself is showing.
+  const statusCounts = useMemo(() => {
+    let obehandlade = 0;
+    let klaraForBetalning = 0;
+    let betalda = 0;
+    for (const b of besiktningar) {
+      if (b.betalningGjordDatum) betalda++;
+      else if (b.klarForBetalningDatum) klaraForBetalning++;
+      else obehandlade++;
+    }
+    return { obehandlade, klaraForBetalning, betalda };
+  }, [besiktningar]);
+
+  const statusSegments = [
+    { label: "Obehandlade", value: statusCounts.obehandlade, color: STATUS.serious },
+    { label: "Klara för betalning", value: statusCounts.klaraForBetalning, color: STATUS.warning },
+    { label: "Betalda", value: statusCounts.betalda, color: STATUS.good },
+  ];
+
   const pageRows = visibleRows.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage);
   const allOnPageSelected = pageRows.length > 0 && pageRows.every((row) => selectedIds.has(row.id));
   const someOnPageSelected = pageRows.some((row) => selectedIds.has(row.id));
+
+  const rowsForBulkDate = useMemo(
+    () => (bulkDate ? besiktningar.filter((b) => b.besiktningsdatum === bulkDate) : []),
+    [besiktningar, bulkDate]
+  );
 
   function handleSort(column: ColumnKey) {
     if (orderBy === column) {
@@ -296,6 +329,21 @@ export default function BesiktningarTable({ besiktningar, importMapping }: Props
     setSelectedIds(new Set());
   }
 
+  // Selection follows the date field directly (no separate click): picking
+  // a date selects every matching row, and that selection holds — including
+  // through manual per-row adjustments — until the date field itself
+  // changes again, at which point it's replaced with the new date's rows.
+  function handleBulkDateChange(date: string) {
+    setBulkDate(date);
+    const ids = date ? besiktningar.filter((b) => b.besiktningsdatum === date).map((b) => b.id) : [];
+    setSelectedIds(new Set(ids));
+  }
+
+  // None of the three bulk actions clear the selection when they finish —
+  // it holds until the date field changes (handleBulkDateChange) or the
+  // user presses "Avmarkera alla", so the same date's selection can be
+  // walked through klar-för-betalning → betalning gjord → arkivera without
+  // re-picking the date between each step.
   function bulkMarkKlarForBetalning() {
     const ids = [...selectedIds];
     setBulkMessage(null);
@@ -305,7 +353,6 @@ export default function BesiktningarTable({ besiktningar, importMapping }: Props
         `${result.updated} markerade som klara för betalning.` +
           (result.skipped > 0 ? ` ${result.skipped} hoppades över (redan klara).` : "")
       );
-      clearSelection();
     });
   }
 
@@ -320,7 +367,6 @@ export default function BesiktningarTable({ besiktningar, importMapping }: Props
             ? ` ${result.skipped} hoppades över (ej klara för betalning eller redan betalda).`
             : "")
       );
-      clearSelection();
     });
   }
 
@@ -333,7 +379,6 @@ export default function BesiktningarTable({ besiktningar, importMapping }: Props
         `${result.updated} arkiverade.` +
           (result.skipped > 0 ? ` ${result.skipped} hoppades över (betalning ej gjord ännu).` : "")
       );
-      clearSelection();
     });
   }
 
@@ -435,6 +480,48 @@ export default function BesiktningarTable({ besiktningar, importMapping }: Props
         </Stack>
       </Stack>
 
+      <Paper variant="outlined" sx={{ p: { xs: 2, sm: 3 }, mb: 3 }}>
+        <Typography variant="h6" sx={{ mb: 2 }}>
+          Status
+        </Typography>
+        {besiktningar.length === 0 ? (
+          <Typography variant="body2" color="text.secondary">
+            Inga besiktningar registrerade.
+          </Typography>
+        ) : (
+          <Stack spacing={1.5}>
+            <Box
+              role="img"
+              aria-label={statusSegments.map((s) => `${s.label}: ${s.value}`).join(", ")}
+              sx={{ display: "flex", height: 28, borderRadius: 999, overflow: "hidden" }}
+            >
+              {statusSegments
+                .filter((s) => s.value > 0)
+                .map((s) => (
+                  <Box
+                    key={s.label}
+                    title={`${s.label}: ${s.value}`}
+                    sx={{ flexGrow: s.value, bgcolor: s.color }}
+                  />
+                ))}
+            </Box>
+            <Stack direction="row" sx={{ gap: 2.5, flexWrap: "wrap" }}>
+              {statusSegments.map((s) => (
+                <Stack key={s.label} direction="row" sx={{ alignItems: "center", gap: 0.75 }}>
+                  <Box sx={{ width: 10, height: 10, borderRadius: "50%", bgcolor: s.color, flexShrink: 0 }} />
+                  <Typography variant="body2" color="text.secondary">
+                    {s.label}
+                  </Typography>
+                  <Typography variant="body2" sx={{ fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>
+                    {s.value}
+                  </Typography>
+                </Stack>
+              ))}
+            </Stack>
+          </Stack>
+        )}
+      </Paper>
+
       <TextField
         label="Sök"
         placeholder="Sök..."
@@ -447,6 +534,24 @@ export default function BesiktningarTable({ besiktningar, importMapping }: Props
         sx={{ mb: 2, maxWidth: 360 }}
         fullWidth
       />
+
+      <Stack direction="row" sx={{ gap: 1, mb: 2, flexWrap: "wrap", alignItems: "center" }}>
+        <TextField
+          label="Markera efter besiktningsdatum"
+          type="date"
+          value={bulkDate}
+          onChange={(e) => handleBulkDateChange(e.target.value)}
+          size="small"
+          slotProps={{ inputLabel: { shrink: true } }}
+        />
+        <Box aria-live="polite">
+          {bulkDate && rowsForBulkDate.length === 0 && (
+            <Typography variant="caption" color="text.secondary">
+              Inga besiktningar med detta datum.
+            </Typography>
+          )}
+        </Box>
+      </Stack>
 
       {bulkMessage && (
         <Alert severity="info" sx={{ mb: 2 }} onClose={() => setBulkMessage(null)}>
@@ -654,7 +759,7 @@ export default function BesiktningarTable({ besiktningar, importMapping }: Props
                             </span>
                           </Tooltip>
                         )}
-                        {canArchive && (
+                        {canDelete && (
                           <IconButton
                             aria-label="Ta bort"
                             size="small"
@@ -733,7 +838,7 @@ export default function BesiktningarTable({ besiktningar, importMapping }: Props
                         </span>
                       </Tooltip>
                     )}
-                    {canArchive && (
+                    {canDelete && (
                       <IconButton aria-label="Ta bort" size="small" onClick={() => openDelete(row)}>
                         <DeleteIcon fontSize="small" />
                       </IconButton>

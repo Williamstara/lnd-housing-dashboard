@@ -63,12 +63,12 @@ client components. Swedish label shown in the app's nav is in parentheses.
 | `app/lediga-lagenheter` | Available apartments ("Lediga lägenheter") — the main leasing pipeline: list → contact → send to contract. `components/ApartmentsTable.tsx`, `components/ApartmentFormDialog.tsx`, `components/ApartmentInterestDialog.tsx`, `components/ApartmentExcelImport.tsx`, `components/LaundryAccountDialog.tsx`. |
 | `app/hyresgastlista` | Tenants and second-hand tenants ("Hyresgästlista"). `components/TenantsTable.tsx` + `components/AndrahandsgasterTable.tsx`, each with a form dialog and an Excel import dialog. |
 | `app/databas` | Full rental-object database ("Databas") — specs/pricing per lägenhetsnummer, independent of current occupancy. `components/RentalObjectsTable.tsx`, `components/RentalObjectExcelImport.tsx` (supports a single-sheet mode and an admin-defined multi-tab mode). |
-| `app/besiktningar` / `app/arkiv` (besiktningar tab) | Inspections. `components/BesiktningarTable.tsx`, `components/ArkivBesiktningarTable.tsx`, `components/BesiktningarExcelImportDialog.tsx`. |
+| `app/besiktningar` / `app/arkiv` (besiktningar tab) | Inspections, including a segmented status bar (Obehandlade/Klara för betalning/Betalda, plain MUI flexbox, not a chart component) and a date-driven bulk select-and-mark flow. `components/BesiktningarTable.tsx`, `components/ArkivBesiktningarTable.tsx`, `components/BesiktningarExcelImportDialog.tsx`. |
 | `app/redo-for-kontrakt` | Apartments in the "sent to contract" stage. `components/ContractsReadyTable.tsx`. |
 | `app/arkiv` | Signed/archived contracts. `components/ArchiveTable.tsx`. |
 | `app/uppsagning` | Tenant notice/termination flow. `components/ConfirmUppsagningDialog.tsx`, `components/UppsagningTable.tsx`. |
 | `app/fastigheter` | Buildings ("Fastigheter") — the registry every other feature's `fastighet` field is validated against. `components/FastigheterTable.tsx`. |
-| `app/statistik` | Missed-rent and other statistics: housing/tenant totals, occupancy form, homes per building, homes per `typ`, floor-plan coverage, occupancy, missed rent, condition, revenue. `components/StatistikOverview.tsx`, `components/charts/*` (`BarChart`, `DonutChart`, `StatTile`). |
+| `app/statistik` | Missed-rent and other statistics: housing/tenant totals, occupancy form, homes per building, homes per `typ`, vacant apartments per leasing-pipeline status, occupancy, missed rent, condition, revenue. `components/StatistikOverview.tsx`, `components/charts/*` (`BarChart`, `DonutChart`, `StatTile`). |
 | `app/mallar` | Email templates. `components/email/TemplateEditorDialog.tsx`. |
 | `app/epost` | Compose/send email to a recipient group. `components/email/SendMailClient.tsx`, `RecipientGroupPicker.tsx`. |
 | `app/planritningar` | Floor plan PDF upload/storage per lägenhetsnummer. `components/email/FloorPlanCard.tsx`, `UploadConfirmDialog.tsx`. |
