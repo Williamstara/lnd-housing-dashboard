@@ -18,6 +18,7 @@ import DialogContent from "@mui/material/DialogContent";
 import DialogContentText from "@mui/material/DialogContentText";
 import DialogTitle from "@mui/material/DialogTitle";
 import IconButton from "@mui/material/IconButton";
+import MenuItem from "@mui/material/MenuItem";
 import Paper from "@mui/material/Paper";
 import Stack from "@mui/material/Stack";
 import Table from "@mui/material/Table";
@@ -32,6 +33,7 @@ import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
 import {
   createManualMissedRentAction,
+  createManualMissedRentFromRentalObjectAction,
   deleteMissedRentAction,
   updateMissedRentAction,
 } from "@/app/statistik/actions";
@@ -39,13 +41,17 @@ import type { Apartment } from "@/lib/apartments";
 import ColumnVisibilityMenu from "@/components/ColumnVisibilityMenu";
 import { exportRowsToXlsx } from "@/lib/export-xlsx";
 import type { MissedRentRow } from "@/lib/missed-rent";
+import type { RentalObject } from "@/lib/rentalobjects";
 import { ROLES, hasRole } from "@/lib/roles";
 import { useColumnVisibility } from "@/lib/use-column-visibility";
 
 type Props = {
   rows: MissedRentRow[];
   availableApartments: Apartment[];
+  rentalObjects: RentalObject[];
 };
+
+type AddSource = "apartment" | "databas";
 
 type ColumnKey =
   | "lagenhetsnummer"
@@ -130,7 +136,7 @@ type EditForm = {
   ansvarig: string;
 };
 
-export default function MissedRentTable({ rows, availableApartments }: Props) {
+export default function MissedRentTable({ rows, availableApartments, rentalObjects }: Props) {
   const { user } = useUser();
   const isHusforman = hasRole(user, ROLES.HUSFORMAN);
 
@@ -154,7 +160,10 @@ export default function MissedRentTable({ rows, availableApartments }: Props) {
   const [isDeleting, startDeleteTransition] = useTransition();
 
   const [addOpen, setAddOpen] = useState(false);
+  const [addSource, setAddSource] = useState<AddSource>("apartment");
   const [addApartment, setAddApartment] = useState<Apartment | null>(null);
+  const [addRentalObject, setAddRentalObject] = useState<RentalObject | null>(null);
+  const [addMissedSince, setAddMissedSince] = useState("");
   const [addError, setAddError] = useState<string | null>(null);
   const [isAdding, startAddTransition] = useTransition();
 
@@ -165,6 +174,13 @@ export default function MissedRentTable({ rows, availableApartments }: Props) {
     () => Array.from(new Set(rows.map((r) => r.ansvarig).filter(Boolean))).sort(),
     [rows]
   );
+
+  // Rental objects not yet tracked as missed rent, from either source —
+  // derived from already-fetched props rather than a dedicated query.
+  const availableRentalObjects = useMemo(() => {
+    const tracked = new Set(rows.map((r) => r.rentalObjectId).filter((id): id is string => !!id));
+    return rentalObjects.filter((ro) => !tracked.has(ro.id));
+  }, [rentalObjects, rows]);
 
   const visibleRows = useMemo(() => {
     const query = search.trim().toLocaleLowerCase("sv");
@@ -249,16 +265,31 @@ export default function MissedRentTable({ rows, availableApartments }: Props) {
 
   function openAdd() {
     setAddError(null);
+    setAddSource("apartment");
     setAddApartment(null);
+    setAddRentalObject(null);
+    setAddMissedSince(new Date().toISOString().slice(0, 10));
     setAddOpen(true);
   }
 
   function handleAdd() {
-    if (!addApartment) return;
     setAddError(null);
+    if (addSource === "apartment") {
+      if (!addApartment) return;
+      startAddTransition(async () => {
+        try {
+          await createManualMissedRentAction(addApartment.id);
+          setAddOpen(false);
+        } catch (err) {
+          setAddError(err instanceof Error ? err.message : "Något gick fel.");
+        }
+      });
+      return;
+    }
+    if (!addRentalObject || !addMissedSince) return;
     startAddTransition(async () => {
       try {
-        await createManualMissedRentAction(addApartment.id);
+        await createManualMissedRentFromRentalObjectAction(addRentalObject.id, addMissedSince);
         setAddOpen(false);
       } catch (err) {
         setAddError(err instanceof Error ? err.message : "Något gick fel.");
@@ -440,29 +471,79 @@ export default function MissedRentTable({ rows, availableApartments }: Props) {
         <DialogContent>
           <Stack spacing={2} sx={{ mt: 1 }}>
             {addError && <Alert severity="error">{addError}</Alert>}
-            <Typography variant="body2" color="text.secondary">
-              Välj en lägenhet som ännu inte finns i listan. Övriga fält
-              (faktiskt inflytt, kommentar, ansvarig, övriga kostnader) fylls
-              i genom att redigera raden efteråt.
-            </Typography>
-            <Autocomplete
-              options={availableApartments}
-              getOptionLabel={(a) => `${a.lagenhetsnummer} · ${a.fastighet} (ledig ${a.ledigFrom})`}
-              value={addApartment}
-              onChange={(_, value) => setAddApartment(value)}
+            <TextField
+              select
+              label="Källa"
+              value={addSource}
+              onChange={(e) => setAddSource(e.target.value as AddSource)}
               disabled={isAdding}
-              renderInput={(params) => (
-                <TextField {...params} label="Lägenhet" fullWidth />
-              )}
-              noOptionsText="Inga lägenheter att välja — alla finns redan i listan."
-            />
+              fullWidth
+            >
+              <MenuItem value="apartment">Lediga lägenheter</MenuItem>
+              <MenuItem value="databas">Databas</MenuItem>
+            </TextField>
+            {addSource === "apartment" ? (
+              <>
+                <Typography variant="body2" color="text.secondary">
+                  Välj en lägenhet som ännu inte finns i listan. Övriga fält
+                  (faktiskt inflytt, kommentar, ansvarig, övriga kostnader)
+                  fylls i genom att redigera raden efteråt.
+                </Typography>
+                <Autocomplete
+                  options={availableApartments}
+                  getOptionLabel={(a) => `${a.lagenhetsnummer} · ${a.fastighet} (ledig ${a.ledigFrom})`}
+                  value={addApartment}
+                  onChange={(_, value) => setAddApartment(value)}
+                  disabled={isAdding}
+                  renderInput={(params) => (
+                    <TextField {...params} label="Lägenhet" fullWidth />
+                  )}
+                  noOptionsText="Inga lägenheter att välja — alla finns redan i listan."
+                />
+              </>
+            ) : (
+              <>
+                <Typography variant="body2" color="text.secondary">
+                  För en lägenhet som inte gått via lediga lägenheter — t.ex.
+                  en uthyrd lägenhet där hyran uteblev av annan anledning.
+                  Ange datumet hyran räknas som missad från.
+                </Typography>
+                <Autocomplete
+                  options={availableRentalObjects}
+                  getOptionLabel={(ro) => `${ro.lagenhetsnummer} · ${ro.fastighet}`}
+                  value={addRentalObject}
+                  onChange={(_, value) => setAddRentalObject(value)}
+                  disabled={isAdding}
+                  renderInput={(params) => (
+                    <TextField {...params} label="Lägenhet (databas)" fullWidth />
+                  )}
+                  noOptionsText="Inga lägenheter att välja — alla finns redan i listan."
+                />
+                <TextField
+                  label="Missad hyra sedan"
+                  type="date"
+                  value={addMissedSince}
+                  onChange={(e) => setAddMissedSince(e.target.value)}
+                  disabled={isAdding}
+                  slotProps={{ inputLabel: { shrink: true } }}
+                  fullWidth
+                />
+              </>
+            )}
           </Stack>
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setAddOpen(false)} disabled={isAdding}>
             Avbryt
           </Button>
-          <Button onClick={handleAdd} variant="contained" disabled={isAdding || !addApartment}>
+          <Button
+            onClick={handleAdd}
+            variant="contained"
+            disabled={
+              isAdding ||
+              (addSource === "apartment" ? !addApartment : !addRentalObject || !addMissedSince)
+            }
+          >
             Lägg till
           </Button>
         </DialogActions>

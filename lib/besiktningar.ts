@@ -12,6 +12,9 @@ export type Besiktning = {
   vaktmastareAnteckning: string;
   godkand: boolean | null;
   husformanAnteckning: string;
+  // Shared free-text field any of husförman/husvd/ekonomi can fill in —
+  // unlike vaktmastareAnteckning/husformanAnteckning, not tied to one role.
+  ovrigaAnteckningar: string;
   totaltAvdrag: number;
   klarForBetalningDatum: string | null;
   klarForBetalningAv: string | null;
@@ -26,6 +29,7 @@ export type BesiktningEditInput = {
   vaktmastareAnteckning: string;
   godkand: boolean | null;
   husformanAnteckning: string;
+  ovrigaAnteckningar: string;
   totaltAvdrag: number;
 };
 
@@ -51,6 +55,7 @@ function mapDoc(doc: BesiktningDoc & { _id: ObjectId }): Besiktning {
     vaktmastareAnteckning: doc.vaktmastareAnteckning,
     godkand: doc.godkand,
     husformanAnteckning: doc.husformanAnteckning,
+    ovrigaAnteckningar: doc.ovrigaAnteckningar ?? "",
     totaltAvdrag: doc.totaltAvdrag,
     klarForBetalningDatum: doc.klarForBetalningDatum,
     klarForBetalningAv: doc.klarForBetalningAv ?? null,
@@ -107,6 +112,7 @@ export async function createBesiktning(
     vaktmastareAnteckning: "",
     godkand: null,
     husformanAnteckning: "",
+    ovrigaAnteckningar: "",
     totaltAvdrag: 0,
     klarForBetalningDatum: null,
     klarForBetalningAv: null,

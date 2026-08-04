@@ -7,10 +7,19 @@ import {
   getApartmentsWithPastLedigFrom,
   type Apartment,
 } from "@/lib/apartments";
+import { getRentalObjectsByIds } from "@/lib/rentalobjects";
 
+// A row is anchored to exactly one of apartmentId (the automatic
+// ledig-fr.o.m.-passed sync, or a manual pick from Lediga lägenheter) or
+// rentalObjectId (a manual pick straight from Databas, for rent missed for
+// reasons other than a listed vacancy — e.g. an occupied unit that simply
+// never paid). manualLedigFrom only applies to the rentalObjectId case,
+// since RentalObject has no ledigFrom of its own to derive one from.
 type MissedRentDoc = {
   nationsID: string;
-  apartmentId: string;
+  apartmentId: string | null;
+  rentalObjectId: string | null;
+  manualLedigFrom: string | null;
   faktisktInflyttDatum: string | null;
   ovrigaMissadeKostnader: number;
   kommentar: string;
@@ -19,7 +28,9 @@ type MissedRentDoc = {
 
 export type MissedRentRow = {
   id: string;
-  apartmentId: string;
+  apartmentId: string | null;
+  rentalObjectId: string | null;
+  source: "apartment" | "databas";
   lagenhetsnummer: string;
   fastighet: string;
   ledigFrom: string;
@@ -100,6 +111,8 @@ export async function syncMissedRent(nationsId: string): Promise<void> {
     missing.map((a) => ({
       nationsID: nationsId,
       apartmentId: a.id,
+      rentalObjectId: null,
+      manualLedigFrom: null,
       faktisktInflyttDatum: null,
       ovrigaMissadeKostnader: 0,
       kommentar: "",
@@ -115,7 +128,7 @@ export async function getApartmentsAvailableForManualEntry(nationsId: string): P
   const tracked = await col
     .find({ nationsID: nationsId }, { projection: { apartmentId: 1 } })
     .toArray();
-  const trackedIds = new Set(tracked.map((d) => d.apartmentId));
+  const trackedIds = new Set(tracked.map((d) => d.apartmentId).filter((id): id is string => !!id));
   return apartments.filter((a) => !trackedIds.has(a.id));
 }
 
@@ -130,6 +143,36 @@ export async function createManualMissedRent(nationsId: string, apartmentId: str
   await col.insertOne({
     nationsID: nationsId,
     apartmentId,
+    rentalObjectId: null,
+    manualLedigFrom: null,
+    faktisktInflyttDatum: null,
+    ovrigaMissadeKostnader: 0,
+    kommentar: "",
+    ansvarig: "",
+  });
+}
+
+// A rental object may have no Apartment record at all (e.g. it's currently
+// occupied) yet still have missed rent — a tenant who didn't pay, a wrong
+// contract, etc. — so this lets a row be anchored directly to Databas
+// instead of requiring an entry in the lediga lägenheter pipeline.
+// missedSince has no automatic source of truth here (RentalObject has no
+// ledigFrom), so it's provided by whoever adds the row.
+export async function createManualMissedRentFromRentalObject(
+  nationsId: string,
+  rentalObjectId: string,
+  missedSince: string
+): Promise<void> {
+  const col = await getCollection();
+  const existing = await col.findOne({ nationsID: nationsId, rentalObjectId });
+  if (existing) {
+    throw new Error("Den här lägenheten finns redan i listan över missade hyror.");
+  }
+  await col.insertOne({
+    nationsID: nationsId,
+    apartmentId: null,
+    rentalObjectId,
+    manualLedigFrom: missedSince,
     faktisktInflyttDatum: null,
     ovrigaMissadeKostnader: 0,
     kommentar: "",
@@ -142,34 +185,74 @@ export async function getMissedRentRows(nationsId: string): Promise<MissedRentRo
   const docs = await col.find({ nationsID: nationsId }).toArray();
   if (docs.length === 0) return [];
 
-  const apartments = await getApartmentsByIds(
-    nationsId,
-    docs.map((d) => d.apartmentId)
-  );
+  const apartmentIds = docs.filter((d) => d.apartmentId).map((d) => d.apartmentId!);
+  const rentalObjectIds = docs.filter((d) => d.rentalObjectId).map((d) => d.rentalObjectId!);
+  const [apartments, rentalObjects] = await Promise.all([
+    getApartmentsByIds(nationsId, apartmentIds),
+    getRentalObjectsByIds(nationsId, rentalObjectIds),
+  ]);
   const apartmentById = new Map(apartments.map((a) => [a.id, a]));
+  const rentalObjectById = new Map(rentalObjects.map((r) => [r.id, r]));
 
   const rows: MissedRentRow[] = [];
   for (const doc of docs) {
-    const apartment = apartmentById.get(doc.apartmentId);
-    if (!apartment) continue; // apartment was deleted since — skip defensively
+    let source: MissedRentRow["source"];
+    let lagenhetsnummer: string;
+    let fastighet: string;
+    let ledigFrom: string;
+    let arshyra: number;
+    let hyresrabatt: number;
+    let hyresreduktion: number;
+    let arshyraMedRed: number;
+    let manadshyra: number;
+
+    if (doc.apartmentId) {
+      const apartment = apartmentById.get(doc.apartmentId);
+      if (!apartment) continue; // apartment was deleted since — skip defensively
+      source = "apartment";
+      lagenhetsnummer = apartment.lagenhetsnummer;
+      fastighet = apartment.fastighet;
+      ledigFrom = apartment.ledigFrom;
+      arshyra = apartment.arshyra;
+      hyresrabatt = apartment.hyresrabatt;
+      hyresreduktion = apartment.hyresreduktion;
+      arshyraMedRed = apartment.arshyraMedRed;
+      manadshyra = apartment.manadshyra;
+    } else if (doc.rentalObjectId) {
+      const rentalObject = rentalObjectById.get(doc.rentalObjectId);
+      if (!rentalObject) continue; // rental object was deleted since — skip defensively
+      source = "databas";
+      lagenhetsnummer = rentalObject.lagenhetsnummer;
+      fastighet = rentalObject.fastighet;
+      ledigFrom = doc.manualLedigFrom ?? today();
+      arshyra = rentalObject.malbildshyra ?? 0;
+      hyresrabatt = rentalObject.hyresrabatt ?? 0;
+      hyresreduktion = rentalObject.hyresred ?? 0;
+      arshyraMedRed = rentalObject.individuellArshyra ?? 0;
+      manadshyra = rentalObject.manadshyra ?? 0;
+    } else {
+      continue; // malformed doc — neither reference set
+    }
 
     const endDate = doc.faktisktInflyttDatum ?? today();
-    const missedMonths = monthsBetween(apartment.ledigFrom, endDate);
-    const missadIntakt = Math.round(apartment.manadshyra * missedMonths);
+    const missedMonths = monthsBetween(ledigFrom, endDate);
+    const missadIntakt = Math.round(manadshyra * missedMonths);
     const ovrigaMissadeKostnader = doc.ovrigaMissadeKostnader ?? 0;
 
     rows.push({
       id: doc._id.toString(),
       apartmentId: doc.apartmentId,
-      lagenhetsnummer: apartment.lagenhetsnummer,
-      fastighet: apartment.fastighet,
-      ledigFrom: apartment.ledigFrom,
+      rentalObjectId: doc.rentalObjectId,
+      source,
+      lagenhetsnummer,
+      fastighet,
+      ledigFrom,
       faktisktInflyttDatum: doc.faktisktInflyttDatum,
-      arshyra: apartment.arshyra,
-      hyresrabatt: apartment.hyresrabatt,
-      hyresreduktion: apartment.hyresreduktion,
-      arshyraMedRed: apartment.arshyraMedRed,
-      manadshyra: apartment.manadshyra,
+      arshyra,
+      hyresrabatt,
+      hyresreduktion,
+      arshyraMedRed,
+      manadshyra,
       missadIntakt,
       ovrigaMissadeKostnader,
       totalMissat: missadIntakt + ovrigaMissadeKostnader,

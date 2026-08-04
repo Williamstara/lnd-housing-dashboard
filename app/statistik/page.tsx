@@ -11,6 +11,7 @@ import {
   getGenerelltSkick,
   getLagenheterPerStatus,
   getMissedIncomeByYear,
+  getMissedRentByAnsvarig,
   getTotalaIntakter,
   getUthyrningsgrad,
 } from "@/lib/statistik";
@@ -39,10 +40,11 @@ const StatistikPage = auth0.withPageAuthRequired(
           totalaIntakter={getTotalaIntakter(rentalObjects)}
           uthyrningsgrad={getUthyrningsgrad(rentalObjects, vacantApartments, rows)}
           missedIncomeByYear={getMissedIncomeByYear(rows)}
+          missedRentByAnsvarig={getMissedRentByAnsvarig(rows)}
           bestandsoversikt={getBestandsoversikt(rentalObjects, tenants, andrahandsgaster)}
           lagenheterPerStatus={getLagenheterPerStatus(vacantApartments)}
         />
-        <MissedRentTable rows={rows} availableApartments={availableApartments} />
+        <MissedRentTable rows={rows} availableApartments={availableApartments} rentalObjects={rentalObjects} />
       </Container>
     );
   },

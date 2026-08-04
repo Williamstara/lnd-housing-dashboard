@@ -34,6 +34,7 @@ type ColumnKey =
   | "vaktmastareAnteckning"
   | "godkand"
   | "husformanAnteckning"
+  | "ovrigaAnteckningar"
   | "totaltAvdrag"
   | "klarForBetalningDatum"
   | "betalningGjordDatum";
@@ -47,6 +48,7 @@ const columns: Array<{ key: ColumnKey; label: string; align?: "right" }> = [
   { key: "vaktmastareAnteckning", label: "Vaktmästare anteckning" },
   { key: "godkand", label: "Godkänd?" },
   { key: "husformanAnteckning", label: "Husförman anteckning" },
+  { key: "ovrigaAnteckningar", label: "Övriga anteckningar" },
   { key: "totaltAvdrag", label: "Totalt avdrag", align: "right" },
   { key: "klarForBetalningDatum", label: "Klar för betalning" },
   { key: "betalningGjordDatum", label: "Betalning gjord" },
@@ -65,6 +67,7 @@ const columnValue: Record<ColumnKey, (b: Besiktning) => string | number> = {
   vaktmastareAnteckning: (b) => b.vaktmastareAnteckning,
   godkand: (b) => godkandLabel(b.godkand),
   husformanAnteckning: (b) => b.husformanAnteckning,
+  ovrigaAnteckningar: (b) => b.ovrigaAnteckningar,
   totaltAvdrag: (b) => b.totaltAvdrag,
   klarForBetalningDatum: (b) => b.klarForBetalningDatum ?? "",
   betalningGjordDatum: (b) => b.betalningGjordDatum ?? "",
@@ -79,7 +82,7 @@ function compareValues(a: string | number, b: string | number): number {
 
 function matchesSearch(row: Besiktning, query: string): boolean {
   if (!query) return true;
-  return [row.lagenhetsnummer, row.vaktmastareAnteckning, row.husformanAnteckning]
+  return [row.lagenhetsnummer, row.vaktmastareAnteckning, row.husformanAnteckning, row.ovrigaAnteckningar]
     .filter(Boolean)
     .join(" ")
     .toLocaleLowerCase("sv")
@@ -230,7 +233,9 @@ export default function ArkivBesiktningarTable({ besiktningar }: Props) {
                         key={column.key}
                         align={column.align}
                         sx={
-                          column.key === "vaktmastareAnteckning" || column.key === "husformanAnteckning"
+                          column.key === "vaktmastareAnteckning" ||
+                          column.key === "husformanAnteckning" ||
+                          column.key === "ovrigaAnteckningar"
                             ? { maxWidth: 200, whiteSpace: "normal" }
                             : undefined
                         }
@@ -266,7 +271,9 @@ export default function ArkivBesiktningarTable({ besiktningar }: Props) {
                         sx={{
                           minWidth: 0,
                           gridColumn:
-                            column.key === "vaktmastareAnteckning" || column.key === "husformanAnteckning"
+                            column.key === "vaktmastareAnteckning" ||
+                            column.key === "husformanAnteckning" ||
+                            column.key === "ovrigaAnteckningar"
                               ? "1 / -1"
                               : undefined,
                         }}

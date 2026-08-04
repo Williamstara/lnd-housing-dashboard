@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { auth0 } from "@/lib/auth0";
 import {
   createManualMissedRent,
+  createManualMissedRentFromRentalObject,
   deleteMissedRent,
   updateMissedRent,
   type MissedRentUpdateInput,
@@ -30,6 +31,18 @@ export async function createManualMissedRentAction(apartmentId: string) {
   await createManualMissedRent(nationsId, apartmentId);
   revalidatePath("/statistik");
   revalidatePath("/lediga-lagenheter");
+}
+
+export async function createManualMissedRentFromRentalObjectAction(
+  rentalObjectId: string,
+  missedSince: string
+) {
+  const nationsId = await requireUser();
+  const trimmed = missedSince.trim();
+  if (!trimmed) throw new Error("Datum för missad hyra krävs.");
+  await createManualMissedRentFromRentalObject(nationsId, rentalObjectId, trimmed);
+  revalidatePath("/statistik");
+  revalidatePath("/databas");
 }
 
 export async function updateMissedRentAction(id: string, input: MissedRentUpdateInput) {

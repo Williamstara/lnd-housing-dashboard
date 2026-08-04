@@ -8,6 +8,174 @@ maintained.
 
 ---
 
+## The besiktningar "Status" bar became a shared `SegmentedBar` component; Missade hyresintäkter gained a "Per ansvarig" breakdown using it
+
+- **Date**: 2026-08-04
+- **Status**: accepted
+- **Context**: The user asked for "a chart like the one in besiktningar
+  with the status but for the ansvarig of the missad hyra instead" inside
+  `/statistik`'s "Missade hyresintäkter" card. The besiktningar status bar
+  (segmented/stacked progress bar + legend) had been built inline in
+  `BesiktningarTable.tsx`; reusing the same visual for a second, unrelated
+  dataset was the second real consumer of that exact ~25-line JSX block.
+  First pass grouped by ansvarig and counted **cases** (mirroring
+  besiktningar's status bar, which counts besiktningar); user immediately
+  corrected: "i want it to display the actual number (the estimated miss
+  for that ansvarig, not the fkn amounts of misses)" — i.e. the summed
+  **kr amount** attributed to each ansvarig, not a case count.
+- **Decision**: Extracted `components/charts/SegmentedBar.tsx` (`segments:
+  {label, value, color}[]`, matching the existing `BarChart`/`DonutChart`
+  prop shape, plus an optional `valueFormatter` for the legend/tooltip
+  text — needed once this became a currency chart) and pointed
+  `BesiktningarTable.tsx`'s Status card at it instead of its inline JSX
+  (that usage stays a plain count, no formatter). Added
+  `getMissedRentByAnsvarig` to `lib/statistik.ts` — sums each row's
+  `totalMissat` per `ansvarig` (free text; blank values bucket into "Ingen
+  ansvarig" rather than being dropped), returning `{label, total}[]`, not
+  a count. Computed server-side in `app/statistik/page.tsx`, passed as
+  `missedRentByAnsvarig`, and rendered in `StatistikOverview.tsx` via
+  `SegmentedBar` with `CATEGORICAL`-cycled colors (not `STATUS` — ansvarig
+  names aren't a severity state) and `valueFormatter={kr}`, inside the
+  existing "Missade hyresintäkter" card below the year bar chart, hidden
+  entirely if there are no missed-rent rows.
+- **Reason**: The moment a second real consumer of an identical UI block
+  appeared, extracting it matched the codebase's own "reuse before
+  creating" convention better than copy-pasting the same JSX again. Money,
+  not case count, is what "Missade hyresintäkter" (missed *income*) is
+  actually about — matching the card's own subject rather than the
+  besiktningar analogy literally.
+- **Consequences**: Any future "N categories as a proportional bar + legend"
+  need in this codebase should reuse `SegmentedBar`, not reinvent the
+  flexGrow-segment pattern a third time — remembering it can represent
+  either a count (no formatter) or a summed quantity (pass
+  `valueFormatter`), so check which one a new use case actually needs
+  rather than assuming it's always a count.
+- **Files**: `components/charts/SegmentedBar.tsx` (new),
+  `components/BesiktningarTable.tsx`, `lib/statistik.ts`,
+  `app/statistik/page.tsx`, `components/StatistikOverview.tsx`.
+
+---
+
+## Besiktningar gained a shared "Övriga anteckningar" field, not role-gated
+
+- **Date**: 2026-08-04
+- **Status**: accepted
+- **Context**: Besiktningar already had two note fields tied to a specific
+  role's workflow: `vaktmastareAnteckning` and `husformanAnteckning`. The
+  user asked for a third, shared free-text field ("Övriga anteckningar")
+  that husförman, husvd, *and* ekonomi can all fill in.
+- **Decision**: Added `ovrigaAnteckningar: string` to `Besiktning` and
+  `BesiktningEditInput` (`lib/besiktningar.ts`), defaulted to `""` for
+  existing besiktningar via `doc.ovrigaAnteckningar ?? ""` in `mapDoc` (they
+  predate the field and have no value stored at all — exactly the user's
+  "blank for now" expectation). Wired through the Add/Edit dialogs,
+  desktop/mobile table+card views, search, and the Excel importer (which
+  has no column mapping for it, so imported rows always get `""`) in
+  `BesiktningarTable.tsx`, plus a read-only column in
+  `ArkivBesiktningarTable.tsx` for consistency.
+- **Reason**: No new permission gate was added because none of the existing
+  note fields are role-restricted either — `updateBesiktningAction`/
+  `createBesiktningAction` only require `requireUser()` (any authenticated
+  nation member), and `/besiktningar` has no page-level role gate. Husvd and
+  ekonomi already had unrestricted edit access before this change; admin is
+  superuser everywhere. The only role-restricted besiktningar actions are
+  payment-marking (husvd/ekonomi) and archive/delete (husvd/admin resp.
+  ekonomi/husvd/admin — see the earlier archive-role decision above) —
+  editing note fields was never one of them, so "which roles can fill it
+  in" was already satisfied by the existing access model without new code.
+- **Consequences**: A future role-scoped restriction on this field (e.g. if
+  vaktmästare-only accounts somehow gained besiktningar access) would need
+  an explicit new guard — none exists today because none was needed.
+- **Files**: `lib/besiktningar.ts`, `components/BesiktningarTable.tsx`,
+  `components/ArkivBesiktningarTable.tsx`,
+  `components/BesiktningarExcelImportDialog.tsx`.
+
+---
+
+## Besiktningar archiving is husvd/admin only; ekonomi keeps ARCHIVE_ROLES everywhere else
+
+- **Date**: 2026-08-04
+- **Status**: accepted
+- **Context**: User: "Remove ekonomi from archiving from besiktningar."
+  Archiving besiktningar previously used the shared `ARCHIVE_ROLES`
+  (ekonomi/husvd/admin, `lib/roles.ts`) — the same constant `redo-för-
+  kontrakt` and `lediga-lägenheter`'s bulk-archive-by-date feature use. The
+  request was scoped to besiktningar only.
+- **Decision**: Added a besiktningar-only `requireHusvdRole()` guard
+  (`app/besiktningar/actions.ts`) — `hasRole(user, ROLES.HUSVD)`, which
+  still passes for `admin` (superuser bypass) but not `ekonomi` — and
+  pointed `archiveBesiktningAction`/`archiveBesiktningarBulkAction` at it.
+  `deleteBesiktningAction` still uses the original `requireArchiveRole()`
+  (unchanged, ekonomi/husvd/admin) since only archiving was in scope.
+  Client-side, `BesiktningarTable.tsx`'s single `canArchive` flag (which had
+  been gating *both* the archive icon/button and the delete icon) was split
+  into `canArchive` (husvd/admin, now used only for archive controls) and
+  `canDelete` (unchanged ARCHIVE_ROLES, used only for delete controls) —
+  without this split an ekonomi user would still see an archive button that
+  fails on click.
+- **Reason**: `ARCHIVE_ROLES` is shared app-wide; narrowing it directly
+  would have also stripped ekonomi's archive rights from redo-för-kontrakt
+  and lediga-lägenheter, which was never asked for. A besiktningar-specific
+  guard keeps the change scoped exactly to what was requested.
+- **Consequences**: Any future besiktningar archive-adjacent action should
+  use `requireHusvdRole()`, not `requireArchiveRole()`/`ARCHIVE_ROLES`,
+  unless deliberately extending access back to ekonomi.
+- **Files**: `app/besiktningar/actions.ts`, `components/BesiktningarTable.tsx`.
+
+---
+
+## Missade hyror can be anchored to a Databas rental object, not just an Apartment
+
+- **Date**: 2026-08-04
+- **Status**: accepted
+- **Context**: `MissedRentDoc`/`MissedRentRow` were hard-keyed to
+  `apartmentId` (a `lib/apartments.ts` record) — rent can only be "missed"
+  for something currently in the lediga lägenheter pipeline. The user
+  pointed out rent can be missed for reasons other than "not rented out"
+  (e.g. an occupied unit whose tenant didn't pay), and those units often
+  have **no** `Apartment` record at all — only a `RentalObject` (Databas)
+  row, since Databas is the canonical all-units table independent of
+  current occupancy.
+- **Decision**: `MissedRentDoc`/`MissedRentRow` now carry both
+  `apartmentId: string | null` and `rentalObjectId: string | null` (exactly
+  one is set per row) plus `manualLedigFrom: string | null` (only used with
+  `rentalObjectId`, since `RentalObject` has no `ledigFrom` of its own to
+  derive a "missed since" date from — whoever adds the row supplies it).
+  `getMissedRentRows` joins against whichever collection the doc points at
+  (added `getRentalObjectsByIds` to `lib/rentalobjects.ts`, mirroring the
+  existing `getApartmentsByIds`). The "Lägg till" dialog in
+  `MissedRentTable.tsx` gained a "Källa" select (Lediga lägenheter /
+  Databas); the Databas path shows a `RentalObject` picker (excluding ones
+  already tracked, computed client-side from already-fetched `rows` +
+  `rentalObjects` props — no new query) plus a "Missad hyra sedan" date
+  field.
+- **Reason**: Matches the actual business reality (rent can be missed for
+  reasons unrelated to vacancy) without inventing a parallel tracking
+  collection — one `missed-rent` collection, one row shape, two possible
+  anchors. Deriving "available rental objects" from already-fetched props
+  avoided adding a new server round trip.
+- **Consequences**: Existing `missed-rent` documents have no
+  `rentalObjectId`/`manualLedigFrom` fields at all (not even `null`) — every
+  read site defaults them via truthy checks (`doc.apartmentId ? ... : doc.
+  rentalObjectId ? ... : skip`), so old apartment-anchored rows are
+  unaffected. Any code that assumed `MissedRentRow.apartmentId` is always a
+  non-null `string` needed updating — found and fixed two: `app/lediga-
+  lagenheter/page.tsx`'s `missedRentApartmentIds` (now filters out
+  databas-anchored rows, which have nothing to highlight in that table
+  anyway) and `lib/statistik.ts`'s `getUthyrningsgrad` (added an explicit
+  null check before the `Set.has()` call). Also fixed
+  `scripts/check-statistik.mjs`, found broken by an *earlier* change this
+  session (the "Bostäder per typ" chart) — its synthetic `RentalObject`
+  fixtures had no `typ` field, so `npm run check:statistik` was silently
+  broken before this session's work even started being validated against
+  it; added `typ` to the fixtures and a `bostaderPerTyp` assertion.
+- **Files**: `lib/missed-rent.ts`, `lib/rentalobjects.ts`,
+  `app/statistik/actions.ts`, `app/statistik/page.tsx`,
+  `components/MissedRentTable.tsx`, `app/lediga-lagenheter/page.tsx`,
+  `lib/statistik.ts`, `scripts/check-statistik.mjs`.
+
+---
+
 ## Besiktningar's "Status" card is a plain segmented bar + legend, not a chart component
 
 - **Date**: 2026-08-04

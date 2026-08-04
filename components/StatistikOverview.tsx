@@ -8,9 +8,11 @@ import Typography from "@mui/material/Typography";
 import { useTheme } from "@mui/material/styles";
 import BarChart, { type BarDatum } from "@/components/charts/BarChart";
 import DonutChart from "@/components/charts/DonutChart";
+import SegmentedBar from "@/components/charts/SegmentedBar";
 import StatTile from "@/components/charts/StatTile";
 import { CATEGORICAL, ORDINAL_BLUE, STATUS, type ChartMode } from "@/components/charts/palette";
 import type {
+  AnsvarigBucket,
   Bestandsoversikt,
   MissedIncomeByYear,
   SkickBucket,
@@ -24,6 +26,7 @@ type Props = {
   totalaIntakter: TotalaIntakter;
   uthyrningsgrad: Uthyrningsgrad;
   missedIncomeByYear: MissedIncomeByYear;
+  missedRentByAnsvarig: AnsvarigBucket[];
   bestandsoversikt: Bestandsoversikt;
   lagenheterPerStatus: StatusBucket[];
 };
@@ -47,6 +50,7 @@ export default function StatistikOverview({
   totalaIntakter,
   uthyrningsgrad,
   missedIncomeByYear,
+  missedRentByAnsvarig,
   bestandsoversikt,
   lagenheterPerStatus,
 }: Props) {
@@ -105,6 +109,11 @@ export default function StatistikOverview({
     value: bucket.count,
     color: categorical[index % categorical.length],
     tooltip: `${bucket.label}: ${bucket.count} lägenheter`,
+  }));
+  const ansvarigSegments = missedRentByAnsvarig.map((bucket, index) => ({
+    label: bucket.label,
+    value: bucket.total,
+    color: categorical[index % categorical.length],
   }));
 
   return (
@@ -211,6 +220,14 @@ export default function StatistikOverview({
                 color={STATUS.critical}
               />
               <BarChart data={yearData} valueFormatter={kr} />
+              {ansvarigSegments.length > 0 && (
+                <Stack spacing={1}>
+                  <Typography variant="body2" color="text.secondary">
+                    Per ansvarig
+                  </Typography>
+                  <SegmentedBar segments={ansvarigSegments} valueFormatter={kr} />
+                </Stack>
+              )}
             </Stack>
           </ChartCard>
         </Grid>

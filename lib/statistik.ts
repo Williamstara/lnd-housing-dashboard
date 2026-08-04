@@ -79,7 +79,7 @@ export function getUthyrningsgrad(
   const total = rentalObjects.length;
   const vacantIds = new Set(vacantApartments.map((a) => a.id));
   const missadHyra = missedRent.filter(
-    (r) => !r.faktisktInflyttDatum && vacantIds.has(r.apartmentId)
+    (r) => !r.faktisktInflyttDatum && r.apartmentId != null && vacantIds.has(r.apartmentId)
   ).length;
   const vacantCount = vacantApartments.length;
   const ledigtEjMissat = Math.max(0, vacantCount - missadHyra);
@@ -116,6 +116,20 @@ export function getMissedIncomeByYear(missedRent: MissedRentRow[]): MissedIncome
     currentYearTotal: totals.get(currentYear) ?? 0,
     byYear,
   };
+}
+
+export type AnsvarigBucket = { label: string; total: number };
+
+// Total missed amount (totalMissat, kr) attributed to each person's cases —
+// not a case count. Ansvarig is free text (no fixed enum), so unassigned
+// rows get their own bucket rather than being silently dropped.
+export function getMissedRentByAnsvarig(missedRent: MissedRentRow[]): AnsvarigBucket[] {
+  const totals = new Map<string, number>();
+  for (const row of missedRent) {
+    const label = row.ansvarig.trim() || "Ingen ansvarig";
+    totals.set(label, (totals.get(label) ?? 0) + row.totalMissat);
+  }
+  return Array.from(totals, ([label, total]) => ({ label, total })).sort((a, b) => b.total - a.total);
 }
 
 export type Bestandsoversikt = {

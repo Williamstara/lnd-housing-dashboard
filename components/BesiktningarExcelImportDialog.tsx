@@ -98,6 +98,7 @@ function parseRows(
       vaktmastareAnteckning: cellStr(row, col.vaktmastareAnteckning!),
       godkand: parseGodkand(cellStr(row, col.godkand!)),
       husformanAnteckning: cellStr(row, col.husformanAnteckning!),
+      ovrigaAnteckningar: "",
       totaltAvdrag: parseNumber(cellStr(row, col.totaltAvdrag!)),
     });
   }

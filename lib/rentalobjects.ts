@@ -71,6 +71,15 @@ export async function getRentalObjects(nationsId: string): Promise<RentalObject[
   return docs.map((doc) => mapDoc(doc as RentalObjectDocument & { _id: ObjectId }));
 }
 
+export async function getRentalObjectsByIds(nationsId: string, ids: string[]): Promise<RentalObject[]> {
+  if (ids.length === 0) return [];
+  const col = await getCollection();
+  const docs = await col
+    .find({ nationsID: nationsId, _id: { $in: ids.map((id) => new ObjectId(id)) } })
+    .toArray();
+  return docs.map((doc) => mapDoc(doc as RentalObjectDocument & { _id: ObjectId }));
+}
+
 export async function createRentalObject(nationsId: string, input: RentalObjectInput): Promise<string> {
   const col = await getCollection();
   const doc: RentalObjectDocument = { ...input, nationsID: nationsId, custom: input.custom ?? {} };

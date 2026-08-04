@@ -21,8 +21,8 @@ const LedigaLagenheterPage = auth0.withPageAuthRequired(
     ]);
     const fastigheter = fastighetRecords.map((f) => f.namn);
     const missedRentApartmentIds = missedRent
-      .filter((row) => !row.faktisktInflyttDatum)
-      .map((row) => row.apartmentId);
+      .filter((row) => !row.faktisktInflyttDatum && row.apartmentId)
+      .map((row) => row.apartmentId!);
     const columnSettings = resolveColumns(DEFAULT_APARTMENT_COLUMNS, nationSettings?.tables.apartments);
     const importMapping = resolveImportMapping(
       DEFAULT_APARTMENT_IMPORT,

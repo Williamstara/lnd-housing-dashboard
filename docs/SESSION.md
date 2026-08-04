@@ -44,29 +44,29 @@ not provide a useful inventory/occupancy overview.
 - Fixed a pre-existing hydration bug in `components/charts/DonutChart.tsx`:
   its segment `<title>` used `{s.label}: {s.value}` (a 3-child JSX array),
   which React cannot hydrate consistently for `<title>` elements. Found via
-  real browser verification of the new statistics charts below; affected
-  every donut chart on the page (including the pre-existing Uthyrningsgrad
-  one), not just the new one. Fixed with a template string.
+  real browser verification of the new statistics charts; affected every
+  donut chart on the page (including the pre-existing Uthyrningsgrad one),
+  not just the new one. Fixed with a template string.
 
 ## Validation status
 
 - `npx tsc --noEmit --incremental false`: clean.
-- `npm run check:statistik`: clean; verifies the tenant-count semantics and
-  building aggregation with synthetic, non-personal data.
-- `npx next build`: clean on Next.js 16.2.10.
+- `npm run check:statistik`: clean; verifies the tenant-count semantics,
+  building/`typ` aggregation with synthetic, non-personal data (fixtures
+  were briefly out of sync with the `typ` field this session — fixed, see
+  `docs/DECISIONS.md`).
 - `npm run lint`: unchanged baseline of 7
   `react-hooks/set-state-in-effect` errors and 1 unused-argument warning.
 - `git diff --check`: clean apart from line-ending notices for existing
   skill files and touched files.
-- Rendered verification of `/statistik` at desktop width (authenticated,
-  real `LND` data) is done in this session via Claude in Chrome: all eight
-  chart cards render, no console errors, no hydration mismatches after the
-  `DonutChart` fix. Mobile-viewport screenshot verification was attempted
-  but `resize_window` did not change the captured viewport size in this
-  environment; the new cards reuse the exact same `Grid`/`ChartCard`
-  primitives as the six pre-existing cards, so no new responsive behavior
-  was introduced. Full desktop/tablet/phone review of the rest of the app
-  (nav rail, dialogs, other tables) remains outstanding.
+- Rendered verification of `/statistik` and `/besiktningar` at desktop width
+  (authenticated, real `LND` data) has been done via Claude in Chrome across
+  this and the prior session. Mobile/tablet screenshots remain outstanding
+  — `resize_window` didn't change the captured viewport earlier this
+  session, and by the end of this session the browser tools (`computer`
+  screenshot, `find`, `read_page`) started returning errors/empty results
+  entirely (an extension-side issue — `get_page_text` and
+  `read_console_messages` kept working throughout). See `docs/HANDOFF.md`.
 
 ## Acceptance criteria
 
@@ -88,25 +88,32 @@ layout, keyboard, or accessibility issues found, then commit when requested.
 
 ## Out-of-milestone work done this session
 
-`/besiktningar` gained a "select by besiktningsdatum" control (a date field
-above the existing bulk selection bar) so a whole day's inspections can be
-selected without ticking each row by hand. It auto-selects on date change
-(no button — removed after user feedback) and the selection holds through
-manual per-row edits and through running any of the three bulk actions in
-sequence (klar för betalning → betalning gjord → arkivera), changing only
-when the date field changes or "Avmarkera alla" is pressed — a bug where
-each bulk action silently cleared the selection was found and fixed. This is
-unrelated to the responsive-redesign milestone above — the underlying bulk
-mark/archive Server Actions and UI (checkboxes, the "X valda" bar with
-"Klar för betalning"/"Betalning gjord"/"Arkivera") already existed before
-this session; only the date-based selection shortcut
-was added. See `docs/DECISIONS.md` for details and `docs/HANDOFF.md` for
-verification notes.
+Several `/besiktningar` and `/statistik` features were added on user request,
+unrelated to the responsive-redesign milestone above. Full reasoning for
+each lives in `docs/DECISIONS.md`; short summary:
 
-`/besiktningar` also gained a "Status" card (Obehandlade/Klara för
-betalning/Betalda counts): tried as a reused `DonutChart`, then a new
-hand-rolled `LineChart`, both rejected by the user ("i want it like a status
-bar"). Final version is a plain MUI `Box`/`Stack` segmented/stacked
-progress bar with a legend — no chart component, just `flexGrow: value`
-per status. `LineChart.tsx` was deleted after being rejected. See
-`docs/DECISIONS.md` for the full three-attempt record.
+- **Besiktningar bulk-select-by-date**: pick a besiktningsdatum, every
+  matching row auto-selects (holds until the date changes or "Avmarkera
+  alla"), and — after fixing a bug where each bulk action silently cleared
+  the selection — the same held selection now survives running klar-för-
+  betalning → betalning gjord → arkivera in sequence.
+- **Besiktningar "Status" bar**: a plain MUI segmented/stacked progress bar
+  (Obehandlade/Klara för betalning/Betalda) with a legend — after trying,
+  and being asked to remove, both a donut chart and a hand-rolled line
+  chart first.
+- **Besiktningar archiving is now husvd/admin only** (ekonomi keeps
+  `ARCHIVE_ROLES` everywhere else in the app — this was scoped to
+  besiktningar specifically, not a global role change).
+- **Missade hyror can be added directly from Databas**, not just Lediga
+  lägenheter, for rent missed on units with no `Apartment` record at all
+  (e.g. an occupied unit whose tenant didn't pay). Requires a manually
+  supplied "missed since" date since `RentalObject` has no `ledigFrom`.
+- **Besiktningar gained a shared "Övriga anteckningar" note field**,
+  alongside the existing vaktmästare/husförman notes — open to any
+  authenticated nation user (husförman/husvd/ekonomi included), matching
+  how the other two note fields already worked; no new role gate needed.
+- **Extracted `components/charts/SegmentedBar.tsx`** from besiktningar's
+  inline status bar, and used it again for a "Per ansvarig" breakdown
+  inside `/statistik`'s Missade hyresintäkter card — the summed missed-rent
+  **kr amount** per ansvarig (not a case count; corrected after user
+  feedback), via a new `getMissedRentByAnsvarig` in `lib/statistik.ts`.

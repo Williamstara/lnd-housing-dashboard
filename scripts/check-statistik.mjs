@@ -3,9 +3,9 @@ import { getBestandsoversikt } from "../lib/statistik.ts";
 
 const summary = getBestandsoversikt(
   [
-    { fastighet: "Arkivet" },
-    { fastighet: "Arkivet" },
-    { fastighet: "Sankt Thomas" },
+    { fastighet: "Arkivet", typ: "Lägenhet" },
+    { fastighet: "Arkivet", typ: "Korridorrum" },
+    { fastighet: "Sankt Thomas", typ: "Lägenhet" },
   ],
   [{ id: "1" }, { id: "2" }],
   [
@@ -21,6 +21,10 @@ assert.equal(summary.andrahandsgaster, 1);
 assert.deepEqual(summary.bostaderPerFastighet, [
   { label: "Arkivet", count: 2 },
   { label: "Sankt Thomas", count: 1 },
+]);
+assert.deepEqual(summary.bostaderPerTyp, [
+  { label: "Lägenhet", count: 2 },
+  { label: "Korridorrum", count: 1 },
 ]);
 
 console.log("Statistikaggregationen är korrekt.");

@@ -47,6 +47,7 @@ import {
   updateBesiktningAction,
 } from "@/app/besiktningar/actions";
 import ColumnVisibilityMenu from "@/components/ColumnVisibilityMenu";
+import SegmentedBar from "@/components/charts/SegmentedBar";
 import { STATUS } from "@/components/charts/palette";
 import { exportRowsToXlsx } from "@/lib/export-xlsx";
 import type { Besiktning, BesiktningEditInput, BesiktningImportInput } from "@/lib/besiktningar";
@@ -71,6 +72,7 @@ type ColumnKey =
   | "vaktmastareAnteckning"
   | "godkand"
   | "husformanAnteckning"
+  | "ovrigaAnteckningar"
   | "totaltAvdrag";
 
 type Order = "asc" | "desc";
@@ -82,6 +84,7 @@ const columns: Array<{ key: ColumnKey; label: string; align?: "right" }> = [
   { key: "vaktmastareAnteckning", label: "Vaktmästare anteckning" },
   { key: "godkand", label: "Godkänd?" },
   { key: "husformanAnteckning", label: "Husförman anteckning" },
+  { key: "ovrigaAnteckningar", label: "Övriga anteckningar" },
   { key: "totaltAvdrag", label: "Totalt avdrag", align: "right" },
 ];
 
@@ -98,6 +101,7 @@ const columnValue: Record<ColumnKey, (b: Besiktning) => string | number> = {
   vaktmastareAnteckning: (b) => b.vaktmastareAnteckning,
   godkand: (b) => godkandLabel(b.godkand),
   husformanAnteckning: (b) => b.husformanAnteckning,
+  ovrigaAnteckningar: (b) => b.ovrigaAnteckningar,
   totaltAvdrag: (b) => b.totaltAvdrag,
 };
 
@@ -110,7 +114,7 @@ function compareValues(a: string | number, b: string | number): number {
 
 function matchesSearch(row: Besiktning, query: string): boolean {
   if (!query) return true;
-  return [row.lagenhetsnummer, row.vaktmastareAnteckning, row.husformanAnteckning]
+  return [row.lagenhetsnummer, row.vaktmastareAnteckning, row.husformanAnteckning, row.ovrigaAnteckningar]
     .filter(Boolean)
     .join(" ")
     .toLocaleLowerCase("sv")
@@ -123,6 +127,7 @@ type EditForm = {
   vaktmastareAnteckning: string;
   godkand: string; // "" | "ja" | "nej"
   husformanAnteckning: string;
+  ovrigaAnteckningar: string;
   totaltAvdrag: string;
 };
 
@@ -133,6 +138,7 @@ function toEditForm(b: Besiktning): EditForm {
     vaktmastareAnteckning: b.vaktmastareAnteckning,
     godkand: b.godkand === true ? "ja" : b.godkand === false ? "nej" : "",
     husformanAnteckning: b.husformanAnteckning,
+    ovrigaAnteckningar: b.ovrigaAnteckningar,
     totaltAvdrag: String(b.totaltAvdrag),
   };
 }
@@ -147,6 +153,7 @@ function emptyAddForm(): AddForm {
     vaktmastareAnteckning: "",
     godkand: "",
     husformanAnteckning: "",
+    ovrigaAnteckningar: "",
     totaltAvdrag: "0",
   };
 }
@@ -280,6 +287,7 @@ export default function BesiktningarTable({ besiktningar, importMapping }: Props
       vaktmastareAnteckning: editForm.vaktmastareAnteckning.trim(),
       godkand: editForm.godkand === "ja" ? true : editForm.godkand === "nej" ? false : null,
       husformanAnteckning: editForm.husformanAnteckning.trim(),
+      ovrigaAnteckningar: editForm.ovrigaAnteckningar.trim(),
       totaltAvdrag: Number(editForm.totaltAvdrag) || 0,
     };
     setEditError(null);
@@ -396,6 +404,7 @@ export default function BesiktningarTable({ besiktningar, importMapping }: Props
       vaktmastareAnteckning: addForm.vaktmastareAnteckning.trim(),
       godkand: addForm.godkand === "ja" ? true : addForm.godkand === "nej" ? false : null,
       husformanAnteckning: addForm.husformanAnteckning.trim(),
+      ovrigaAnteckningar: addForm.ovrigaAnteckningar.trim(),
       totaltAvdrag: Number(addForm.totaltAvdrag) || 0,
     };
     setAddError(null);
@@ -489,36 +498,7 @@ export default function BesiktningarTable({ besiktningar, importMapping }: Props
             Inga besiktningar registrerade.
           </Typography>
         ) : (
-          <Stack spacing={1.5}>
-            <Box
-              role="img"
-              aria-label={statusSegments.map((s) => `${s.label}: ${s.value}`).join(", ")}
-              sx={{ display: "flex", height: 28, borderRadius: 999, overflow: "hidden" }}
-            >
-              {statusSegments
-                .filter((s) => s.value > 0)
-                .map((s) => (
-                  <Box
-                    key={s.label}
-                    title={`${s.label}: ${s.value}`}
-                    sx={{ flexGrow: s.value, bgcolor: s.color }}
-                  />
-                ))}
-            </Box>
-            <Stack direction="row" sx={{ gap: 2.5, flexWrap: "wrap" }}>
-              {statusSegments.map((s) => (
-                <Stack key={s.label} direction="row" sx={{ alignItems: "center", gap: 0.75 }}>
-                  <Box sx={{ width: 10, height: 10, borderRadius: "50%", bgcolor: s.color, flexShrink: 0 }} />
-                  <Typography variant="body2" color="text.secondary">
-                    {s.label}
-                  </Typography>
-                  <Typography variant="body2" sx={{ fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>
-                    {s.value}
-                  </Typography>
-                </Stack>
-              ))}
-            </Stack>
-          </Stack>
+          <SegmentedBar segments={statusSegments} />
         )}
       </Paper>
 
@@ -676,7 +656,9 @@ export default function BesiktningarTable({ besiktningar, importMapping }: Props
                         key={column.key}
                         align={column.align}
                         sx={
-                          column.key === "vaktmastareAnteckning" || column.key === "husformanAnteckning"
+                          column.key === "vaktmastareAnteckning" ||
+                          column.key === "husformanAnteckning" ||
+                          column.key === "ovrigaAnteckningar"
                             ? { maxWidth: 200, whiteSpace: "normal" }
                             : undefined
                         }
@@ -852,7 +834,9 @@ export default function BesiktningarTable({ besiktningar, importMapping }: Props
                         sx={{
                           minWidth: 0,
                           gridColumn:
-                            column.key === "vaktmastareAnteckning" || column.key === "husformanAnteckning"
+                            column.key === "vaktmastareAnteckning" ||
+                            column.key === "husformanAnteckning" ||
+                            column.key === "ovrigaAnteckningar"
                               ? "1 / -1"
                               : undefined,
                         }}
@@ -990,6 +974,15 @@ export default function BesiktningarTable({ besiktningar, importMapping }: Props
                   fullWidth
                 />
                 <TextField
+                  label="Övriga anteckningar"
+                  value={editForm.ovrigaAnteckningar}
+                  onChange={(e) => setEditForm((prev) => prev && { ...prev, ovrigaAnteckningar: e.target.value })}
+                  disabled={isSaving}
+                  multiline
+                  minRows={2}
+                  fullWidth
+                />
+                <TextField
                   label="Totalt avdrag (kr)"
                   type="number"
                   value={editForm.totaltAvdrag}
@@ -1066,6 +1059,15 @@ export default function BesiktningarTable({ besiktningar, importMapping }: Props
               label="Husförman anteckning"
               value={addForm.husformanAnteckning}
               onChange={(e) => setAddForm((prev) => ({ ...prev, husformanAnteckning: e.target.value }))}
+              disabled={isAdding}
+              multiline
+              minRows={2}
+              fullWidth
+            />
+            <TextField
+              label="Övriga anteckningar"
+              value={addForm.ovrigaAnteckningar}
+              onChange={(e) => setAddForm((prev) => ({ ...prev, ovrigaAnteckningar: e.target.value }))}
               disabled={isAdding}
               multiline
               minRows={2}
