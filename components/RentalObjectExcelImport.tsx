@@ -11,16 +11,11 @@ import DialogActions from "@mui/material/DialogActions";
 import DialogContent from "@mui/material/DialogContent";
 import DialogTitle from "@mui/material/DialogTitle";
 import Stack from "@mui/material/Stack";
-import Table from "@mui/material/Table";
-import TableBody from "@mui/material/TableBody";
-import TableCell from "@mui/material/TableCell";
-import TableContainer from "@mui/material/TableContainer";
-import TableHead from "@mui/material/TableHead";
-import TableRow from "@mui/material/TableRow";
 import Typography from "@mui/material/Typography";
 import { read, utils } from "xlsx";
 import { importRentalObjectsAction } from "@/app/databas/actions";
 import type { RentalObjectInput } from "@/lib/rentalobjects";
+import ResponsivePreview from "@/components/ResponsivePreview";
 import {
   applyFastighetAlias,
   describeMapping,
@@ -325,59 +320,23 @@ export default function RentalObjectExcelImport({
               )}
             </Stack>
 
-            <TableContainer sx={{ maxHeight: 400 }}>
-              <Table size="small" stickyHeader>
-                <TableHead>
-                  <TableRow>
-                    <TableCell>Lgh-nr</TableCell>
-                    <TableCell>Fastighet</TableCell>
-                    <TableCell>Typ</TableCell>
-                    <TableCell align="right">Area</TableCell>
-                    <TableCell align="right">Ink korr</TableCell>
-                    <TableCell align="right">Målbild</TableCell>
-                    <TableCell align="right">Renov</TableCell>
-                    <TableCell align="right">Rabatt</TableCell>
-                    <TableCell align="right">Hyresred</TableCell>
-                    <TableCell align="right">Individuell</TableCell>
-                    <TableCell align="right">Månad</TableCell>
-                  </TableRow>
-                </TableHead>
-                <TableBody>
-                  {parsed.rows.slice(0, 200).map((r, i) => (
-                    <TableRow key={i}>
-                      <TableCell>{r.lagenhetsnummer}</TableCell>
-                      <TableCell>{r.fastighet}</TableCell>
-                      <TableCell>{r.typ}</TableCell>
-                      <TableCell align="right">{r.area ?? "—"}</TableCell>
-                      <TableCell align="right">{r.areaInkKorr ?? "—"}</TableCell>
-                      <TableCell align="right">
-                        {r.malbildshyra != null ? currency.format(r.malbildshyra) : "—"}
-                      </TableCell>
-                      <TableCell align="right">{r.renoveringsbehov ?? "—"}</TableCell>
-                      <TableCell align="right">
-                        {r.hyresrabatt != null ? currency.format(r.hyresrabatt) : "—"}
-                      </TableCell>
-                      <TableCell align="right">
-                        {r.hyresred != null ? currency.format(r.hyresred) : "—"}
-                      </TableCell>
-                      <TableCell align="right">
-                        {r.individuellArshyra != null ? currency.format(r.individuellArshyra) : "—"}
-                      </TableCell>
-                      <TableCell align="right">
-                        {r.manadshyra != null ? currency.format(r.manadshyra) : "—"}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                  {parsed.rows.length > 200 && (
-                    <TableRow>
-                      <TableCell colSpan={11} align="center" sx={{ color: "text.secondary" }}>
-                        … och {parsed.rows.length - 200} till
-                      </TableCell>
-                    </TableRow>
-                  )}
-                </TableBody>
-              </Table>
-            </TableContainer>
+            <ResponsivePreview
+              ariaLabel="Förhandsgranskning av hyresobjekt"
+              rows={parsed.rows}
+              columns={[
+                { key: "lagenhetsnummer", label: "Lgh-nr", render: (row) => row.lagenhetsnummer },
+                { key: "fastighet", label: "Fastighet", render: (row) => row.fastighet },
+                { key: "typ", label: "Typ", render: (row) => row.typ },
+                { key: "area", label: "Area", align: "right", render: (row) => row.area ?? "—" },
+                { key: "areaInkKorr", label: "Ink korr", align: "right", render: (row) => row.areaInkKorr ?? "—" },
+                { key: "malbild", label: "Målbild", align: "right", render: (row) => row.malbildshyra != null ? currency.format(row.malbildshyra) : "—" },
+                { key: "renov", label: "Renov", align: "right", render: (row) => row.renoveringsbehov ?? "—" },
+                { key: "rabatt", label: "Rabatt", align: "right", render: (row) => row.hyresrabatt != null ? currency.format(row.hyresrabatt) : "—" },
+                { key: "hyresred", label: "Hyresred", align: "right", render: (row) => row.hyresred != null ? currency.format(row.hyresred) : "—" },
+                { key: "individuell", label: "Individuell", align: "right", render: (row) => row.individuellArshyra != null ? currency.format(row.individuellArshyra) : "—" },
+                { key: "manad", label: "Månad", align: "right", render: (row) => row.manadshyra != null ? currency.format(row.manadshyra) : "—" },
+              ]}
+            />
           </>
         )}
 

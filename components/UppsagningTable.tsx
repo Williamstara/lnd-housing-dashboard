@@ -67,7 +67,7 @@ export default function UppsagningTable({ uppsagningar, tenants }: Props) {
   const [orderBy, setOrderBy] = useState<ColumnKey>("bekraftelsedatum");
   const [order, setOrder] = useState<Order>("desc");
   const [page, setPage] = useState(0);
-  const [rowsPerPage, setRowsPerPage] = useState(25);
+  const [rowsPerPage, setRowsPerPage] = useState(10);
   const { isVisible, toggle } = useColumnVisibility("uppsagning");
   const visibleColumnDefs = columns.filter((c) => isVisible(c.key));
   const toggleableColumns = [...columns, { key: "dokument", label: "Dokument" }];
@@ -131,6 +131,7 @@ export default function UppsagningTable({ uppsagningar, tenants }: Props) {
       </Stack>
 
       <TextField
+        label="Sök"
         placeholder="Sök..."
         value={search}
         onChange={(event) => { setSearch(event.target.value); setPage(0); }}

@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState, useTransition, type ReactNode } from "react";
+import dynamic from "next/dynamic";
 import AddIcon from "@mui/icons-material/Add";
 import DeleteIcon from "@mui/icons-material/Delete";
 import EditIcon from "@mui/icons-material/Edit";
@@ -44,9 +45,10 @@ import type {
   TableColumnConfig,
 } from "@/lib/table-columns";
 import ColumnVisibilityMenu from "@/components/ColumnVisibilityMenu";
-import RentalObjectExcelImport from "@/components/RentalObjectExcelImport";
 import RentalObjectFormDialog from "@/components/RentalObjectFormDialog";
 import { useColumnVisibility } from "@/lib/use-column-visibility";
+
+const RentalObjectExcelImport = dynamic(() => import("@/components/RentalObjectExcelImport"), { ssr: false });
 
 type Props = {
   objects: RentalObject[];
@@ -129,7 +131,7 @@ export default function RentalObjectsTable({
   const [orderBy, setOrderBy] = useState("lagenhetsnummer");
   const [order, setOrder] = useState<"asc" | "desc">("asc");
   const [page, setPage] = useState(0);
-  const [rowsPerPage, setRowsPerPage] = useState(25);
+  const [rowsPerPage, setRowsPerPage] = useState(10);
   const [importOpen, setImportOpen] = useState(false);
   const [formOpen, setFormOpen] = useState(false);
   const [editingObject, setEditingObject] = useState<RentalObject | null>(null);
@@ -242,6 +244,7 @@ export default function RentalObjectsTable({
       </Stack>
 
       <TextField
+        label="Sök"
         placeholder="Sök objekt..."
         value={search}
         onChange={(e) => { setSearch(e.target.value); setPage(0); }}
@@ -416,7 +419,7 @@ export default function RentalObjectsTable({
         onClose={() => setImportOpen(false)}
       />
 
-      <Dialog open={!!deletingId} onClose={() => setDeletingId(null)}>
+      <Dialog open={!!deletingId} onClose={() => setDeletingId(null)} fullWidth maxWidth="xs">
         <DialogTitle>Ta bort objekt</DialogTitle>
         <DialogContent>
           <DialogContentText>

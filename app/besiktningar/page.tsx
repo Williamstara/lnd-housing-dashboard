@@ -19,7 +19,7 @@ const BesiktningarPage = auth0.withPageAuthRequired(
     ).fields;
 
     return (
-      <Container maxWidth="xl" sx={{ py: 6 }}>
+      <Container maxWidth={false} sx={{ py: { xs: 3, md: 4 } }}>
         <BesiktningarTable besiktningar={besiktningar} importMapping={importMapping} />
       </Container>
     );

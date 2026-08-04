@@ -16,7 +16,7 @@ interface Props {
 
 export default function UploadConfirmDialog({ files, loading, onConfirm, onCancel }: Props) {
   return (
-    <Dialog open={files.length > 0} onClose={onCancel}>
+    <Dialog open={files.length > 0} onClose={onCancel} fullWidth maxWidth="xs">
       <DialogTitle>
         Ladda upp {files.length} planritning{files.length !== 1 ? "ar" : ""}?
       </DialogTitle>

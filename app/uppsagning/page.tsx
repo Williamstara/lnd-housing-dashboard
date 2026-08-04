@@ -18,7 +18,7 @@ const UppsagningPage = auth0.withPageAuthRequired(
     ]);
 
     return (
-      <Container maxWidth="lg" sx={{ py: 6 }}>
+      <Container maxWidth={false} sx={{ py: { xs: 3, md: 4 } }}>
         <UppsagningTable uppsagningar={uppsagningar} tenants={tenants} />
       </Container>
     );

@@ -18,6 +18,7 @@ import Collapse from "@mui/material/Collapse";
 import Dialog from "@mui/material/Dialog";
 import DialogActions from "@mui/material/DialogActions";
 import DialogContent from "@mui/material/DialogContent";
+import DialogContentText from "@mui/material/DialogContentText";
 import DialogTitle from "@mui/material/DialogTitle";
 import IconButton from "@mui/material/IconButton";
 import MenuItem from "@mui/material/MenuItem";
@@ -28,6 +29,7 @@ import TableBody from "@mui/material/TableBody";
 import TableCell from "@mui/material/TableCell";
 import TableContainer from "@mui/material/TableContainer";
 import TableHead from "@mui/material/TableHead";
+import TablePagination from "@mui/material/TablePagination";
 import TableRow from "@mui/material/TableRow";
 import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
@@ -77,6 +79,10 @@ type Props = {
   todos: Todo[];
   users: AppUser[];
 };
+
+type PendingDelete =
+  | { kind: "todo"; todo: Todo }
+  | { kind: "subtask"; todoId: string; subtask: Subtask };
 
 function userLabel(user: AppUser): string {
   return user.email ? `${user.name} (${user.email})` : user.name;
@@ -249,8 +255,11 @@ export default function TodoList({ todos, users }: Props) {
   const [addOpen, setAddOpen] = useState(false);
   const [addSubtaskFor, setAddSubtaskFor] = useState<string | null>(null);
   const [editingTodo, setEditingTodo] = useState<Todo | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<PendingDelete | null>(null);
   const [expandedTasks, setExpandedTasks] = useState<Set<string>>(new Set());
   const [expandedSubtasks, setExpandedSubtasks] = useState<Set<string>>(new Set());
+  const [page, setPage] = useState(0);
+  const [rowsPerPage, setRowsPerPage] = useState(10);
   const [isPending, startTransition] = useTransition();
   const { isVisible, toggle } = useColumnVisibility("todo");
   const visibleColumnDefs = columns.filter((c) => isVisible(c.key));
@@ -262,10 +271,7 @@ export default function TodoList({ todos, users }: Props) {
   }
 
   function handleDelete(todo: Todo) {
-    if (!confirm(`Ta bort uppgiften "${todo.titel}"?`)) return;
-    startTransition(async () => {
-      await deleteTodoAction(todo.id);
-    });
+    setPendingDelete({ kind: "todo", todo });
   }
 
   function toggleSubtaskDone(todoId: string, subtask: Subtask) {
@@ -275,9 +281,18 @@ export default function TodoList({ todos, users }: Props) {
   }
 
   function handleDeleteSubtask(todoId: string, subtask: Subtask) {
-    if (!confirm(`Ta bort deluppgiften "${subtask.titel}"?`)) return;
+    setPendingDelete({ kind: "subtask", todoId, subtask });
+  }
+
+  function confirmDelete() {
+    if (!pendingDelete) return;
     startTransition(async () => {
-      await deleteSubtaskAction(todoId, subtask.id);
+      if (pendingDelete.kind === "todo") {
+        await deleteTodoAction(pendingDelete.todo.id);
+      } else {
+        await deleteSubtaskAction(pendingDelete.todoId, pendingDelete.subtask.id);
+      }
+      setPendingDelete(null);
     });
   }
 
@@ -334,7 +349,7 @@ export default function TodoList({ todos, users }: Props) {
                 </TableCell>
               </TableRow>
             ) : (
-              todos.map((todo) => {
+              todos.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage).map((todo) => {
                 const expanded = expandedTasks.has(todo.id);
                 return (
                   <Fragment key={todo.id}>
@@ -498,7 +513,7 @@ export default function TodoList({ todos, users }: Props) {
           </Typography>
         ) : (
           <Stack spacing={1.5}>
-            {todos.map((todo) => {
+            {todos.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage).map((todo) => {
               const expanded = expandedTasks.has(todo.id);
               return (
                 <Card key={todo.id} variant="outlined" sx={todo.klar ? { opacity: 0.6 } : undefined}>
@@ -654,6 +669,21 @@ export default function TodoList({ todos, users }: Props) {
         )}
       </Box>
 
+      <TablePagination
+        component="div"
+        count={todos.length}
+        page={page}
+        rowsPerPage={rowsPerPage}
+        onPageChange={(_, newPage) => setPage(newPage)}
+        onRowsPerPageChange={(event) => {
+          setRowsPerPage(parseInt(event.target.value, 10));
+          setPage(0);
+        }}
+        rowsPerPageOptions={[10, 25, 50, 100]}
+        labelRowsPerPage="Rader per sida:"
+        labelDisplayedRows={({ from, to, count }) => `${from}–${to} av ${count}`}
+      />
+
       <TaskFormDialog
         open={addOpen}
         title="Lägg till uppgift"
@@ -688,6 +718,22 @@ export default function TodoList({ todos, users }: Props) {
           });
         }}
       />
+      <Dialog open={!!pendingDelete} onClose={() => setPendingDelete(null)} fullWidth maxWidth="xs">
+        <DialogTitle>
+          {pendingDelete?.kind === "subtask" ? "Ta bort deluppgift" : "Ta bort uppgift"}
+        </DialogTitle>
+        <DialogContent>
+          <DialogContentText>
+            Ta bort “{pendingDelete?.kind === "subtask" ? pendingDelete.subtask.titel : pendingDelete?.todo.titel}”? Åtgärden går inte att ångra.
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setPendingDelete(null)} disabled={isPending}>Avbryt</Button>
+          <Button color="error" variant="contained" onClick={confirmDelete} disabled={isPending}>
+            Ta bort
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       <TaskFormDialog
         key={editingTodo?.id ?? "no-edit"}

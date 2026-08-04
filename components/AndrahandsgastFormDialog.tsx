@@ -13,6 +13,7 @@ import TextField from "@mui/material/TextField";
 import type { Andrahandsgast, AndrahandsgastInput } from "@/lib/andrahandsgaster";
 
 const emptyForm: AndrahandsgastInput = {
+  typ: "andrahandsgast",
   lagenhetsnummer: "",
   fastighet: "",
   namn: "",
@@ -42,12 +43,13 @@ export default function AndrahandsgastFormDialog({
     type?: string;
     options?: readonly string[];
   }> = [
+    { key: "typ", label: "Boendeform", options: ["andrahandsgast", "inneboende"] },
     { key: "lagenhetsnummer", label: "Lägenhetsnummer" },
     { key: "fastighet", label: "Fastighet", options: fastigheter },
     { key: "namn", label: "Namn" },
     { key: "personnummer", label: "Personnummer" },
     { key: "mejladress", label: "Mejladress", type: "email" },
-    { key: "telefonnummer", label: "Telefonnummer" },
+    { key: "telefonnummer", label: "Telefonnummer", type: "tel" },
   ];
   // The parent remounts this component (via a `key`) each time it opens for
   // a new row/create action, so the form can simply initialize from props
@@ -55,6 +57,7 @@ export default function AndrahandsgastFormDialog({
   const [form, setForm] = useState<AndrahandsgastInput>(() =>
     andrahandsgast
       ? {
+          typ: andrahandsgast.typ,
           lagenhetsnummer: andrahandsgast.lagenhetsnummer,
           fastighet: andrahandsgast.fastighet,
           namn: andrahandsgast.namn,
@@ -92,7 +95,7 @@ export default function AndrahandsgastFormDialog({
   return (
     <Dialog open={open} onClose={onClose} fullWidth maxWidth="sm">
       <DialogTitle>
-        {andrahandsgast ? "Redigera andrahandsgäst" : "Lägg till andrahandsgäst"}
+        {andrahandsgast ? "Redigera boende" : "Lägg till boende"}
       </DialogTitle>
       <DialogContent>
         <Stack spacing={2} sx={{ mt: 1 }}>
@@ -110,7 +113,11 @@ export default function AndrahandsgastFormDialog({
             >
               {options?.map((option) => (
                 <MenuItem key={option} value={option}>
-                  {option}
+                  {key === "typ"
+                    ? option === "inneboende"
+                      ? "Inneboende"
+                      : "Andrahandsgäst"
+                    : option}
                 </MenuItem>
               ))}
             </TextField>

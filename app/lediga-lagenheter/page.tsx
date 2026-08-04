@@ -30,7 +30,7 @@ const LedigaLagenheterPage = auth0.withPageAuthRequired(
     ).fields;
 
     return (
-      <Container maxWidth={false} sx={{ py: 6, width: "80%", mx: "auto" }}>
+      <Container maxWidth={false} sx={{ py: { xs: 3, md: 4 } }}>
         <ApartmentsTable
           apartments={apartments}
           fastigheter={fastigheter}

@@ -143,6 +143,7 @@ export default function TemplateEditorDialog({ open, editingTemplate, onClose, o
           </Typography>
           <Box sx={{ display: "flex", gap: 1, alignItems: "center" }}>
             <TextField
+              label="Variabelnamn"
               size="small"
               placeholder="mittVärde"
               value={customVar}

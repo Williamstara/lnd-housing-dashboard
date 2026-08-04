@@ -91,7 +91,7 @@ export default function ArkivBesiktningarTable({ besiktningar }: Props) {
   const [orderBy, setOrderBy] = useState<ColumnKey>("besiktningsdatum");
   const [order, setOrder] = useState<Order>("desc");
   const [page, setPage] = useState(0);
-  const [rowsPerPage, setRowsPerPage] = useState(25);
+  const [rowsPerPage, setRowsPerPage] = useState(10);
   const { isVisible, toggle } = useColumnVisibility("arkiv-besiktningar");
   const visibleColumnDefs = columns.filter((c) => isVisible(c.key));
 
@@ -173,6 +173,7 @@ export default function ArkivBesiktningarTable({ besiktningar }: Props) {
       </Stack>
 
       <TextField
+        label="Sök"
         placeholder="Sök i arkiverade besiktningar..."
         value={search}
         onChange={(event) => {

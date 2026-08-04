@@ -16,7 +16,7 @@ const ArkivPage = auth0.withPageAuthRequired(
     ]);
 
     return (
-      <Container maxWidth="xl" sx={{ py: 6 }}>
+      <Container maxWidth={false} sx={{ py: { xs: 3, md: 4 } }}>
         <ArchiveTable apartments={apartments} />
         <ArkivBesiktningarTable besiktningar={besiktningar} />
       </Container>

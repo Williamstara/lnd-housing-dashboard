@@ -10,16 +10,11 @@ import Dialog from "@mui/material/Dialog";
 import DialogActions from "@mui/material/DialogActions";
 import DialogContent from "@mui/material/DialogContent";
 import DialogTitle from "@mui/material/DialogTitle";
-import Table from "@mui/material/Table";
-import TableBody from "@mui/material/TableBody";
-import TableCell from "@mui/material/TableCell";
-import TableContainer from "@mui/material/TableContainer";
-import TableHead from "@mui/material/TableHead";
-import TableRow from "@mui/material/TableRow";
 import Typography from "@mui/material/Typography";
 import { read, utils } from "xlsx";
 import { importBesiktningarFromExcelAction } from "@/app/besiktningar/actions";
 import type { BesiktningImportInput } from "@/lib/besiktningar";
+import ResponsivePreview from "@/components/ResponsivePreview";
 import { describeMapping, excelDateCellToISO, mappingToLookup, type ImportFieldConfig } from "@/lib/table-columns";
 
 function cellStr(row: unknown[], index: number): string {
@@ -220,34 +215,19 @@ export default function BesiktningarExcelImportDialog({ open, mapping, onClose }
               Befintliga besiktningar med samma lägenhetsnummer och besiktningsdatum uppdateras.
               Nya läggs till.
             </Typography>
-            <TableContainer sx={{ maxHeight: 360 }}>
-              <Table size="small" stickyHeader>
-                <TableHead>
-                  <TableRow>
-                    <TableCell>Besiktningsdatum</TableCell>
-                    <TableCell>Lgh-nr</TableCell>
-                    <TableCell align="right">Kostnad städ</TableCell>
-                    <TableCell>Kommentar vaktmästare</TableCell>
-                    <TableCell>Godkänd?</TableCell>
-                    <TableCell>Husförman kommentar</TableCell>
-                    <TableCell align="right">Totalt avdrag</TableCell>
-                  </TableRow>
-                </TableHead>
-                <TableBody>
-                  {rows.map((row, i) => (
-                    <TableRow key={i}>
-                      <TableCell>{row.besiktningsdatum}</TableCell>
-                      <TableCell>{row.lagenhetsnummer}</TableCell>
-                      <TableCell align="right">{row.kostnadStadning}</TableCell>
-                      <TableCell>{row.vaktmastareAnteckning}</TableCell>
-                      <TableCell>{godkandLabel(row.godkand)}</TableCell>
-                      <TableCell>{row.husformanAnteckning}</TableCell>
-                      <TableCell align="right">{row.totaltAvdrag}</TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </TableContainer>
+            <ResponsivePreview
+              ariaLabel="Förhandsgranskning av besiktningar"
+              rows={rows}
+              columns={[
+                { key: "datum", label: "Besiktningsdatum", render: (row) => row.besiktningsdatum },
+                { key: "lagenhetsnummer", label: "Lgh-nr", render: (row) => row.lagenhetsnummer },
+                { key: "stadning", label: "Kostnad städ", align: "right", render: (row) => row.kostnadStadning },
+                { key: "vaktmastare", label: "Kommentar vaktmästare", render: (row) => row.vaktmastareAnteckning },
+                { key: "godkand", label: "Godkänd?", render: (row) => godkandLabel(row.godkand) },
+                { key: "husforman", label: "Husförman kommentar", render: (row) => row.husformanAnteckning },
+                { key: "avdrag", label: "Totalt avdrag", align: "right", render: (row) => row.totaltAvdrag },
+              ]}
+            />
           </>
         )}
 

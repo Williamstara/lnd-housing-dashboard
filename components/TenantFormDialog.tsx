@@ -47,7 +47,7 @@ export default function TenantFormDialog({
     { key: "namn", label: "Namn" },
     { key: "personnummer", label: "Personnummer" },
     { key: "mejladress", label: "Mejladress", type: "email" },
-    { key: "telefonnummer", label: "Telefonnummer" },
+    { key: "telefonnummer", label: "Telefonnummer", type: "tel" },
   ];
   // The parent remounts this component (via a `key`) each time it opens for
   // a new tenant/create action, so the form can simply initialize from props

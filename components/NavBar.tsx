@@ -1,10 +1,12 @@
 "use client";
 
-import { useState, type MouseEvent } from "react";
+import { useState } from "react";
 import { useUser } from "@auth0/nextjs-auth0";
 import { usePathname } from "next/navigation";
-import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import HolidayVillageIcon from "@mui/icons-material/HolidayVillage";
+import ChevronLeftIcon from "@mui/icons-material/ChevronLeft";
+import ChevronRightIcon from "@mui/icons-material/ChevronRight";
+import LogoutIcon from "@mui/icons-material/Logout";
 import MenuIcon from "@mui/icons-material/Menu";
 import AppBar from "@mui/material/AppBar";
 import Avatar from "@mui/material/Avatar";
@@ -19,130 +21,138 @@ import ListItemButton from "@mui/material/ListItemButton";
 import ListItemIcon from "@mui/material/ListItemIcon";
 import ListItemText from "@mui/material/ListItemText";
 import ListSubheader from "@mui/material/ListSubheader";
-import Menu from "@mui/material/Menu";
-import MenuItem from "@mui/material/MenuItem";
 import Stack from "@mui/material/Stack";
 import Toolbar from "@mui/material/Toolbar";
+import Tooltip from "@mui/material/Tooltip";
 import Typography from "@mui/material/Typography";
 import { alpha } from "@mui/material/styles";
 import Link from "next/link";
-import { NAV_GROUPS, navLinks, type NavGroupKey } from "@/lib/nav-links";
+import { NAV_GROUPS, navLinks } from "@/lib/nav-links";
 import { getNationsId } from "@/lib/nations";
 import { ROLES, hasRole, isRestrictedToTodo } from "@/lib/roles";
 
-function NavGroupMenu({
-  groupKey,
-  label,
-  active,
-  isAdmin,
-  restrictedToTodo,
-}: {
-  groupKey: NavGroupKey;
-  label: string;
-  active: boolean;
-  isAdmin: boolean;
-  restrictedToTodo: boolean;
-}) {
-  const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null);
-  const links = navLinks.filter(
-    (link) =>
-      link.group === groupKey &&
-      (!link.adminOnly || isAdmin) &&
-      (!restrictedToTodo || link.href === "/todo")
-  );
-  if (links.length === 0) return null;
+export const NAV_WIDTH = 272;
+export const NAV_COLLAPSED_WIDTH = 72;
 
-  function handleOpen(event: MouseEvent<HTMLElement>) {
-    setAnchorEl(event.currentTarget);
-  }
-
-  function handleClose() {
-    setAnchorEl(null);
-  }
-
-  return (
-    <>
-      <Button
-        onClick={handleOpen}
-        endIcon={<ExpandMoreIcon fontSize="small" />}
-        size="small"
-        sx={{
-          color: "inherit",
-          px: 1.5,
-          borderRadius: 1.5,
-          bgcolor: active
-            ? (theme) => alpha(theme.palette.secondary.main, 0.28)
-            : "transparent",
-          "&:hover": {
-            bgcolor: (theme) => alpha(theme.palette.secondary.main, active ? 0.34 : 0.16),
-          },
-        }}
-      >
-        {label}
-      </Button>
-      <Menu anchorEl={anchorEl} open={!!anchorEl} onClose={handleClose}>
-        {links.map((link) => (
-          <MenuItem key={link.href} component={Link} href={link.href} onClick={handleClose}>
-            <ListItemIcon>
-              <link.icon fontSize="small" />
-            </ListItemIcon>
-            <ListItemText>{link.label}</ListItemText>
-          </MenuItem>
-        ))}
-      </Menu>
-    </>
-  );
-}
-
-function MobileNavDrawer({
-  open,
-  onClose,
-  isAdmin,
-  restrictedToTodo,
-  pathname,
-}: {
-  open: boolean;
-  onClose: () => void;
+type NavigationProps = {
   isAdmin: boolean;
   restrictedToTodo: boolean;
   pathname: string;
-}) {
+  collapsed?: boolean;
+  onNavigate?: () => void;
+};
+
+function Brand({ nationsId, compact = false }: { nationsId?: string; compact?: boolean }) {
   return (
-    <Drawer anchor="left" open={open} onClose={onClose}>
-      <Box sx={{ width: 280 }} role="presentation">
-        {NAV_GROUPS.map((group, index) => {
-          const links = navLinks.filter(
-            (link) =>
-              link.group === group.key &&
-              (!link.adminOnly || isAdmin) &&
-              (!restrictedToTodo || link.href === "/todo")
-          );
-          if (links.length === 0) return null;
-          return (
-            <List
-              key={group.key}
-              subheader={<ListSubheader component="div">{group.label}</ListSubheader>}
-            >
-              {links.map((link) => (
+    <Stack
+      component={Link}
+      href="/"
+      direction="row"
+      sx={{ alignItems: "center", gap: 1.5, color: "inherit", textDecoration: "none" }}
+    >
+      <Box
+        sx={{
+          display: "grid",
+          placeItems: "center",
+          width: 42,
+          height: 42,
+          borderRadius: 2.5,
+          bgcolor: "secondary.main",
+          color: "primary.dark",
+          flexShrink: 0,
+        }}
+      >
+        <HolidayVillageIcon />
+      </Box>
+      <Box sx={{ minWidth: 0, display: compact ? "none" : "block" }}>
+        <Typography variant="h6" sx={{ fontWeight: 700, lineHeight: 1.1 }}>
+          {nationsId ?? "LND"}
+        </Typography>
+        <Typography variant="caption" sx={{ color: alpha("#fff", 0.66) }}>
+          Housing Dashboard
+        </Typography>
+      </Box>
+    </Stack>
+  );
+}
+
+function Navigation({ isAdmin, restrictedToTodo, pathname, collapsed = false, onNavigate }: NavigationProps) {
+  return (
+    <Box sx={{ flex: 1, overflowY: "auto", py: 1 }}>
+      {NAV_GROUPS.map((group) => {
+        const links = navLinks.filter(
+          (link) =>
+            link.group === group.key &&
+            (!link.adminOnly || isAdmin) &&
+            (!restrictedToTodo || link.href === "/todo")
+        );
+        if (links.length === 0) return null;
+        return (
+          <List
+            key={group.key}
+            dense
+            subheader={collapsed ? undefined : (
+              <ListSubheader
+                disableSticky
+                sx={{
+                  bgcolor: "transparent",
+                  color: alpha("#fff", 0.5),
+                  fontSize: "0.68rem",
+                  fontWeight: 700,
+                  letterSpacing: 1.2,
+                  lineHeight: "32px",
+                  textTransform: "uppercase",
+                }}
+              >
+                {group.label}
+              </ListSubheader>
+            )}
+            sx={{ px: collapsed ? 1 : 1.5, py: 0.5 }}
+          >
+            {links.map((link) => {
+              const active = pathname === link.href;
+              const item = (
                 <ListItemButton
                   key={link.href}
                   component={Link}
                   href={link.href}
-                  selected={link.href === pathname}
-                  onClick={onClose}
+                  selected={active}
+                  aria-label={collapsed ? link.label : undefined}
+                  onClick={onNavigate}
+                  sx={{
+                    minHeight: 42,
+                    justifyContent: collapsed ? "center" : "flex-start",
+                    px: collapsed ? 1 : 2,
+                    borderRadius: 2,
+                    mb: 0.25,
+                    color: alpha("#fff", active ? 1 : 0.78),
+                    "&.Mui-selected": {
+                      bgcolor: alpha("#F4EED9", 0.14),
+                      boxShadow: "inset 3px 0 0 #F4EED9",
+                    },
+                    "&.Mui-selected:hover, &:hover": { bgcolor: alpha("#F4EED9", 0.1) },
+                  }}
                 >
-                  <ListItemIcon>
+                  <ListItemIcon sx={{ minWidth: collapsed ? 0 : 38, justifyContent: "center", color: "inherit" }}>
                     <link.icon fontSize="small" />
                   </ListItemIcon>
-                  <ListItemText primary={link.label} />
+                  <ListItemText
+                    primary={link.label}
+                    sx={{ display: collapsed ? "none" : "block" }}
+                    slotProps={{ primary: { sx: { fontSize: "0.84rem", fontWeight: active ? 700 : 500 } } }}
+                  />
                 </ListItemButton>
-              ))}
-              {index < NAV_GROUPS.length - 1 && <Divider sx={{ my: 1 }} />}
-            </List>
-          );
-        })}
-      </Box>
-    </Drawer>
+              );
+              return collapsed ? (
+                <Tooltip key={link.href} title={link.label} placement="right">
+                  {item}
+                </Tooltip>
+              ) : item;
+            })}
+          </List>
+        );
+      })}
+    </Box>
   );
 }
 
@@ -151,143 +161,140 @@ export default function NavBar() {
   const pathname = usePathname();
   const isAdmin = hasRole(user, ROLES.ADMIN);
   const restrictedToTodo = isRestrictedToTodo(user);
-  const [mobileOpen, setMobileOpen] = useState(false);
   const nationsId = getNationsId(user);
-  const appTitle = `${nationsId ?? "LND"} Housing Dashboard`;
+  const [mobileOpen, setMobileOpen] = useState(false);
+  const [collapsed, setCollapsed] = useState(false);
 
-  return (
-    <AppBar position="static" color="primary" enableColorOnDark>
-      <Toolbar sx={{ gap: 2, flexWrap: "wrap", py: 1.25 }}>
-        {user && (
-          <IconButton
-            aria-label="Öppna meny"
-            color="inherit"
-            onClick={() => setMobileOpen(true)}
-            sx={{ display: { xs: "inline-flex", sm: "none" } }}
-          >
-            <MenuIcon />
-          </IconButton>
-        )}
-
-        <Stack
-          direction="row"
-          component={Link}
-          href="/"
-          sx={{
-            alignItems: "center",
-            gap: 1,
-            flexGrow: 1,
-            color: "inherit",
-            textDecoration: "none",
-            minWidth: 0,
-          }}
-        >
-          <Box
-            sx={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              width: 34,
-              height: 34,
-              borderRadius: 1.5,
-              bgcolor: (theme) => alpha(theme.palette.secondary.main, 0.9),
-              color: "primary.main",
-              flexShrink: 0,
-            }}
-          >
-            <HolidayVillageIcon fontSize="small" />
-          </Box>
-          <Typography
-            variant="h6"
-            sx={{
-              fontWeight: 700,
-              letterSpacing: -0.2,
-              whiteSpace: "nowrap",
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-            }}
-          >
-            {appTitle}
-          </Typography>
-        </Stack>
-
-        {user && (
-          <Stack direction="row" sx={{ display: { xs: "none", sm: "flex" }, flexWrap: "wrap", gap: 0.5 }}>
-            {NAV_GROUPS.map((group) => {
-              const active = navLinks.some(
-                (link) => link.group === group.key && link.href === pathname
-              );
-              return (
-                <NavGroupMenu
-                  key={group.key}
-                  groupKey={group.key}
-                  label={group.label}
-                  active={active}
-                  isAdmin={isAdmin}
-                  restrictedToTodo={restrictedToTodo}
-                />
-              );
-            })}
-          </Stack>
-        )}
-
-        {user && (
-          <MobileNavDrawer
-            open={mobileOpen}
-            onClose={() => setMobileOpen(false)}
-            isAdmin={isAdmin}
-            restrictedToTodo={restrictedToTodo}
-            pathname={pathname}
-          />
-        )}
-
+  const content = (onNavigate?: () => void, compact = false) => (
+    <Stack sx={{ height: "100%" }}>
+      <Stack
+        direction={compact ? "column" : "row"}
+        sx={{ alignItems: "center", justifyContent: "space-between", gap: compact ? 1 : 0, px: compact ? 1 : 2.5, py: compact ? 1.5 : 2.5 }}
+      >
+        <Brand nationsId={nationsId ?? undefined} compact={compact} />
+        {!onNavigate ? (
+          <Tooltip title={compact ? "Expandera navigering" : "Minimera navigering"} placement="right">
+            <IconButton
+              aria-label={compact ? "Expandera navigering" : "Minimera navigering"}
+              color="inherit"
+              size="small"
+              onClick={() => setCollapsed((value) => !value)}
+            >
+              {compact ? <ChevronRightIcon /> : <ChevronLeftIcon />}
+            </IconButton>
+          </Tooltip>
+        ) : null}
+      </Stack>
+      <Divider sx={{ borderColor: alpha("#fff", 0.1) }} />
+      {user ? (
+        <Navigation
+          isAdmin={isAdmin}
+          restrictedToTodo={restrictedToTodo}
+          pathname={pathname}
+          collapsed={compact}
+          onNavigate={onNavigate}
+        />
+      ) : (
+        <Box sx={{ flex: 1 }} />
+      )}
+      <Divider sx={{ borderColor: alpha("#fff", 0.1) }} />
+      <Box sx={{ p: compact ? 1.25 : 2 }}>
         {isLoading ? (
           <CircularProgress size={20} color="inherit" />
         ) : user ? (
-          <Box sx={{ display: "flex", alignItems: "center", gap: 1.5 }}>
-            <Box
+          <Stack spacing={1.5} sx={{ alignItems: compact ? "center" : "stretch" }}>
+            <Stack
               component={Link}
               href="/profil"
-              sx={{ display: "flex", alignItems: "center", gap: 1, color: "inherit", textDecoration: "none", "&:hover": { opacity: 0.85 } }}
+              direction="row"
+              onClick={onNavigate}
+              aria-label={compact ? "Visa profil" : undefined}
+              sx={{ alignItems: "center", justifyContent: compact ? "center" : "flex-start", gap: 1.25, color: "inherit", textDecoration: "none" }}
             >
-              {user.picture && (
-                <Avatar
-                  src={user.picture}
-                  alt={user.name ?? "User"}
-                  sx={{
-                    width: 32,
-                    height: 32,
-                    border: (theme) => `2px solid ${alpha(theme.palette.secondary.main, 0.7)}`,
-                  }}
-                />
-              )}
-              <Typography variant="body2" sx={{ display: { xs: "none", sm: "block" } }}>
-                {user.name}
-              </Typography>
-            </Box>
-            <Button
-              component="a"
-              href="/auth/logout"
-              color="inherit"
-              variant="outlined"
-              size="small"
-              sx={{ borderColor: (theme) => alpha(theme.palette.secondary.main, 0.6) }}
-            >
-              Logga ut
-            </Button>
-          </Box>
+              <Avatar src={user.picture} alt="" sx={{ width: 34, height: 34 }} />
+              <Box sx={{ minWidth: 0, display: compact ? "none" : "block" }}>
+                <Typography variant="body2" noWrap sx={{ fontWeight: 600 }}>
+                  {user.name}
+                </Typography>
+                <Typography variant="caption" sx={{ color: alpha("#fff", 0.58) }}>
+                  Visa profil
+                </Typography>
+              </Box>
+            </Stack>
+            {compact ? (
+              <Tooltip title="Logga ut" placement="right">
+                <IconButton component="a" href="/auth/logout" aria-label="Logga ut" color="inherit">
+                  <LogoutIcon />
+                </IconButton>
+              </Tooltip>
+            ) : (
+              <Button component="a" href="/auth/logout" color="inherit" variant="outlined" fullWidth>
+                Logga ut
+              </Button>
+            )}
+          </Stack>
         ) : (
-          <Button
-            component="a"
-            href="/auth/login"
-            color="inherit"
-            variant="outlined"
-            sx={{ borderColor: (theme) => alpha(theme.palette.secondary.main, 0.6) }}
-          >
+          <Button component="a" href="/auth/login" color="inherit" variant="outlined" fullWidth>
             Logga in
           </Button>
         )}
-      </Toolbar>
-    </AppBar>
+      </Box>
+    </Stack>
+  );
+
+  return (
+    <>
+      <AppBar position="fixed" sx={{ display: { xs: "block", md: "none" } }}>
+        <Toolbar sx={{ gap: 1.5 }}>
+          {user ? (
+            <IconButton aria-label="Öppna meny" color="inherit" onClick={() => setMobileOpen(true)}>
+              <MenuIcon />
+            </IconButton>
+          ) : null}
+          <Brand nationsId={nationsId ?? undefined} />
+        </Toolbar>
+      </AppBar>
+
+      <Box
+        component="nav"
+        aria-label="Huvudnavigering"
+        sx={{ width: { md: collapsed ? NAV_COLLAPSED_WIDTH : NAV_WIDTH }, flexShrink: 0 }}
+      >
+        <Drawer
+          variant="permanent"
+          open
+          sx={{
+            display: { xs: "none", md: "block" },
+            "& .MuiDrawer-paper": {
+              width: collapsed ? NAV_COLLAPSED_WIDTH : NAV_WIDTH,
+              boxSizing: "border-box",
+              bgcolor: "primary.dark",
+              color: "primary.contrastText",
+              borderRight: 0,
+              overscrollBehavior: "contain",
+            },
+          }}
+        >
+          {content(undefined, collapsed)}
+        </Drawer>
+        <Drawer
+          variant="temporary"
+          open={mobileOpen}
+          onClose={() => setMobileOpen(false)}
+          ModalProps={{ keepMounted: true }}
+          sx={{
+            display: { xs: "block", md: "none" },
+            "& .MuiDrawer-paper": {
+              width: NAV_WIDTH,
+              bgcolor: "primary.dark",
+              color: "primary.contrastText",
+              overscrollBehavior: "contain",
+            },
+          }}
+        >
+          {content(() => setMobileOpen(false))}
+        </Drawer>
+      </Box>
+    </>
   );
 }

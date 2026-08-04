@@ -152,8 +152,9 @@ export default function FastigheterTable({ fastigheter }: Props) {
       </Paper>
 
       {isHusforman && (
-        <Stack direction="row" sx={{ gap: 1, mt: 2 }}>
+        <Stack direction={{ xs: "column", sm: "row" }} sx={{ gap: 1, mt: 2 }}>
           <TextField
+            label="Namn"
             placeholder="Namn på ny fastighet"
             size="small"
             value={newNamn}
@@ -161,6 +162,7 @@ export default function FastigheterTable({ fastigheter }: Props) {
             fullWidth
           />
           <TextField
+            label="Lägenhetsnummer-prefix"
             placeholder="Lgh-nr-prefix, t.ex. B, C, D"
             size="small"
             value={newPrefixes}
@@ -210,7 +212,7 @@ export default function FastigheterTable({ fastigheter }: Props) {
         </DialogActions>
       </Dialog>
 
-      <Dialog open={!!deleting} onClose={() => setDeleting(null)}>
+      <Dialog open={!!deleting} onClose={() => setDeleting(null)} fullWidth maxWidth="xs">
         <DialogTitle>Ta bort fastighet</DialogTitle>
         <DialogContent>
           <DialogContentText>

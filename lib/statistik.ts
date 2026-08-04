@@ -1,6 +1,8 @@
-import type { Apartment } from "@/lib/apartments";
+import type { Apartment, ApartmentStatus } from "@/lib/apartments";
 import type { MissedRentRow } from "@/lib/missed-rent";
 import type { RentalObject } from "@/lib/rentalobjects";
+import type { Tenant } from "@/lib/tenants";
+import type { Andrahandsgast } from "@/lib/andrahandsgaster";
 
 // Pure aggregation/shaping helpers for the Statistik page's overview charts.
 // Deliberately take already-fetched arrays rather than querying themselves —
@@ -114,4 +116,68 @@ export function getMissedIncomeByYear(missedRent: MissedRentRow[]): MissedIncome
     currentYearTotal: totals.get(currentYear) ?? 0,
     byYear,
   };
+}
+
+export type Bestandsoversikt = {
+  bostader: number;
+  forstahand: number;
+  andrahandsgaster: number;
+  inneboende: number;
+  hyresgasterTotalt: number;
+  bostaderPerFastighet: Array<{ label: string; count: number }>;
+  bostaderPerTyp: Array<{ label: string; count: number }>;
+};
+
+export function getBestandsoversikt(
+  rentalObjects: RentalObject[],
+  tenants: Tenant[],
+  andrahandsgaster: Andrahandsgast[]
+): Bestandsoversikt {
+  const perFastighet = new Map<string, number>();
+  const perTyp = new Map<string, number>();
+  for (const object of rentalObjects) {
+    perFastighet.set(object.fastighet, (perFastighet.get(object.fastighet) ?? 0) + 1);
+    const typ = object.typ.trim() || "Okänt";
+    perTyp.set(typ, (perTyp.get(typ) ?? 0) + 1);
+  }
+  const inneboende = andrahandsgaster.filter((person) => person.typ === "inneboende").length;
+  return {
+    bostader: rentalObjects.length,
+    forstahand: tenants.length,
+    andrahandsgaster: andrahandsgaster.length - inneboende,
+    inneboende,
+    hyresgasterTotalt: tenants.length + inneboende,
+    bostaderPerFastighet: Array.from(perFastighet, ([label, count]) => ({ label, count })).sort(
+      (a, b) => a.label.localeCompare(b.label, "sv")
+    ),
+    bostaderPerTyp: Array.from(perTyp, ([label, count]) => ({ label, count })).sort(
+      (a, b) => b.count - a.count
+    ),
+  };
+}
+
+export type StatusBucket = { label: string; count: number };
+
+const APARTMENT_STATUS_LABELS: Record<ApartmentStatus, string> = {
+  ledig: "Ledig",
+  kontaktad: "Kontaktad",
+  redo_for_kontrakt: "Redo för kontrakt",
+  arkiverad: "Arkiverad",
+};
+
+// vacantApartments already excludes "arkiverad" (see getLedigaLagenheter),
+// so this reads as the active leasing funnel, not the whole apartment
+// history. Ordered ledig → kontaktad → redo_for_kontrakt to match the
+// pipeline's actual progression, not alphabetically or by count.
+const APARTMENT_STATUS_ORDER: ApartmentStatus[] = ["ledig", "kontaktad", "redo_for_kontrakt", "arkiverad"];
+
+export function getLagenheterPerStatus(vacantApartments: Apartment[]): StatusBucket[] {
+  const counts = new Map<ApartmentStatus, number>();
+  for (const apartment of vacantApartments) {
+    counts.set(apartment.status, (counts.get(apartment.status) ?? 0) + 1);
+  }
+  return APARTMENT_STATUS_ORDER.filter((status) => counts.has(status)).map((status) => ({
+    label: APARTMENT_STATUS_LABELS[status],
+    count: counts.get(status)!,
+  }));
 }

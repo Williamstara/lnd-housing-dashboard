@@ -12,16 +12,11 @@ import DialogContent from "@mui/material/DialogContent";
 import DialogTitle from "@mui/material/DialogTitle";
 import MenuItem from "@mui/material/MenuItem";
 import Select from "@mui/material/Select";
-import Table from "@mui/material/Table";
-import TableBody from "@mui/material/TableBody";
-import TableCell from "@mui/material/TableCell";
-import TableContainer from "@mui/material/TableContainer";
-import TableHead from "@mui/material/TableHead";
-import TableRow from "@mui/material/TableRow";
 import Typography from "@mui/material/Typography";
 import { read, utils } from "xlsx";
 import { importApartmentsFromExcelAction } from "@/app/lediga-lagenheter/actions";
 import type { ApartmentImportInput } from "@/lib/apartments";
+import ResponsivePreview from "@/components/ResponsivePreview";
 import {
   describeMapping,
   excelDateCellToISO,
@@ -319,61 +314,36 @@ export default function ApartmentExcelImport({ open, fastigheter, mapping, onClo
               )}
             </Box>
             {showSkipped && skippedDetails.length > 0 && (
-              <TableContainer sx={{ maxHeight: 240, mb: 2, border: "1px solid", borderColor: "divider" }}>
-                <Table size="small" stickyHeader>
-                  <TableHead>
-                    <TableRow>
-                      <TableCell>Lgh-nr</TableCell>
-                      <TableCell>Anledning</TableCell>
-                    </TableRow>
-                  </TableHead>
-                  <TableBody>
-                    {skippedDetails.map((s, i) => (
-                      <TableRow key={i}>
-                        <TableCell>{s.lagenhetsnummer}</TableCell>
-                        <TableCell>{s.reason}</TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </TableContainer>
+              <Box sx={{ mb: 2 }}>
+                <ResponsivePreview
+                  ariaLabel="Överhoppade lägenhetsrader"
+                  rows={skippedDetails}
+                  columns={[
+                    { key: "lagenhetsnummer", label: "Lgh-nr", render: (row) => row.lagenhetsnummer },
+                    { key: "reason", label: "Anledning", render: (row) => row.reason },
+                  ]}
+                />
+              </Box>
             )}
             <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
               Befintliga (icke arkiverade) lägenheter med samma lägenhetsnummer uppdateras. Nya läggs
               till som lediga.
             </Typography>
-            <TableContainer sx={{ maxHeight: 360 }}>
-              <Table size="small" stickyHeader>
-                <TableHead>
-                  <TableRow>
-                    <TableCell>Lgh-nr</TableCell>
-                    <TableCell>Fastighet</TableCell>
-                    <TableCell>Storlek</TableCell>
-                    <TableCell>Typ</TableCell>
-                    <TableCell align="right">Rum</TableCell>
-                    <TableCell>Ledig fr.o.m.</TableCell>
-                    <TableCell align="right">Årshyra</TableCell>
-                    <TableCell align="right">Månadshyra</TableCell>
-                    <TableCell>Hyresgäst</TableCell>
-                  </TableRow>
-                </TableHead>
-                <TableBody>
-                  {rows.map((row, i) => (
-                    <TableRow key={i}>
-                      <TableCell>{row.lagenhetsnummer}</TableCell>
-                      <TableCell>{row.fastighet}</TableCell>
-                      <TableCell>{row.storlek}</TableCell>
-                      <TableCell>{row.objekttyp}</TableCell>
-                      <TableCell align="right">{row.antalRum}</TableCell>
-                      <TableCell>{row.ledigFrom}</TableCell>
-                      <TableCell align="right">{currency.format(row.arshyra)}</TableCell>
-                      <TableCell align="right">{currency.format(row.manadshyra)}</TableCell>
-                      <TableCell>{row.hyresgastNamn ?? "—"}</TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </TableContainer>
+            <ResponsivePreview
+              ariaLabel="Förhandsgranskning av lediga lägenheter"
+              rows={rows}
+              columns={[
+                { key: "lagenhetsnummer", label: "Lgh-nr", render: (row) => row.lagenhetsnummer },
+                { key: "fastighet", label: "Fastighet", render: (row) => row.fastighet },
+                { key: "storlek", label: "Storlek", render: (row) => row.storlek },
+                { key: "typ", label: "Typ", render: (row) => row.objekttyp },
+                { key: "rum", label: "Rum", align: "right", render: (row) => row.antalRum },
+                { key: "ledigFrom", label: "Ledig fr.o.m.", render: (row) => row.ledigFrom },
+                { key: "arshyra", label: "Årshyra", align: "right", render: (row) => currency.format(row.arshyra) },
+                { key: "manadshyra", label: "Månadshyra", align: "right", render: (row) => currency.format(row.manadshyra) },
+                { key: "hyresgast", label: "Hyresgäst", render: (row) => row.hyresgastNamn ?? "—" },
+              ]}
+            />
           </>
         )}
 
@@ -394,24 +364,14 @@ export default function ApartmentExcelImport({ open, fastigheter, mapping, onClo
                   sx={{ mb: 1.5 }}
                 />
                 {showResultSkipped && (
-                  <TableContainer sx={{ maxHeight: 240, border: "1px solid", borderColor: "divider" }}>
-                    <Table size="small" stickyHeader>
-                      <TableHead>
-                        <TableRow>
-                          <TableCell>Lgh-nr</TableCell>
-                          <TableCell>Anledning</TableCell>
-                        </TableRow>
-                      </TableHead>
-                      <TableBody>
-                        {result.skippedDetails.map((s, i) => (
-                          <TableRow key={i}>
-                            <TableCell>{s.lagenhetsnummer}</TableCell>
-                            <TableCell>{s.reason}</TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  </TableContainer>
+                  <ResponsivePreview
+                    ariaLabel="Servervaliderade överhoppade lägenhetsrader"
+                    rows={result.skippedDetails}
+                    columns={[
+                      { key: "lagenhetsnummer", label: "Lgh-nr", render: (row) => row.lagenhetsnummer },
+                      { key: "reason", label: "Anledning", render: (row) => row.reason },
+                    ]}
+                  />
                 )}
               </>
             )}

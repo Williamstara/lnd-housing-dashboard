@@ -31,13 +31,13 @@ export default function FloorPlanCard({ plan, onEdit, onDelete }: Props) {
         />
       </Box>
       <CardActions sx={{ justifyContent: "flex-end", pt: 0.5 }}>
-        <IconButton size="small" href={fileUrl} target="_blank" title="Öppna fil">
+        <IconButton aria-label={`Öppna planritning för ${plan.aptName}`} size="small" href={fileUrl} target="_blank" title="Öppna fil">
           <OpenInNewIcon fontSize="small" />
         </IconButton>
-        <IconButton size="small" onClick={() => onEdit(plan)} title="Byt namn">
+        <IconButton aria-label={`Byt namn på planritning för ${plan.aptName}`} size="small" onClick={() => onEdit(plan)} title="Byt namn">
           <EditIcon fontSize="small" />
         </IconButton>
-        <IconButton size="small" onClick={() => onDelete(plan.id)} color="error" title="Ta bort">
+        <IconButton aria-label={`Ta bort planritning för ${plan.aptName}`} size="small" onClick={() => onDelete(plan.id)} color="error" title="Ta bort">
           <DeleteIcon fontSize="small" />
         </IconButton>
       </CardActions>

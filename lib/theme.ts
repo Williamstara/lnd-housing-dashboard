@@ -25,7 +25,7 @@ const theme = createTheme({
           contrastText: brandGreen,
         },
         background: {
-          default: brandBeige,
+          default: "#F7F5EF",
           paper: "#ffffff",
         },
         text: {
@@ -69,8 +69,14 @@ const theme = createTheme({
   components: {
     MuiCssBaseline: {
       styleOverrides: {
+        html: { minHeight: "100%" },
         body: {
+          minHeight: "100%",
           scrollbarColor: `${brandBeige} transparent`,
+        },
+        "*:focus-visible": {
+          outline: `3px solid ${alpha(brandGreen, 0.28)}`,
+          outlineOffset: 2,
         },
       },
     },
@@ -87,7 +93,7 @@ const theme = createTheme({
     MuiButton: {
       defaultProps: { disableElevation: true },
       styleOverrides: {
-        root: { borderRadius: 8, paddingInline: 16 },
+        root: { borderRadius: 8, paddingInline: 16, touchAction: "manipulation" },
         contained: {
           "&:hover": { boxShadow: "none" },
         },
@@ -97,12 +103,34 @@ const theme = createTheme({
         },
       },
     },
+    MuiIconButton: {
+      styleOverrides: { root: { touchAction: "manipulation" } },
+    },
+    MuiContainer: {
+      styleOverrides: {
+        root: ({ theme }) => ({
+          paddingTop: theme.spacing(4),
+          paddingBottom: theme.spacing(4),
+          [theme.breakpoints.down("sm")]: {
+            paddingLeft: theme.spacing(2),
+            paddingRight: theme.spacing(2),
+            paddingTop: theme.spacing(3),
+            paddingBottom: theme.spacing(3),
+          },
+        }),
+      },
+    },
     MuiPaper: {
       styleOverrides: {
         root: { backgroundImage: "none" },
         elevation1: {
           boxShadow: `0 1px 2px ${alpha(brandGreen, 0.06)}, 0 4px 12px ${alpha(brandGreen, 0.07)}`,
         },
+      },
+    },
+    MuiCard: {
+      styleOverrides: {
+        root: { borderRadius: 14 },
       },
     },
     MuiTableContainer: {
@@ -150,12 +178,50 @@ const theme = createTheme({
     },
     MuiDialogTitle: {
       styleOverrides: {
-        root: { fontWeight: 700 },
+        root: { fontWeight: 700, padding: "24px 24px 8px" },
+      },
+    },
+    MuiDialogContent: {
+      styleOverrides: {
+        root: { padding: "16px 24px 24px" },
+      },
+    },
+    MuiDialogActions: {
+      styleOverrides: {
+        root: {
+          gap: 8,
+          padding: "16px 24px 24px",
+          "& > :not(style) ~ :not(style)": { marginLeft: 0 },
+        },
+      },
+    },
+    MuiDialog: {
+      styleOverrides: {
+        paper: { borderRadius: 16, margin: 16, overscrollBehavior: "contain" },
+      },
+    },
+    MuiTextField: {
+      defaultProps: { size: "small", autoComplete: "off" },
+    },
+    MuiTypography: {
+      styleOverrides: {
+        root: {
+          "&.MuiTypography-h1, &.MuiTypography-h2, &.MuiTypography-h3": { textWrap: "balance" },
+        },
       },
     },
     MuiOutlinedInput: {
       styleOverrides: {
         root: { borderRadius: 8 },
+      },
+    },
+    MuiTablePagination: {
+      styleOverrides: {
+        toolbar: ({ theme }) => ({
+          paddingLeft: theme.spacing(1),
+          paddingRight: theme.spacing(1),
+          [theme.breakpoints.down("sm")]: { flexWrap: "wrap", justifyContent: "flex-end" },
+        }),
       },
     },
     MuiTooltip: {

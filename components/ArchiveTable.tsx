@@ -136,7 +136,7 @@ export default function ArchiveTable({ apartments }: Props) {
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [page, setPage] = useState(0);
-  const [rowsPerPage, setRowsPerPage] = useState(25);
+  const [rowsPerPage, setRowsPerPage] = useState(10);
   const { isVisible, toggle } = useColumnVisibility("arkiv");
   const visibleColumnDefs = columns.filter((c) => isVisible(c.key));
 
@@ -235,6 +235,7 @@ export default function ArchiveTable({ apartments }: Props) {
       </Stack>
 
       <TextField
+        label="Sök"
         placeholder="Sök i arkivet..."
         value={search}
         onChange={(event: ChangeEvent<HTMLInputElement>) => {

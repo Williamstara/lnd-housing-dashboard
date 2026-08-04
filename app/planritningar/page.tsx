@@ -5,6 +5,11 @@ import Alert from "@mui/material/Alert";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
 import Container from "@mui/material/Container";
+import Dialog from "@mui/material/Dialog";
+import DialogActions from "@mui/material/DialogActions";
+import DialogContent from "@mui/material/DialogContent";
+import DialogContentText from "@mui/material/DialogContentText";
+import DialogTitle from "@mui/material/DialogTitle";
 import Grid from "@mui/material/Grid";
 import InputAdornment from "@mui/material/InputAdornment";
 import TextField from "@mui/material/TextField";
@@ -22,6 +27,7 @@ export default function PlanritningarPage() {
   const [search, setSearch] = useState("");
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);
   const [renamePlan, setRenamePlan] = useState<FloorPlan | null>(null);
+  const [deletingPlan, setDeletingPlan] = useState<FloorPlan | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -84,10 +90,11 @@ export default function PlanritningarPage() {
     }
   }
 
-  async function handleDelete(id: string) {
-    if (!confirm("Ta bort denna planritning?")) return;
+  async function handleDelete() {
+    if (!deletingPlan) return;
     try {
-      await fetch(`/api/floor-plans/${id}`, { method: "DELETE" });
+      await fetch(`/api/floor-plans/${deletingPlan.id}`, { method: "DELETE" });
+      setDeletingPlan(null);
       await loadPlans();
     } catch {
       setError("Kunde inte ta bort planritningen.");
@@ -95,7 +102,7 @@ export default function PlanritningarPage() {
   }
 
   return (
-    <Container maxWidth={false} sx={{ py: 6, width: "80%", mx: "auto" }}>
+    <Container maxWidth={false} sx={{ py: { xs: 3, md: 4 } }}>
       <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 3 }}>
         <Typography variant="h4" sx={{ fontWeight: 600 }}>Planritningar</Typography>
         <Button variant="contained" component="label" startIcon={<UploadFileIcon />}>
@@ -107,6 +114,7 @@ export default function PlanritningarPage() {
       {error && <Alert severity="error" onClose={() => setError(null)} sx={{ mb: 2 }}>{error}</Alert>}
 
       <TextField
+        label="Sök"
         placeholder="Sök lägenhet…"
         value={search}
         onChange={(e) => setSearch(e.target.value)}
@@ -131,7 +139,7 @@ export default function PlanritningarPage() {
         <Grid container spacing={2}>
           {filtered.map((plan) => (
             <Grid key={plan.id} size={{ xs: 12, sm: 6, md: 4, lg: 3, xl: 2 }}>
-              <FloorPlanCard plan={plan} onEdit={setRenamePlan} onDelete={handleDelete} />
+              <FloorPlanCard plan={plan} onEdit={setRenamePlan} onDelete={() => setDeletingPlan(plan)} />
             </Grid>
           ))}
         </Grid>
@@ -149,6 +157,20 @@ export default function PlanritningarPage() {
         onClose={() => setRenamePlan(null)}
         onSave={handleRename}
       />
+      <Dialog open={!!deletingPlan} onClose={() => setDeletingPlan(null)} fullWidth maxWidth="xs">
+        <DialogTitle>Ta bort planritning</DialogTitle>
+        <DialogContent>
+          <DialogContentText>
+            Ta bort planritningen för “{deletingPlan?.aptName}”? Åtgärden går inte att ångra.
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setDeletingPlan(null)}>Avbryt</Button>
+          <Button color="error" variant="contained" onClick={handleDelete}>
+            Ta bort planritning
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Container>
   );
 }

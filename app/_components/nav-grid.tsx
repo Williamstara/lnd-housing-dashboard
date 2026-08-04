@@ -2,75 +2,65 @@
 
 import { useUser } from "@auth0/nextjs-auth0";
 import Box from "@mui/material/Box";
-import Card from "@mui/material/Card";
-import CardActionArea from "@mui/material/CardActionArea";
-import CardContent from "@mui/material/CardContent";
-import Stack from "@mui/material/Stack";
+import List from "@mui/material/List";
+import ListItemButton from "@mui/material/ListItemButton";
+import ListItemIcon from "@mui/material/ListItemIcon";
+import ListItemText from "@mui/material/ListItemText";
+import Paper from "@mui/material/Paper";
 import Typography from "@mui/material/Typography";
 import { alpha } from "@mui/material/styles";
 import Link from "next/link";
-import { navLinks } from "@/lib/nav-links";
+import { NAV_GROUPS, navLinks } from "@/lib/nav-links";
 import { ROLES, hasRole, isRestrictedToTodo } from "@/lib/roles";
 
 export default function NavGrid() {
   const { user } = useUser();
   const isAdmin = hasRole(user, ROLES.ADMIN);
   const restrictedToTodo = isRestrictedToTodo(user);
-  const visibleLinks = navLinks.filter(
-    (link) => (!link.adminOnly || isAdmin) && (!restrictedToTodo || link.href === "/todo")
-  );
 
   return (
-    <Box
-      sx={{
-        display: "grid",
-        gap: 2.5,
-        gridTemplateColumns: {
-          xs: "1fr",
-          sm: "repeat(2, 1fr)",
-          md: "repeat(3, 1fr)",
-        },
-      }}
-    >
-      {visibleLinks.map((link) => (
-        <Card
-          key={link.href}
-          variant="outlined"
-          sx={{
-            borderColor: "rgba(var(--mui-palette-primary-mainChannel) / 0.12)",
-            transition: "border-color 150ms ease, transform 150ms ease",
-            "&:hover": {
-              borderColor: "primary.main",
-              transform: "translateY(-2px)",
-            },
-          }}
-        >
-          <CardActionArea component={Link} href={link.href} sx={{ height: "100%" }}>
-            <CardContent>
-              <Stack spacing={1.5}>
-                <Box
-                  sx={{
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    width: 44,
-                    height: 44,
-                    borderRadius: 2,
-                    bgcolor: (theme) => alpha(theme.palette.secondary.main, 0.3),
-                    color: "primary.main",
-                  }}
+    <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", lg: "repeat(3, 1fr)" }, gap: 2 }}>
+      {NAV_GROUPS.map((group) => {
+        const links = navLinks.filter(
+          (link) =>
+            link.group === group.key &&
+            (!link.adminOnly || isAdmin) &&
+            (!restrictedToTodo || link.href === "/todo")
+        );
+        if (links.length === 0) return null;
+        return (
+          <Paper key={group.key} variant="outlined" sx={{ overflow: "hidden" }}>
+            <Typography
+              variant="overline"
+              sx={{ display: "block", px: 2, pt: 1.5, color: "primary.main", fontWeight: 700, letterSpacing: 1 }}
+            >
+              {group.label}
+            </Typography>
+            <List disablePadding>
+              {links.map((link) => (
+                <ListItemButton
+                  key={link.href}
+                  component={Link}
+                  href={link.href}
+                  sx={{ px: 2, py: 1.25, alignItems: "flex-start", "&:hover": { bgcolor: (theme) => alpha(theme.palette.primary.main, 0.05) } }}
                 >
-                  <link.icon />
-                </Box>
-                <Typography variant="h6">{link.label}</Typography>
-                <Typography variant="body2" color="text.secondary">
-                  {link.description}
-                </Typography>
-              </Stack>
-            </CardContent>
-          </CardActionArea>
-        </Card>
-      ))}
+                  <ListItemIcon sx={{ minWidth: 40, mt: 0.25, color: "primary.main" }}>
+                    <link.icon fontSize="small" />
+                  </ListItemIcon>
+                  <ListItemText
+                    primary={link.label}
+                    secondary={link.description}
+                    slotProps={{
+                      primary: { sx: { fontWeight: 650, fontSize: "0.9rem" } },
+                      secondary: { sx: { mt: 0.25, lineHeight: 1.35 } },
+                    }}
+                  />
+                </ListItemButton>
+              ))}
+            </List>
+          </Paper>
+        );
+      })}
     </Box>
   );
 }

@@ -2,6 +2,7 @@
 
 import { useUser } from "@auth0/nextjs-auth0";
 import { useMemo, useState, useTransition, type ChangeEvent, type ReactNode } from "react";
+import dynamic from "next/dynamic";
 import AddIcon from "@mui/icons-material/Add";
 import ArchiveIcon from "@mui/icons-material/Archive";
 import DeleteIcon from "@mui/icons-material/Delete";
@@ -45,13 +46,17 @@ import {
   markKlarForBetalningBulkAction,
   updateBesiktningAction,
 } from "@/app/besiktningar/actions";
-import BesiktningarExcelImportDialog from "@/components/BesiktningarExcelImportDialog";
 import ColumnVisibilityMenu from "@/components/ColumnVisibilityMenu";
 import { exportRowsToXlsx } from "@/lib/export-xlsx";
 import type { Besiktning, BesiktningEditInput, BesiktningImportInput } from "@/lib/besiktningar";
 import { ARCHIVE_ROLES, ROLES, hasAnyRole, hasRole } from "@/lib/roles";
 import type { ImportFieldConfig } from "@/lib/table-columns";
 import { useColumnVisibility } from "@/lib/use-column-visibility";
+
+const BesiktningarExcelImportDialog = dynamic(
+  () => import("@/components/BesiktningarExcelImportDialog"),
+  { ssr: false }
+);
 
 type Props = {
   besiktningar: Besiktning[];
@@ -154,7 +159,7 @@ export default function BesiktningarTable({ besiktningar, importMapping }: Props
   const [orderBy, setOrderBy] = useState<ColumnKey>("besiktningsdatum");
   const [order, setOrder] = useState<Order>("asc");
   const [page, setPage] = useState(0);
-  const [rowsPerPage, setRowsPerPage] = useState(25);
+  const [rowsPerPage, setRowsPerPage] = useState(10);
 
   const [isPending, startTransition] = useTransition();
 
@@ -431,6 +436,7 @@ export default function BesiktningarTable({ besiktningar, importMapping }: Props
       </Stack>
 
       <TextField
+        label="Sök"
         placeholder="Sök..."
         value={search}
         onChange={(event: ChangeEvent<HTMLInputElement>) => {
@@ -980,7 +986,7 @@ export default function BesiktningarTable({ besiktningar, importMapping }: Props
         </DialogActions>
       </Dialog>
 
-      <Dialog open={!!archivingRow} onClose={() => setArchivingRow(null)}>
+      <Dialog open={!!archivingRow} onClose={() => setArchivingRow(null)} fullWidth maxWidth="xs">
         <DialogTitle>Arkivera besiktning</DialogTitle>
         <DialogContent>
           {archiveError && <Alert severity="error" sx={{ mb: 2 }}>{archiveError}</Alert>}
@@ -1000,7 +1006,7 @@ export default function BesiktningarTable({ besiktningar, importMapping }: Props
         </DialogActions>
       </Dialog>
 
-      <Dialog open={!!deletingRow} onClose={() => setDeletingRow(null)}>
+      <Dialog open={!!deletingRow} onClose={() => setDeletingRow(null)} fullWidth maxWidth="xs">
         <DialogTitle>Ta bort besiktning</DialogTitle>
         <DialogContent>
           {deleteError && <Alert severity="error" sx={{ mb: 2 }}>{deleteError}</Alert>}

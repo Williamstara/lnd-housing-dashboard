@@ -1,150 +1,115 @@
 # Handoff
 
-Short-lived. Replace this file's content after every meaningful work
-session — it is not a history log (see `docs/DECISIONS.md` for durable
-history and `git log` for commit history once things are committed).
-
----
+Short-lived handoff for the next coding agent. Repository state and validation
+were verified immediately before writing this file.
 
 ## Current objective
 
-Set up a durable, model-neutral project memory/handoff system
-(`AGENTS.md`, `CLAUDE.md`, `docs/ARCHITECTURE.md`, `docs/SESSION.md`,
-`docs/HANDOFF.md`, `docs/DECISIONS.md`, `docs/TODO.md`) so Claude Code and
-OpenAI Codex can alternate work on this repository, capturing the state of
-the "apartments Excel import" milestone (see `docs/SESSION.md`) that was
-in progress immediately beforehand.
+Finish the application-wide responsive UX remake by performing authenticated
+rendered QA at all three widths, fixing concrete findings, and preparing the
+current `Design` branch changes for commit when requested.
 
-## Completed work
+## Completed this session
 
-- Diagnosed and fixed tenant/andrahandsgäst/rental-object Excel imports
-  silently dropping every row (stale hardcoded fastighet-name map);
-  replaced with an admin-configurable, per-nation fastighet-alias system.
-- Built a full "Importera från Excel" feature for Lediga lägenheter
-  (apartments), which previously had none: server action, bulk upsert,
-  dialog with multi-sheet picker, admin column-mapping editor.
-- Added per-fastighet lägenhetsnummer-prefixes (`/fastigheter`, admin
-  editable) and prefix-based fastighet resolution for the apartments
-  importer.
-- Added optional tenant-interest columns (Hyresgäst, Personnummer, E-post,
-  Telefon, Kontonummer) to the apartments importer.
-- Fixed an Excel date-cell timezone bug (off-by-one day) shared between the
-  apartments and besiktningar importers.
-- Fixed the apartments importer rejecting valid rows with a negative
-  hyresrabatt/hyresreduktion value.
-- Added per-row skip-reason visibility (client parse + server sanitize) to
-  the apartments importer.
-- Created this documentation system.
+- Added a "Bostäder per typ" bar chart and a "Lägenheter per status" bar
+  chart to `/statistik`, so the chart grid grew from 6 to 8 cards (stays
+  symmetric at 4 rows of 2). The status chart replaced an initial
+  floor-plan-coverage donut the user explicitly rejected as "a bad metric"
+  after seeing it rendered — see `docs/DECISIONS.md` for the full swap
+  rationale and the other metric options offered. New/changed:
+  `lib/statistik.ts` (`bostaderPerTyp` on `Bestandsoversikt`, new
+  `getLagenheterPerStatus`), `components/StatistikOverview.tsx`,
+  `app/statistik/page.tsx`.
+- Installed the three vendored skills named in `AGENTS.md`'s Skills policy
+  that were previously missing from `.agents/skills/`: `frontend-design`
+  (anthropics/skills), `vercel-react-best-practices` and
+  `web-design-guidelines` (vercel-labs/agent-skills). No working-tree diff
+  resulted — they matched what `skills-lock.json` already tracked.
+- **Found and fixed a real, pre-existing hydration bug** in
+  `components/charts/DonutChart.tsx`: its segment `<title>` used
+  `{s.label}: {s.value}` (a 3-child JSX array), which React cannot hydrate
+  consistently for `<title>` elements. This was caught via real authenticated
+  browser verification (Claude in Chrome) of the new statistik charts — the
+  first time any agent in this milestone actually had browser access. It
+  affected every `DonutChart` usage, including the pre-existing
+  `Uthyrningsgrad` chart, not just the new one. Fixed with a template string
+  in the one shared component. See `docs/DECISIONS.md` for the full record.
+- Verified `/statistik` end-to-end in a real, authenticated browser session
+  against nation `LND`'s actual data: all 8 chart cards render correctly, no
+  console errors, no hydration mismatches (confirmed via both the live
+  console and the dev server's `next-development.log`) after the fix above.
+- The new "Bostäder per typ" chart surfaced a real data-quality issue in the
+  underlying `LND` data (inconsistent `typ` casing/values) — recorded as a
+  follow-up in `docs/TODO.md`, not fixed in code (it's source data, not a
+  bug).
 
-Full reasoning for each of the above (except the documentation system
-itself) is in `docs/DECISIONS.md`. Outstanding follow-ups are in
-`docs/TODO.md`.
+## Validation run this session
 
-## Files changed (uncommitted, working tree)
+- `npx tsc --noEmit --incremental false` — clean, both before and after the
+  `DonutChart` fix.
+- `npm run lint` — unchanged baseline: 7 `react-hooks/set-state-in-effect`
+  errors + 1 unused-arg warning (same files/lines as prior sessions).
+- Browser verification via Claude in Chrome against the user's own running
+  dev server (already listening on port 3000 from an earlier session) and
+  their authenticated Auth0 session: `/statistik` at desktop width, hard
+  refresh, live console read, and cross-checked against
+  `.next/dev/logs/next-development.log`.
+- Mobile-viewport screenshot verification was attempted (`resize_window` to
+  390×844) but the captured screenshot dimensions did not change in this
+  environment — likely an environment/extension limitation, not a page bug.
+  The two new cards use the exact same `Grid size={{xs:12, lg:6}}` /
+  `ChartCard` primitives as the six pre-existing cards on the same page, so
+  they collapse to single-column identically; this was not independently
+  re-screenshotted at phone width.
 
-Modified (14):
-`AGENTS.md`, `CLAUDE.md`, `app/admin/actions.ts`,
-`app/fastigheter/actions.ts`, `app/lediga-lagenheter/actions.ts`,
-`app/lediga-lagenheter/page.tsx`, `components/AdminPage.tsx`,
-`components/ApartmentsTable.tsx`,
-`components/BesiktningarExcelImportDialog.tsx`,
-`components/FastigheterTable.tsx`, `lib/apartments.ts`,
-`lib/fastigheter.ts`, `lib/nation-settings.ts`, `lib/table-columns.ts`.
+## Current Git and working-tree state
 
-Untracked, part of this work: `components/ApartmentExcelImport.tsx`,
-`docs/` (this documentation system).
-
-Untracked, **not** part of this work (pre-existing before this session,
-left as-is): `.agents/` (vendored skill definitions), `skills-lock.json`
-(skills tooling lockfile).
-
-`git diff --stat` at time of writing: 14 files changed, 673 insertions(+),
-27 deletions(-) (excludes untracked files, which git diff doesn't show).
-
-## Actual validation results
-
-Run at the time of this handoff:
-
-- `npx tsc --noEmit` → **clean, no output, exit 0.**
-- `npm run lint` → **7 pre-existing errors + 1 pre-existing warning**, all
-  `react-hooks/set-state-in-effect` except one unused-var warning, in files
-  this session did not introduce the pattern in:
-  - `app/mallar/page.tsx:44`
-  - `app/planritningar/page.tsx:38`
-  - `components/AdminPage.tsx:635` (pre-existing effect, not the new
-    `FastighetAliasEditor`/apartments-mapping code added this session)
-  - `components/email/QuarterDateTimePicker.tsx:21`
-  - `components/email/RenamePlanDialog.tsx:24`
-  - `components/email/TemplateEditorDialog.tsx:47`
-  - `lib/use-column-visibility.ts:16`
-  - `lib/auth0.ts:12` (warning: unused `_idToken`)
-  
-  None of these are new regressions from this session. See
-  `docs/TODO.md`'s "Later" section.
-- Data-transformation logic (fastighet-prefix resolution, date parsing,
-  numeric sign normalization, skip-reason reporting) was verified against
-  the user's real `.xlsx` files with throwaway Node scripts (not committed,
-  not present in the repo) and against direct MongoDB queries against
-  nation `LND`'s actual documents. Not re-run as part of this
-  documentation pass — see `docs/DECISIONS.md` for the specific verified
-  numbers (e.g. "64/64 rows now pass server-side validation, was 35/64").
-- No UI re-verification (dev server / browser) was done in this
-  documentation pass; it was done earlier in the same work (see
-  `docs/DECISIONS.md`).
-
-## Current repository and working-tree state
-
-- Branch: `main`, up to date with `origin/main`.
-- Working tree: **dirty** (see "Files changed" above). Nothing staged.
-  **Nothing from this work has been committed.**
-- Other local branches exist (`Cookies-and-policies`, `admin-page`) — not
-  touched, not relevant to this work.
-- No merge/rebase in progress.
+- Current branch: `Design`.
+- Working tree: dirty. Newly modified this session (in addition to the
+  52 files already dirty from the prior milestone): `lib/statistik.ts`,
+  `components/StatistikOverview.tsx`, `app/statistik/page.tsx`,
+  `components/charts/DonutChart.tsx`, and the `docs/*.md` files.
+- No new untracked files from this session (the skill installs matched
+  already-tracked content with no diff).
+- No commit, merge, rebase, reset, or checkout was performed.
 
 ## Remaining work
 
-See `docs/TODO.md` for the full, current list. Highest-priority items:
-
-1. User needs to save the apartments Excel-import column mapping in Admin
-   → Import-mappningar → Lediga lägenheter (exact columns in
-   `docs/TODO.md`). This is a **user action**, not code.
-2. Decide whether/when to commit the uncommitted work listed above — ask
-   before committing, per this repo's established norm.
+1. Perform authenticated rendered QA at representative desktop (1440 px),
+   tablet (768 px), and phone (390 px) widths for the rest of the app
+   (nav rail expanded/collapsed, mobile drawer, table/card pairs, dialogs,
+   one Excel preview). `/statistik` desktop is now done; nothing else has
+   been rendered-QA'd yet in a real browser.
+2. Verify keyboard navigation and loading, empty, error, and success states;
+   fix only concrete issues found, then rerun validation.
+3. Clean up the inconsistent `typ` values for nation `LND` (see
+   `docs/TODO.md`) — a data fix via `/databas`, not a code change.
+4. Save and re-test the apartments Excel-import mapping for nation `LND` as
+   described in `docs/TODO.md`; this remains a user/environment action.
+5. Commit the working tree only when explicitly requested.
 
 ## Blockers
 
-None on the coding side. The apartments-import milestone is feature-complete
-and verified; it is blocked only on the user performing the admin
-configuration step described above.
+- None currently — a Claude in Chrome browser session with the user's
+  authenticated Auth0 login is available and was used this session. Reuse
+  it for the remaining rendered-QA items above rather than assuming no
+  browser surface exists.
 
 ## Exact recommended next step
 
-If resuming this work: check whether the user has saved the apartments
-import mapping (`GET` the `nations` collection document for nation `LND`,
-field `imports.apartments`, or ask the user directly) and whether they've
-re-tested the import. If they report a new problem, start by re-verifying
-against their current real file with a throwaway script (see `AGENTS.md`'s
-validation requirements) rather than assuming the previously-diagnosed
-causes are the same ones.
-
-If starting unrelated work instead: this milestone can be considered closed
-pending user confirmation — proceed with whatever the user asks next,
-following the Standard Agent Workflow in `AGENTS.md`.
-
-## Relevant commands
-
-```bash
-npx tsc --noEmit
-npm run lint
-npm run dev
-git status
-git diff --stat
-```
+With the same authenticated browser session, continue the route/viewport
+checklist from `docs/TODO.md` starting with the sidebar toggle on `/` at
+1440 px (expanded 272 px / compact 72 px, no overflow, tooltips, keyboard
+operation), then move to phone width (390 px) once a way to actually change
+the captured viewport is confirmed working (try `resize_window` again, or
+ask the user whether their Chrome window itself needs resizing rather than
+relying on the tool). Fix only concrete findings, then rerun
+`npx tsc --noEmit` and `npm run lint`.
 
 ## Timestamp
 
-2026-08-04
+2026-08-04 16:35 (local, per this session's clock)
 
-## Agent
+## Current agent
 
-Claude Code (Sonnet 5)
+Claude Code

@@ -5,6 +5,26 @@ Items that couldn't be confirmed from the repository alone are marked
 `Needs verification`. See `AGENTS.md` for conventions and constraints;
 this file describes *what exists*, not *how to write more of it*.
 
+## Responsive application shell
+
+- `app/layout.tsx` renders a flex application shell with a skip link and a
+  main-content landmark. `components/NavBar.tsx` is a persistent 272 px MUI
+  drawer on desktop, collapsible to a 72 px icon rail, and a compact app bar
+  plus temporary drawer on phones.
+- Operational routes use full-width MUI containers. Row-oriented feature
+  components render tables on larger screens and labeled cards on phones;
+  both presentations consume the same filtered, sorted, paginated slice and
+  default to 10 items per page.
+- Excel preview rows use `components/ResponsivePreview.tsx`, which provides
+  the same table/card split and pagination. Parent table components
+  dynamically load the heavy SheetJS import dialogs.
+- Shared dialog geometry, form density, focus visibility, reduced-motion
+  behavior, and responsive pagination live in `lib/theme.ts`.
+- Secondary occupants in `lib/andrahandsgaster.ts` have a `typ` of
+  `andrahandsgast` or `inneboende`; missing legacy values resolve to
+  `andrahandsgast`. Statistics define total tenants as primary tenants plus
+  occupants whose type is `inneboende`.
+
 ## Entry points
 
 - `app/layout.tsx` — root layout. Loads the Auth0 session
@@ -48,7 +68,7 @@ client components. Swedish label shown in the app's nav is in parentheses.
 | `app/arkiv` | Signed/archived contracts. `components/ArchiveTable.tsx`. |
 | `app/uppsagning` | Tenant notice/termination flow. `components/ConfirmUppsagningDialog.tsx`, `components/UppsagningTable.tsx`. |
 | `app/fastigheter` | Buildings ("Fastigheter") — the registry every other feature's `fastighet` field is validated against. `components/FastigheterTable.tsx`. |
-| `app/statistik` | Missed-rent and other statistics. `components/StatistikOverview.tsx`, `components/charts/*`. |
+| `app/statistik` | Missed-rent and other statistics: housing/tenant totals, occupancy form, homes per building, homes per `typ`, floor-plan coverage, occupancy, missed rent, condition, revenue. `components/StatistikOverview.tsx`, `components/charts/*` (`BarChart`, `DonutChart`, `StatTile`). |
 | `app/mallar` | Email templates. `components/email/TemplateEditorDialog.tsx`. |
 | `app/epost` | Compose/send email to a recipient group. `components/email/SendMailClient.tsx`, `RecipientGroupPicker.tsx`. |
 | `app/planritningar` | Floor plan PDF upload/storage per lägenhetsnummer. `components/email/FloorPlanCard.tsx`, `UploadConfirmDialog.tsx`. |
@@ -240,7 +260,7 @@ serverless instances each opening their own pool.
 - No schema validation beyond TypeScript types — documents can drift from
   the current type shape (e.g. `Fastighet.prefixes` is absent on documents
   created before that field existed; every reader must default it).
-- Four Excel-importer dialogs (`ExcelImportDialog.tsx`,
+- Five Excel-importer dialogs (`ExcelImportDialog.tsx`,
   `AndrahandsgastExcelImportDialog.tsx`, `BesiktningarExcelImportDialog.tsx`,
   `ApartmentExcelImport.tsx`, `RentalObjectExcelImport.tsx`) each define
   their own local `cellStr`/`cellNum`/`cellDate`-style cell-parsing helpers

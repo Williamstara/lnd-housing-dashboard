@@ -65,9 +65,7 @@ export default function DonutChart({ segments, centerLabel, centerValue }: Props
                     strokeLinecap="butt"
                     transform={`rotate(-90 ${SIZE / 2} ${SIZE / 2})`}
                   >
-                    <title>
-                      {s.label}: {s.value}
-                    </title>
+                    <title>{`${s.label}: ${s.value}`}</title>
                   </circle>
                 );
               })}

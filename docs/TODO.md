@@ -1,115 +1,59 @@
 # TODO
 
-Concrete, verified work only. See `docs/HANDOFF.md` for the exact next step
-and repository state, and `docs/DECISIONS.md` for the reasoning behind
-several of these.
+Concrete, verified work only. See `docs/HANDOFF.md` for current repository
+state and the exact next step.
 
 ## Next
 
-- **User must save the apartments Excel-import column mapping in Admin →
-  Import-mappningar → Lediga lägenheter.** Verified via direct query against
-  the `nations` collection that `imports.apartments` is still `undefined`
-  for nation `LND` as of the last check. For the user's real sheet
-  ("Lediga (kladd)" tab of `Lägenheter att tillsätta .xlsx`), the correct
-  columns are:
+- **Visually verify the responsive UX remake.** `/statistik` at desktop
+  width is now verified authenticated in a real browser (all 8 chart cards
+  render, no console/hydration errors). Still outstanding: tablet (768 px)
+  and phone (390 px) layouts across the rest of the app, keyboard operation,
+  and loading/empty/error/success states — `resize_window` did not change
+  the captured viewport in the last session's environment, so mobile
+  couldn't be screenshotted there.
+  **Acceptance criteria:** no horizontal page overflow; phone data is shown
+  as cards with matching pagination; the desktop sidebar and mobile drawer
+  are keyboard-operable; the 272 px/72 px sidebar toggle does not overlap or
+  clip content and exposes labels through tooltips; meaningful findings from
+  the web-design-guidelines audit are fixed.
+- **Clean up inconsistent `RentalObject.typ` values for nation `LND`.**
+  The new "Bostäder per typ" statistik chart surfaced real data-quality
+  issues: `"Dubblett"` and `"dubblett"` are counted as separate categories,
+  and some rows have bare `"1"`/`"2"` values with no clear meaning. This is
+  a source-data fix (via `/databas`), not a code fix.
+- **Save and re-test the apartments Excel-import mapping for nation `LND`.**
+  The last verified database state had `imports.apartments` undefined. The
+  verified mapping for the `Lediga (kladd)` sheet is:
   Lägenhetsnummer=A, Storlek=B, Objekttyp=C, Antal rum=D, Ledig fr.o.m.=E,
-  Årshyra=F, Hyresrabatt=*(leave blank — no such column)*,
-  Hyresreduktion=G, Årshyra med red.=H, Månadshyra=N,
-  Hyresgäst (intresserad)=I, Personnummer=J, E-post=K, Telefon=L,
-  Kontonummer=M.
-  **Acceptance criteria**: after saving, importing that sheet/tab yields the
-  64 valid apartment rows (verified count against the real file) with
-  Hyresgäst/Personnummer/etc. populated in the preview, and no
-  server-side rejections.
-- **Commit the uncommitted work from the last session.** `git status` shows
-  12 modified tracked files and 2 untracked (`components/ApartmentExcelImport.tsx`,
-  `docs/` itself) — nothing staged or committed. See `docs/HANDOFF.md` for
-  the exact file list. This repo's convention is to ask before committing —
-  don't commit without being asked.
+  Årshyra=F, Hyresrabatt=blank, Hyresreduktion=G, Årshyra med red.=H,
+  Månadshyra=N, Hyresgäst=I, Personnummer=J, E-post=K, Telefon=L, and
+  Kontonummer=M. Do not persist personal sample rows.
 
 ## Later
 
-- **Fix the stale fastighet-name lookup tables in `lib/laundry-account.ts`
-  and `lib/rentalobjects.ts`.** `FASTIGHET_BUILDING`,
-  `FASTIGHET_LAUNDRY_BUILDING` (`lib/laundry-account.ts`) and
-  `FASTIGHET_PREFIXES` (`lib/rentalobjects.ts`) use an obsolete long-form
-  naming scheme (e.g. `"Arkivet (223 59, Lund)"`) as dictionary keys, which
-  no longer matches the short names in the `fastigheter` collection (e.g.
-  `"Arkivet"`). Deliberately deferred once already — see "Deferred: stale
-  fastighet naming" in `docs/DECISIONS.md`.
-  **Acceptance criteria**: `createLaundryAccount` succeeds (not
-  `"Okänd fastighet"`) for a tenant in Sankt Thomas 35, 39, or 39 B, not
-  just Arkivet; `findRentalObjectForApartment`'s prefix fallback in
-  `lib/rentalobjects.ts` resolves for those buildings too. Consider
-  resolving via the now-existing `fastigheter.prefixes` data instead of a
-  third hardcoded table.
-- **Add `GMAIL_CLIENT_ID`/`GMAIL_CLIENT_SECRET` to `.env.local.example`.**
-  Both are read in code (`app/api/auth/gmail/*`, verified via
-  `grep -r process.env`) but missing from the example file, unlike every
-  other env var actually used.
-  **Acceptance criteria**: `.env.local.example` lists every env var the
-  grep in `AGENTS.md`'s "Security and data-handling rules" section names.
-- **Consolidate duplicated Excel cell-parsing helpers.** Five importer
-  dialogs (`ExcelImportDialog.tsx`, `AndrahandsgastExcelImportDialog.tsx`,
-  `BesiktningarExcelImportDialog.tsx`, `ApartmentExcelImport.tsx`,
-  `RentalObjectExcelImport.tsx`) each define their own local
-  `cellStr`/`cellNum`(-equivalent) helpers. Only date-cell formatting
-  (`excelDateCellToISO`) and fastighet-name resolution have been shared so
-  far. Not urgent — no known bug currently caused by the duplication, just
-  future-bug risk.
-- **Clean up the pre-existing `react-hooks/set-state-in-effect` lint
-  errors.** `npm run lint` reports 7 errors of this kind (calling
-  `setState` synchronously inside a `useEffect` body) in:
-  `app/mallar/page.tsx:44`, `app/planritningar/page.tsx:38`,
-  `components/AdminPage.tsx:635`,
-  `components/email/QuarterDateTimePicker.tsx:21`,
-  `components/email/RenamePlanDialog.tsx:24`,
-  `components/email/TemplateEditorDialog.tsx:47`,
-  `lib/use-column-visibility.ts:16`. Pre-existing, not introduced by recent
-  work — likely a newly-stricter lint rule flagging an established data-
-  loading pattern used throughout the codebase. Needs a decision on the
-  right replacement pattern (e.g. `useEffect` + a stable async function,
-  vs. deriving state without an effect) before fixing all seven
-  consistently.
-- **Fix the unused `_idToken` parameter warning in `lib/auth0.ts:12`.**
-  Trivial; low priority.
+- **Fix stale building-name lookup tables** in `lib/laundry-account.ts` and
+  `lib/rentalobjects.ts`. Prefer the existing `fastigheter.prefixes` data
+  over another hardcoded map.
+- **Add `GMAIL_CLIENT_ID` and `GMAIL_CLIENT_SECRET` to
+  `.env.local.example`.** They are read by the Gmail OAuth routes but absent
+  from the example.
+- **Clean up the pre-existing lint baseline:** 7
+  `react-hooks/set-state-in-effect` errors and the unused `_idToken` warning
+  in `lib/auth0.ts`.
+- **Consolidate duplicated Excel cell parsers only when a real bug requires
+  it.** Five importers still own small local string/number helpers; there is
+  no current correctness failure from that duplication.
 
 ## Blocked
 
-- None currently identified.
+- Rendered UX completion is blocked on an available authenticated browser
+  session. Build and static validation are otherwise clean.
 
 ## Completed recently
 
-(Uncommitted as of the last check — see `docs/HANDOFF.md` for exact
-validation. Listed here so nobody re-does this work; move to a change log
-or drop once committed and this becomes redundant with `git log`.)
-
-- Fixed tenant / andrahandsgäst / rental-object Excel imports silently
-  dropping every row due to a stale hardcoded fastighet-name map; replaced
-  with an admin-configurable, per-nation fastighet-alias table.
-- Added a multi-sheet picker to the apartments Excel-import dialog (and
-  confirmed the sheet-listing approach works against a real 24-tab
-  workbook).
-- Built the full "Importera från Excel" feature for Lediga lägenheter
-  (apartments had none before), including admin-side column-mapping
-  configuration (Admin → Import-mappningar → Lediga lägenheter).
-- Added per-fastighet lägenhetsnummer-prefixes (admin-editable on
-  `/fastigheter`) and prefix-based fastighet resolution for the apartments
-  importer, since a reliable Fastighet column isn't available in the
-  target sheet.
-- Added optional tenant-interest columns (Hyresgäst, Personnummer, E-post,
-  Telefon, Kontonummer) to the apartments importer, reusing the existing
-  "spara intresse" data shape.
-- Fixed an Excel date-cell off-by-one-day bug caused by reading a
-  SheetJS-parsed date with UTC getters instead of local getters; shared the
-  fix (`excelDateCellToISO`) between the apartments and besiktningar
-  importers.
-- Fixed the apartments importer rejecting valid rows whose source sheet
-  stored a rent reduction as a negative number, by normalizing sign at
-  parse time (`Math.abs()`), matching the existing rental-objects importer
-  convention.
-- Added per-row skip-reason reporting (not just a count) to both the
-  client-side parse step and the server-side sanitize step of the
-  apartments importer.
-- Set up this shared documentation system
-  (`AGENTS.md`, `CLAUDE.md`, `docs/*`).
+- Application-wide responsive layout, left navigation, mobile cards, shared
+  10-item pagination, responsive Excel previews, standardized MUI dialogs and
+  search inputs, explicit resident/second-hand type, and expanded statistics.
+- Apartments Excel import, per-nation mappings and building aliases/prefixes,
+  correct Excel dates and reduction signs, and per-row skip reasons.

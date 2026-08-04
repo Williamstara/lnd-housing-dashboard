@@ -11,7 +11,7 @@ const RedoForKontraktPage = auth0.withPageAuthRequired(
     const apartments = await getRedoForKontrakt(nationsId);
 
     return (
-      <Container maxWidth="xl" sx={{ py: 6 }}>
+      <Container maxWidth={false} sx={{ py: { xs: 3, md: 4 } }}>
         <ContractsReadyTable apartments={apartments} />
       </Container>
     );

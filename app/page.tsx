@@ -12,21 +12,17 @@ const Home = auth0.withPageAuthRequired(
     const nationsId = getNationsId(session?.user);
 
     return (
-      <Box sx={{ flex: 1, bgcolor: "background.default", py: { xs: 6, sm: 8 } }}>
-        <Container maxWidth="lg">
-          <Stack spacing={1} sx={{ alignItems: "flex-start", mb: 5 }}>
-            <Typography variant="h3" component="h1">
-              {nationsId ?? "LND"} Housing Dashboard
+      <Box sx={{ flex: 1, bgcolor: "background.default" }}>
+        <Container maxWidth={false} sx={{ py: { xs: 3, md: 5 } }}>
+          <Stack spacing={0.75} sx={{ alignItems: "flex-start", mb: 3 }}>
+            <Typography variant="overline" color="primary" sx={{ fontWeight: 700, letterSpacing: 1.2 }}>
+              {nationsId ?? "LND"} · Bostadsförvaltning
             </Typography>
-            <Typography variant="body1" color="text.secondary" sx={{ maxWidth: 560 }}>
-              Ett samlat verktyg för att hantera och överblicka hyresgäster i
-              fastighetsbeståndet.
-            </Typography>
-            <Typography variant="body1" sx={{ pt: 1 }}>
-              Välkommen tillbaka, {session?.user.name}.
+            <Typography variant="h3" component="h1">Välkommen tillbaka</Typography>
+            <Typography variant="body1" color="text.secondary" sx={{ maxWidth: 680 }}>
+              Hej {session?.user.name}. Välj ett arbetsområde nedan eller använd menyn till vänster.
             </Typography>
           </Stack>
-
           <NavGrid />
         </Container>
       </Box>

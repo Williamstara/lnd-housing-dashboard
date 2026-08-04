@@ -27,14 +27,14 @@ export default function ColumnVisibilityMenu({ columns, isVisible, onToggle }: P
   return (
     <>
       <Tooltip title="Visa/dölj kolumner">
-        <IconButton size="small" onClick={(event: MouseEvent<HTMLElement>) => setAnchorEl(event.currentTarget)}>
+        <IconButton aria-label="Visa eller dölj kolumner" size="small" onClick={(event: MouseEvent<HTMLElement>) => setAnchorEl(event.currentTarget)}>
           <ViewColumnIcon fontSize="small" />
         </IconButton>
       </Tooltip>
       <Menu anchorEl={anchorEl} open={!!anchorEl} onClose={() => setAnchorEl(null)}>
         {columns.map((col) => (
           <MenuItem key={col.key} onClick={() => onToggle(col.key)} dense>
-            <Checkbox checked={isVisible(col.key)} size="small" sx={{ p: 0, mr: 1 }} />
+            <Checkbox slotProps={{ input: { "aria-label": col.label } }} checked={isVisible(col.key)} size="small" sx={{ p: 0, mr: 1 }} />
             <ListItemText primary={col.label} />
           </MenuItem>
         ))}

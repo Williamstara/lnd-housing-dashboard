@@ -15,7 +15,7 @@ const TodoPage = auth0.withPageAuthRequired(
     ]);
 
     return (
-      <Container maxWidth="md" sx={{ py: 6 }}>
+      <Container maxWidth="lg" sx={{ py: { xs: 3, md: 4 } }}>
         <TodoList todos={todos} users={users} />
       </Container>
     );

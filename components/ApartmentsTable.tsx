@@ -2,6 +2,7 @@
 
 import { useUser } from "@auth0/nextjs-auth0";
 import { useMemo, useState, useTransition, type ReactNode } from "react";
+import dynamic from "next/dynamic";
 import AddIcon from "@mui/icons-material/Add";
 import DeleteIcon from "@mui/icons-material/Delete";
 import EditIcon from "@mui/icons-material/Edit";
@@ -58,13 +59,14 @@ import type {
   TenantAssignmentInput,
 } from "@/lib/apartments";
 import type { ImportFieldConfig, TableColumnConfig } from "@/lib/table-columns";
-import ApartmentExcelImport from "@/components/ApartmentExcelImport";
 import ApartmentFormDialog from "@/components/ApartmentFormDialog";
 import ApartmentInterestDialog from "@/components/ApartmentInterestDialog";
 import ColumnVisibilityMenu from "@/components/ColumnVisibilityMenu";
 import { exportRowsToXlsx } from "@/lib/export-xlsx";
 import { ROLES, hasRole } from "@/lib/roles";
 import { useColumnVisibility } from "@/lib/use-column-visibility";
+
+const ApartmentExcelImport = dynamic(() => import("@/components/ApartmentExcelImport"), { ssr: false });
 
 type Props = {
   apartments: Apartment[];
@@ -193,7 +195,7 @@ export default function ApartmentsTable({
   const [orderBy, setOrderBy] = useState<string>("ledigFrom");
   const [order, setOrder] = useState<"asc" | "desc">("asc");
   const [page, setPage] = useState(0);
-  const [rowsPerPage, setRowsPerPage] = useState(25);
+  const [rowsPerPage, setRowsPerPage] = useState(10);
 
   const visibleApartments = useMemo(() => {
     const query = search.trim().toLocaleLowerCase("sv");
@@ -390,6 +392,7 @@ export default function ApartmentsTable({
         sx={{ alignItems: "center", justifyContent: "space-between", mb: 2, gap: 2, flexWrap: "wrap" }}
       >
         <TextField
+          label="Sök"
           placeholder="Sök lägenheter..."
           value={search}
           onChange={(event) => { setSearch(event.target.value); setPage(0); }}
@@ -736,6 +739,8 @@ export default function ApartmentsTable({
       <Dialog
         open={!!deletingApartment}
         onClose={() => setDeletingApartment(null)}
+        fullWidth
+        maxWidth="xs"
       >
         <DialogTitle>Ta bort lägenhet</DialogTitle>
         <DialogContent>

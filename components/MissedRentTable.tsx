@@ -138,7 +138,7 @@ export default function MissedRentTable({ rows, availableApartments }: Props) {
   const [orderBy, setOrderBy] = useState<ColumnKey>("ledigFrom");
   const [order, setOrder] = useState<Order>("asc");
   const [page, setPage] = useState(0);
-  const [rowsPerPage, setRowsPerPage] = useState(25);
+  const [rowsPerPage, setRowsPerPage] = useState(10);
 
   const [editingRow, setEditingRow] = useState<MissedRentRow | null>(null);
   const [editForm, setEditForm] = useState<EditForm>({
@@ -290,6 +290,7 @@ export default function MissedRentTable({ rows, availableApartments }: Props) {
       </Stack>
 
       <TextField
+        label="Sök"
         placeholder="Sök..."
         value={search}
         onChange={(event: ChangeEvent<HTMLInputElement>) => {
@@ -536,7 +537,7 @@ export default function MissedRentTable({ rows, availableApartments }: Props) {
         </DialogActions>
       </Dialog>
 
-      <Dialog open={!!deletingRow} onClose={() => setDeletingRow(null)}>
+      <Dialog open={!!deletingRow} onClose={() => setDeletingRow(null)} fullWidth maxWidth="xs">
         <DialogTitle>Ta bort rad</DialogTitle>
         <DialogContent>
           <DialogContentText>

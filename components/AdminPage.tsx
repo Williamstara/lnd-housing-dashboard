@@ -155,10 +155,11 @@ function ColumnConfigEditor({
             }}
           >
             <Stack direction="column">
-              <IconButton size="small" disabled={index === 0} onClick={() => move(index, -1)}>
+              <IconButton aria-label={`Flytta ${col.label} uppåt`} size="small" disabled={index === 0} onClick={() => move(index, -1)}>
                 <ArrowUpwardIcon fontSize="small" />
               </IconButton>
               <IconButton
+                aria-label={`Flytta ${col.label} nedåt`}
                 size="small"
                 disabled={index === columns.length - 1}
                 onClick={() => move(index, 1)}
@@ -166,8 +167,9 @@ function ColumnConfigEditor({
                 <ArrowDownwardIcon fontSize="small" />
               </IconButton>
             </Stack>
-            <Checkbox checked={col.visible} onChange={() => toggleVisible(index)} />
+            <Checkbox slotProps={{ input: { "aria-label": `Visa ${col.label}` } }} checked={col.visible} onChange={() => toggleVisible(index)} />
             <TextField
+              label="Kolumnnamn"
               size="small"
               value={col.label}
               onChange={(event) => setLabel(index, event.target.value)}
@@ -176,7 +178,7 @@ function ColumnConfigEditor({
             <Typography variant="caption" color="text.secondary" sx={{ whiteSpace: "nowrap", minWidth: 90 }}>
               {col.isCustom ? "Anpassat fält" : col.key}
             </Typography>
-            <IconButton size="small" disabled={!col.isCustom} onClick={() => removeCustom(index)}>
+            <IconButton aria-label={`Ta bort ${col.label}`} size="small" disabled={!col.isCustom} onClick={() => removeCustom(index)}>
               <DeleteIcon fontSize="small" />
             </IconButton>
           </Stack>
@@ -281,6 +283,7 @@ function ImportMappingEditor({
               size="small"
               placeholder={allowBlank ? "—" : undefined}
               value={letters[index] ?? ""}
+              slotProps={{ htmlInput: { "aria-label": `Kolumn för ${field.label}` } }}
               onChange={(event) => setLetter(index, event.target.value)}
               sx={{ width: 80 }}
             />
@@ -376,7 +379,7 @@ function FastighetAliasEditor({
               onChange={(event) => update(index, { fastighet: event.target.value })}
               sx={{ flex: 1 }}
             />
-            <IconButton size="small" onClick={() => remove(index)}>
+            <IconButton aria-label={`Ta bort alias ${a.alias || index + 1}`} size="small" onClick={() => remove(index)}>
               <DeleteIcon fontSize="small" />
             </IconButton>
           </Stack>
@@ -488,7 +491,7 @@ function TabGroupsEditor({
               onChange={(event) => updateGroup(gi, { prefix: event.target.value })}
               sx={{ width: 140 }}
             />
-            <IconButton onClick={() => removeGroup(gi)}>
+            <IconButton aria-label={`Ta bort flikgruppen ${group.name || gi + 1}`} onClick={() => removeGroup(gi)}>
               <DeleteIcon fontSize="small" />
             </IconButton>
           </Stack>
@@ -522,6 +525,7 @@ function TabGroupsEditor({
                   size="small"
                   placeholder="—"
                   value={field.column >= 0 ? columnIndexToLetter(field.column) : ""}
+                  slotProps={{ htmlInput: { "aria-label": `Kolumn för ${field.label}` } }}
                   onChange={(event) => setFieldLetter(gi, fi, event.target.value)}
                   sx={{ width: 80 }}
                 />

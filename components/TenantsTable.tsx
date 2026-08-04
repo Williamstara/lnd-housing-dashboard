@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState, useTransition } from "react";
+import dynamic from "next/dynamic";
 import AddIcon from "@mui/icons-material/Add";
 import DeleteIcon from "@mui/icons-material/Delete";
 import EditIcon from "@mui/icons-material/Edit";
@@ -40,10 +41,11 @@ import { exportRowsToXlsx } from "@/lib/export-xlsx";
 import type { FastighetAlias, ImportFieldConfig } from "@/lib/table-columns";
 import type { Tenant, TenantInput } from "@/lib/tenants";
 import ColumnVisibilityMenu from "@/components/ColumnVisibilityMenu";
-import ExcelImportDialog from "@/components/ExcelImportDialog";
 import LaundryAccountDialog from "@/components/LaundryAccountDialog";
 import TenantFormDialog from "@/components/TenantFormDialog";
 import { useColumnVisibility } from "@/lib/use-column-visibility";
+
+const ExcelImportDialog = dynamic(() => import("@/components/ExcelImportDialog"), { ssr: false });
 
 type Props = {
   tenants: Tenant[];
@@ -93,7 +95,7 @@ export default function TenantsTable({ tenants, fastigheter, aliases, importMapp
   const [orderBy, setOrderBy] = useState<SortableColumn>("fastighet");
   const [order, setOrder] = useState<Order>("asc");
   const [page, setPage] = useState(0);
-  const [rowsPerPage, setRowsPerPage] = useState(25);
+  const [rowsPerPage, setRowsPerPage] = useState(10);
   const { isVisible, toggle } = useColumnVisibility("tenants");
   const visibleColumnDefs = columns.filter((c) => isVisible(c.key));
 
@@ -189,6 +191,7 @@ export default function TenantsTable({ tenants, fastigheter, aliases, importMapp
       </Stack>
 
       <TextField
+        label="Sök"
         placeholder="Sök hyresgäster..."
         value={search}
         onChange={(event) => { setSearch(event.target.value); setPage(0); }}
@@ -366,7 +369,7 @@ export default function TenantsTable({ tenants, fastigheter, aliases, importMapp
         onSubmit={handleFormSubmit}
       />
 
-      <Dialog open={!!deletingTenant} onClose={() => setDeletingTenant(null)}>
+      <Dialog open={!!deletingTenant} onClose={() => setDeletingTenant(null)} fullWidth maxWidth="xs">
         <DialogTitle>Ta bort hyresgäst</DialogTitle>
         <DialogContent>
           <DialogContentText>

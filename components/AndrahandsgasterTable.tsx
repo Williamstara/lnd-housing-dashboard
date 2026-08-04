@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState, useTransition } from "react";
+import dynamic from "next/dynamic";
 import AddIcon from "@mui/icons-material/Add";
 import DeleteIcon from "@mui/icons-material/Delete";
 import EditIcon from "@mui/icons-material/Edit";
@@ -39,11 +40,15 @@ import {
 import { exportRowsToXlsx } from "@/lib/export-xlsx";
 import type { Andrahandsgast, AndrahandsgastInput } from "@/lib/andrahandsgaster";
 import type { FastighetAlias, ImportFieldConfig } from "@/lib/table-columns";
-import AndrahandsgastExcelImportDialog from "@/components/AndrahandsgastExcelImportDialog";
 import AndrahandsgastFormDialog from "@/components/AndrahandsgastFormDialog";
 import AndrahandsgastLaundryAccountDialog from "@/components/AndrahandsgastLaundryAccountDialog";
 import ColumnVisibilityMenu from "@/components/ColumnVisibilityMenu";
 import { useColumnVisibility } from "@/lib/use-column-visibility";
+
+const AndrahandsgastExcelImportDialog = dynamic(
+  () => import("@/components/AndrahandsgastExcelImportDialog"),
+  { ssr: false }
+);
 
 type Props = {
   andrahandsgaster: Andrahandsgast[];
@@ -55,7 +60,13 @@ type Props = {
 type SortableColumn = Exclude<keyof Andrahandsgast, "id">;
 type Order = "asc" | "desc";
 
+const BOENDEFORM_LABELS = {
+  andrahandsgast: "Andrahandsgäst",
+  inneboende: "Inneboende",
+} as const;
+
 const columns: Array<{ key: SortableColumn; label: string }> = [
+  { key: "typ", label: "Boendeform" },
   { key: "lagenhetsnummer", label: "Lägenhetsnummer" },
   { key: "fastighet", label: "Fastighet" },
   { key: "namn", label: "Namn" },
@@ -66,7 +77,7 @@ const columns: Array<{ key: SortableColumn; label: string }> = [
 
 function matchesSearch(row: Andrahandsgast, query: string): boolean {
   if (!query) return true;
-  const haystack = [row.lagenhetsnummer, row.fastighet, row.namn, row.personnummer, row.mejladress, row.telefonnummer]
+  const haystack = [BOENDEFORM_LABELS[row.typ], row.lagenhetsnummer, row.fastighet, row.namn, row.personnummer, row.mejladress, row.telefonnummer]
     .join(" ")
     .toLocaleLowerCase("sv");
   return haystack.includes(query);
@@ -91,7 +102,7 @@ export default function AndrahandsgasterTable({
   const [orderBy, setOrderBy] = useState<SortableColumn>("lagenhetsnummer");
   const [order, setOrder] = useState<Order>("asc");
   const [page, setPage] = useState(0);
-  const [rowsPerPage, setRowsPerPage] = useState(25);
+  const [rowsPerPage, setRowsPerPage] = useState(10);
   const { isVisible, toggle } = useColumnVisibility("andrahandsgaster");
   const visibleColumnDefs = columns.filter((c) => isVisible(c.key));
 
@@ -147,7 +158,9 @@ export default function AndrahandsgasterTable({
     exportRowsToXlsx(
       `andrahandsgaster-${new Date().toISOString().slice(0, 10)}.xlsx`,
       columns.map((c) => c.label),
-      visibleRows.map((row) => columns.map((c) => row[c.key]))
+      visibleRows.map((row) =>
+        columns.map((c) => (c.key === "typ" ? BOENDEFORM_LABELS[row.typ] : row[c.key]))
+      )
     );
   }
 
@@ -180,13 +193,14 @@ export default function AndrahandsgasterTable({
             startIcon={<AddIcon />}
             onClick={openCreateDialog}
           >
-            Lägg till andrahandsgäst
+            Lägg till boende
           </Button>
         </Stack>
       </Stack>
 
       <TextField
-        placeholder="Sök andrahandsgäster..."
+        label="Sök"
+        placeholder="Sök andrahandsgäster och inneboende..."
         value={search}
         onChange={(event) => { setSearch(event.target.value); setPage(0); }}
         size="small"
@@ -206,7 +220,7 @@ export default function AndrahandsgasterTable({
       <Box sx={{ display: { xs: "none", sm: "block" } }}>
       <TableContainer component={Paper} sx={{ overflowX: "auto" }}>
         <Table
-          aria-label="Andrahandsgäster"
+          aria-label="Andrahandsgäster och inneboende"
           size="small"
           sx={{
             minWidth: 900,
@@ -240,7 +254,7 @@ export default function AndrahandsgasterTable({
               <TableRow>
                 <TableCell colSpan={visibleColumnDefs.length + 2} align="center">
                   {andrahandsgaster.length === 0
-                    ? "Inga andrahandsgäster hittades."
+                    ? "Inga andrahandsgäster eller inneboende hittades."
                     : "Inga träffar för sökningen."}
                 </TableCell>
               </TableRow>
@@ -249,7 +263,9 @@ export default function AndrahandsgasterTable({
                 <TableRow key={row.id}>
                   <TableCell padding="checkbox" />
                   {visibleColumnDefs.map((column) => (
-                    <TableCell key={column.key}>{row[column.key]}</TableCell>
+                    <TableCell key={column.key}>
+                      {column.key === "typ" ? BOENDEFORM_LABELS[row.typ] : row[column.key]}
+                    </TableCell>
                   ))}
                   <TableCell align="right">
                     <IconButton
@@ -289,7 +305,7 @@ export default function AndrahandsgasterTable({
         </Stack>
         {visibleRows.length === 0 ? (
           <Typography variant="body2" color="text.secondary" sx={{ textAlign: "center", py: 4 }}>
-            {andrahandsgaster.length === 0 ? "Inga andrahandsgäster hittades." : "Inga träffar för sökningen."}
+            {andrahandsgaster.length === 0 ? "Inga andrahandsgäster eller inneboende hittades." : "Inga träffar för sökningen."}
           </Typography>
         ) : (
           <Stack spacing={1.5}>
@@ -318,7 +334,9 @@ export default function AndrahandsgasterTable({
                         <Typography variant="caption" color="text.secondary" sx={{ display: "block" }}>
                           {column.label}
                         </Typography>
-                        <Box sx={{ overflowWrap: "break-word" }}>{row[column.key]}</Box>
+                        <Box sx={{ overflowWrap: "break-word" }}>
+                          {column.key === "typ" ? BOENDEFORM_LABELS[row.typ] : row[column.key]}
+                        </Box>
                       </Box>
                     ))}
                   </Box>
@@ -363,8 +381,8 @@ export default function AndrahandsgasterTable({
         onSubmit={handleFormSubmit}
       />
 
-      <Dialog open={!!deletingRow} onClose={() => setDeletingRow(null)}>
-        <DialogTitle>Ta bort andrahandsgäst</DialogTitle>
+      <Dialog open={!!deletingRow} onClose={() => setDeletingRow(null)} fullWidth maxWidth="xs">
+        <DialogTitle>Ta bort {deletingRow ? BOENDEFORM_LABELS[deletingRow.typ].toLocaleLowerCase("sv") : "boende"}</DialogTitle>
         <DialogContent>
           <DialogContentText>
             Är du säker på att du vill ta bort {deletingRow?.namn}?

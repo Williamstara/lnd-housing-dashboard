@@ -125,6 +125,7 @@ async function sanitizeAndrahandsgastInput(
     personnummer: input.personnummer.trim(),
     mejladress: input.mejladress.trim(),
     telefonnummer: input.telefonnummer.trim(),
+    typ: input.typ === "inneboende" ? "inneboende" : "andrahandsgast",
   };
   if (Object.values(trimmed).some((value) => value === "")) {
     throw new Error("Alla fält måste fyllas i.");
@@ -170,6 +171,7 @@ export async function importAndrahandsgasterFromExcelAction(
       personnummer: row.personnummer.trim(),
       mejladress: row.mejladress.trim(),
       telefonnummer: row.telefonnummer.trim(),
+      typ: row.typ === "inneboende" ? "inneboende" : "andrahandsgast",
     };
     if (!fastigheter.includes(trimmed.fastighet)) {
       throw new Error(`Okänd fastighet: "${trimmed.fastighet}"`);
@@ -194,7 +196,7 @@ export async function createAndrahandsgastLaundryAccountAction(data: {
   lagenhetsnummer: string;
 }): Promise<{ replaced: boolean }> {
   await requireUser();
-  if (!data.mejladress) throw new Error("Andrahandsgästen saknar mejladress.");
+  if (!data.mejladress) throw new Error("Personen saknar mejladress.");
 
   const result = await createLaundryAccount(
     data.namn,

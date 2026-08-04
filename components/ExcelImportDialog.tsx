@@ -10,16 +10,11 @@ import Dialog from "@mui/material/Dialog";
 import DialogActions from "@mui/material/DialogActions";
 import DialogContent from "@mui/material/DialogContent";
 import DialogTitle from "@mui/material/DialogTitle";
-import Table from "@mui/material/Table";
-import TableBody from "@mui/material/TableBody";
-import TableCell from "@mui/material/TableCell";
-import TableContainer from "@mui/material/TableContainer";
-import TableHead from "@mui/material/TableHead";
-import TableRow from "@mui/material/TableRow";
 import Typography from "@mui/material/Typography";
 import { read, utils } from "xlsx";
 import { importTenantsFromExcelAction } from "@/app/hyresgastlista/actions";
 import type { TenantInput } from "@/lib/tenants";
+import ResponsivePreview from "@/components/ResponsivePreview";
 import {
   describeMapping,
   mappingToLookup,
@@ -183,32 +178,18 @@ export default function ExcelImportDialog({ open, fastigheter, aliases, mapping,
             <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
               Befintliga hyresgäster med samma lägenhetsnummer uppdateras. Nya läggs till.
             </Typography>
-            <TableContainer sx={{ maxHeight: 360 }}>
-              <Table size="small" stickyHeader>
-                <TableHead>
-                  <TableRow>
-                    <TableCell>Lgh-nr</TableCell>
-                    <TableCell>Fastighet</TableCell>
-                    <TableCell>Namn</TableCell>
-                    <TableCell>Personnummer</TableCell>
-                    <TableCell>E-post</TableCell>
-                    <TableCell>Telefon</TableCell>
-                  </TableRow>
-                </TableHead>
-                <TableBody>
-                  {rows.map((row, i) => (
-                    <TableRow key={i}>
-                      <TableCell>{row.lagenhetsnummer}</TableCell>
-                      <TableCell>{row.fastighet}</TableCell>
-                      <TableCell>{row.namn}</TableCell>
-                      <TableCell>{row.personnummer}</TableCell>
-                      <TableCell>{row.mejladress}</TableCell>
-                      <TableCell>{row.telefonnummer}</TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </TableContainer>
+            <ResponsivePreview
+              ariaLabel="Förhandsgranskning av hyresgäster"
+              rows={rows}
+              columns={[
+                { key: "lagenhetsnummer", label: "Lgh-nr", render: (row) => row.lagenhetsnummer },
+                { key: "fastighet", label: "Fastighet", render: (row) => row.fastighet },
+                { key: "namn", label: "Namn", render: (row) => row.namn },
+                { key: "personnummer", label: "Personnummer", render: (row) => row.personnummer },
+                { key: "mejladress", label: "E-post", render: (row) => row.mejladress },
+                { key: "telefonnummer", label: "Telefon", render: (row) => row.telefonnummer },
+              ]}
+            />
           </>
         )}
 

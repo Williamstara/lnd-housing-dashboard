@@ -184,3 +184,131 @@ maintained.
   spreadsheets with mixed-quality data.
 - **Files**: `components/ApartmentExcelImport.tsx`,
   `app/lediga-lagenheter/actions.ts`.
+
+---
+
+## Responsive data views share one filtered and paginated row set
+
+- **Date**: 2026-08-04
+- **Status**: accepted
+- **Context**: Desktop tables were useful but caused horizontal scrolling on
+  phones, while a 25-row default made screens unnecessarily long.
+- **Decision**: Keep MUI tables on larger screens and render rows as labeled
+  MUI cards on phones. Both views share search, sort, page, and rows-per-page
+  state, defaulting to 10. Excel previews reuse `ResponsivePreview`.
+- **Reason**: Preserves desktop scanability without duplicating data logic.
+- **Consequences**: New row-oriented screens must not maintain independent
+  desktop/mobile pagination.
+- **Files**: `components/*Table.tsx`, `components/ResponsivePreview.tsx`,
+  `app/mallar/page.tsx`, `components/AdminUsersPanel.tsx`.
+
+---
+
+## Desktop navigation is a left rail; mobile navigation remains a drawer
+
+- **Date**: 2026-08-04
+- **Status**: accepted
+- **Context**: The top navigation competed with page actions and did not
+  scale cleanly across the application's many destinations.
+- **Decision**: Use a persistent 272 px MUI drawer on desktop, grouped by
+  work area, collapsible to a 72 px icon rail, and a temporary drawer opened
+  from a compact app bar on phones. The collapsed preference is session-local
+  and resets on a full reload.
+- **Reason**: Keeps destinations visible without consuming vertical working
+  space and reuses existing nav-link and role filtering logic.
+- **Consequences**: New routes belong in the existing nav structure and an
+  existing work-area group where possible.
+- **Files**: `components/NavBar.tsx`, `app/layout.tsx`,
+  `app/_components/nav-grid.tsx`.
+
+---
+
+## Statistik gained a "bostäder per typ" chart and a "lägenheter per status" chart, kept as a symmetric pair
+
+- **Date**: 2026-08-04
+- **Status**: accepted
+- **Context**: The user wanted a chart of how many rental objects exist per
+  `RentalObject.typ` value (e.g. `korridorrum`, `lägenhet`, `dubblett`,
+  `pentry`) — free text set at import time, not a fixed enum. Adding one
+  chart would have made the `Statistik` grid's last row asymmetric (7 cards
+  instead of an even number), so a second chart was added alongside it.
+  First attempt paired it with a `getPlanritningstackning` floor-plan-coverage
+  donut; the user explicitly rejected that metric as "a bad metric" (a
+  data-completeness stat, not something actionable) and asked for
+  alternatives. Replaced with the user's pick from that list.
+- **Decision**: `getBestandsoversikt` (`lib/statistik.ts`) now also returns
+  `bostaderPerTyp` (grouped by trimmed `typ`, blank falls back to "Okänt",
+  sorted by count descending), rendered as a `BarChart` next to "Bostäder
+  per fastighet". A new `getLagenheterPerStatus(vacantApartments)` counts
+  `Apartment.status` (the fixed `ApartmentStatus` enum, not free text) across
+  the already-fetched `vacantApartments` array (which already excludes
+  `arkiverad`), ordered `ledig → kontaktad → redo_for_kontrakt` to read as
+  the leasing funnel, rendered as a `BarChart` titled "Lägenheter per
+  status".
+- **Reason**: Matches the existing `bostaderPerFastighet` bar-chart pattern
+  (reuse over invention). `lagenheterPerStatus` was chosen over the
+  rejected floor-plan metric because it's actionable pipeline visibility,
+  uses a fixed enum (no data-quality risk the way `typ` has), and needed no
+  new data fetch (`vacantApartments` was already loaded for `Uthyrningsgrad`).
+- **Consequences**: Real `LND` data shows `typ` has inconsistent casing and
+  placeholder-looking values (`"Dubblett"` vs `"dubblett"` counted as
+  separate categories; bare `"1"`/`"2"` values with no clear meaning) — this
+  is a source-data quality issue surfaced by the new chart, not a bug in it.
+  See `docs/TODO.md`. Separately, `lagenheterPerStatus` may render as a
+  single short bar if a nation currently has no apartments in `kontaktad`/
+  `redo_for_kontrakt` — expected given real, sparse pipeline data, not a bug,
+  though it can look visually unbalanced next to a taller sibling card in
+  the same grid row.
+- **Files**: `lib/statistik.ts`, `components/StatistikOverview.tsx`,
+  `app/statistik/page.tsx`.
+
+---
+
+## `DonutChart`'s segment `<title>` must be one template-string child, not a JSX text/expression mix
+
+- **Date**: 2026-08-04
+- **Status**: accepted
+- **Context**: While adding a (since-replaced, see the decision above) floor-
+  plan-coverage donut chart and verifying it in a real authenticated browser
+  session (the first time any agent had browser access during this whole
+  responsive-redesign milestone), a hydration error appeared: `<title>
+  {s.label}: {s.value}}
+  </title>` in `components/charts/DonutChart.tsx` produces a 3-child JSX
+  array (`s.label`, `": "`, `s.value`), which React cannot serialize
+  identically between SSR and hydration for a `<title>` element (confirmed
+  via the exact server-side React warning: "React expects the `children`
+  prop of `<title>` tags to be a string... found an Array with length 3").
+  This is a pre-existing bug affecting every `DonutChart` usage, including
+  the already-shipped `Uthyrningsgrad` chart — it had simply never been
+  rendered in a real browser before.
+- **Decision**: Changed the `<title>` to a single template-string child:
+  `` <title>{`${s.label}: ${s.value}`}</title> ``. Fixed once in the shared
+  component rather than in each chart that uses it.
+- **Reason**: Root-cause fix matches ponytail's rule — one guard/fix in the
+  shared function beats patching every caller, and every current and future
+  `DonutChart` caller is affected identically.
+- **Consequences**: Any future SVG `<title>`/`<text>` content in this
+  codebase should use a single template-string child, not multiple
+  JSX children, to avoid the same class of hydration bug.
+- **Files**: `components/charts/DonutChart.tsx`.
+
+---
+
+## Residents are explicit and are included in total tenant statistics
+
+- **Date**: 2026-08-04
+- **Status**: accepted
+- **Context**: The `andrahandsgaster` collection represented both genuine
+  second-hand tenants and residents without distinguishing them.
+- **Decision**: Add `typ: "andrahandsgast" | "inneboende"` throughout the
+  model and UI. Treat missing legacy values as `andrahandsgast`. Total
+  tenants are primary tenants plus `inneboende`; second-hand tenants are
+  reported separately.
+- **Reason**: Matches the user's operational definition without migrating or
+  misclassifying existing records.
+- **Consequences**: Imports default to `andrahandsgast` until explicitly
+  changed. Statistics must preserve the fallback and counting rule.
+- **Files**: `lib/andrahandsgaster.ts`, `app/hyresgastlista/actions.ts`,
+  `components/AndrahandsgastFormDialog.tsx`,
+  `components/AndrahandsgasterTable.tsx`, `lib/statistik.ts`,
+  `components/StatistikOverview.tsx`.

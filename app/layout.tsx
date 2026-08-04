@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Montserrat } from "next/font/google";
 import { AppRouterCacheProvider } from "@mui/material-nextjs/v16-appRouter";
 import CssBaseline from "@mui/material/CssBaseline";
+import Box from "@mui/material/Box";
 import { ThemeProvider } from "@mui/material/styles";
 import { Auth0Provider } from "@auth0/nextjs-auth0";
 import { auth0 } from "@/lib/auth0";
@@ -33,14 +34,42 @@ export default async function RootLayout({
   const session = await auth0.getSession();
 
   return (
-    <html lang="sv" className={`${montserrat.variable} h-full antialiased`}>
-      <body className="min-h-full flex flex-col">
+    <html lang="sv" className={montserrat.variable}>
+      <body>
         <AppRouterCacheProvider options={{ key: "mui" }}>
           <ThemeProvider theme={theme}>
             <CssBaseline />
             <Auth0Provider user={session?.user}>
-              <NavBar />
-              <main className="flex flex-1 flex-col">{children}</main>
+              <Box sx={{ display: "flex", minHeight: "100dvh", bgcolor: "background.default" }}>
+                <Box
+                  component="a"
+                  href="#main-content"
+                  sx={{
+                    position: "fixed",
+                    top: 8,
+                    left: 8,
+                    zIndex: 2000,
+                    px: 2,
+                    py: 1,
+                    borderRadius: 1,
+                    bgcolor: "background.paper",
+                    color: "primary.main",
+                    transform: "translateY(-150%)",
+                    "&:focus": { transform: "translateY(0)" },
+                  }}
+                >
+                  Hoppa till innehåll
+                </Box>
+                <NavBar />
+                <Box
+                  component="main"
+                  id="main-content"
+                  tabIndex={-1}
+                  sx={{ flex: 1, minWidth: 0, pt: { xs: 8, md: 0 }, bgcolor: "background.default" }}
+                >
+                  {children}
+                </Box>
+              </Box>
             </Auth0Provider>
           </ThemeProvider>
         </AppRouterCacheProvider>

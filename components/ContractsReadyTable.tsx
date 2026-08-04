@@ -157,7 +157,7 @@ export default function ContractsReadyTable({ apartments }: Props) {
   const [orderBy, setOrderBy] = useState<ColumnKey>("ledigFrom");
   const [order, setOrder] = useState<Order>("asc");
   const [page, setPage] = useState(0);
-  const [rowsPerPage, setRowsPerPage] = useState(25);
+  const [rowsPerPage, setRowsPerPage] = useState(10);
 
   const [archiveDate, setArchiveDate] = useState("");
   const [archiveMessage, setArchiveMessage] = useState<string | null>(null);
@@ -325,6 +325,7 @@ export default function ContractsReadyTable({ apartments }: Props) {
         sx={{ alignItems: "center", gap: 2, mb: 2, flexWrap: "wrap" }}
       >
         <TextField
+          label="Sök"
           placeholder="Sök..."
           value={search}
           onChange={(event: ChangeEvent<HTMLInputElement>) => {
@@ -527,6 +528,8 @@ export default function ContractsReadyTable({ apartments }: Props) {
       <Dialog
         open={!!removingApartment}
         onClose={() => setRemovingApartment(null)}
+        fullWidth
+        maxWidth="xs"
       >
         <DialogTitle>Ta bort från Redo för kontrakt</DialogTitle>
         <DialogContent>

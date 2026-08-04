@@ -52,7 +52,7 @@ const HyresgastlistaPage = auth0.withPageAuthRequired(
     );
 
     return (
-      <Container maxWidth={false} sx={{ py: 6, width: "80%", mx: "auto" }}>
+      <Container maxWidth={false} sx={{ py: { xs: 3, md: 4 } }}>
         {error && (
           <Alert severity="warning" sx={{ mb: 3 }}>
             {error}

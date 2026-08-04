@@ -4,8 +4,12 @@ import { getLedigaLagenheter } from "@/lib/apartments";
 import { getApartmentsAvailableForManualEntry, getMissedRentRows, syncMissedRent } from "@/lib/missed-rent";
 import { requireNationsIdOrRedirect } from "@/lib/nations";
 import { getRentalObjects } from "@/lib/rentalobjects";
+import { getTenants } from "@/lib/tenants";
+import { getAndrahandsgaster } from "@/lib/andrahandsgaster";
 import {
+  getBestandsoversikt,
   getGenerelltSkick,
+  getLagenheterPerStatus,
   getMissedIncomeByYear,
   getTotalaIntakter,
   getUthyrningsgrad,
@@ -19,20 +23,24 @@ const StatistikPage = auth0.withPageAuthRequired(
     const nationsId = requireNationsIdOrRedirect(session?.user);
     await syncMissedRent(nationsId);
 
-    const [rows, rentalObjects, vacantApartments, availableApartments] = await Promise.all([
+    const [rows, rentalObjects, vacantApartments, availableApartments, tenants, andrahandsgaster] = await Promise.all([
       getMissedRentRows(nationsId),
       getRentalObjects(nationsId),
       getLedigaLagenheter(nationsId),
       getApartmentsAvailableForManualEntry(nationsId),
+      getTenants(nationsId),
+      getAndrahandsgaster(nationsId),
     ]);
 
     return (
-      <Container maxWidth="xl" sx={{ py: 6 }}>
+      <Container maxWidth={false} sx={{ py: { xs: 3, md: 4 } }}>
         <StatistikOverview
           skick={getGenerelltSkick(rentalObjects)}
           totalaIntakter={getTotalaIntakter(rentalObjects)}
           uthyrningsgrad={getUthyrningsgrad(rentalObjects, vacantApartments, rows)}
           missedIncomeByYear={getMissedIncomeByYear(rows)}
+          bestandsoversikt={getBestandsoversikt(rentalObjects, tenants, andrahandsgaster)}
+          lagenheterPerStatus={getLagenheterPerStatus(vacantApartments)}
         />
         <MissedRentTable rows={rows} availableApartments={availableApartments} />
       </Container>

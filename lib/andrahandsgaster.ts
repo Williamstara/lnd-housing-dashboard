@@ -10,7 +10,10 @@ export type Andrahandsgast = {
   personnummer: string;
   mejladress: string;
   telefonnummer: string;
+  typ: Boendeform;
 };
+
+export type Boendeform = "andrahandsgast" | "inneboende";
 
 export type AndrahandsgastInput = {
   lagenhetsnummer: string;
@@ -19,6 +22,7 @@ export type AndrahandsgastInput = {
   personnummer: string;
   mejladress: string;
   telefonnummer: string;
+  typ: Boendeform;
 };
 
 type AndrahandsgastDocument = AndrahandsgastInput & { nationsID: string };
@@ -43,6 +47,7 @@ export async function getAndrahandsgaster(nationsId: string): Promise<Andrahands
     personnummer: doc.personnummer ?? "",
     mejladress: doc.mejladress,
     telefonnummer: doc.telefonnummer,
+    typ: doc.typ ?? "andrahandsgast",
   }));
 }
 
