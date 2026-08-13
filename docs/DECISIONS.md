@@ -8,6 +8,40 @@ maintained.
 
 ---
 
+## Raw Postgres/PostgREST errors reaching the browser are a hardening item, not a tracked vulnerability
+
+- **Date**: 2026-08-13
+- **Status**: accepted
+- **Context**: A post-migration security audit (`docs/SAAS-READINESS-ROADMAP.md`'s
+  security-audit section) found that every `lib/*.ts` function does
+  `if (error) throw error`, and the app's established component pattern
+  (`err instanceof Error ? err.message : "..."`) displays that raw
+  `PostgrestError` message directly to the user — which can include
+  Postgres constraint/table/column names (e.g. a duplicate-`lagenhetsnummer`
+  unique-violation in `/databas`). Confirmed as a real regression from the
+  MongoDB version (no such DB-level unique constraint existed before this
+  migration).
+- **Decision**: Not treated as a security vulnerability — independent
+  false-positive review scored it 3/10 against a strict
+  concrete-exploitability bar, since what leaks is internal schema naming,
+  not PII/secrets/cross-tenant data, to a user already authenticated into
+  that same tenant. Kept as a **non-urgent hardening recommendation**
+  instead: catch `PostgrestError` at the `lib/*.ts` boundary and convert it
+  to a fixed Swedish message or small allow-listed set of known conditions.
+- **Reason**: Recorded so a future agent doesn't re-flag this as a security
+  finding without the context of why it was deliberately downgraded, and
+  doesn't need to re-run the full audit process to reach the same
+  conclusion.
+- **Consequences**: If this is ever fixed, it's a UX/hardening task (better
+  error messages), not a security patch — no urgency, no disclosure
+  process needed. If a *future* change to this pattern introduces something
+  that DOES leak PII or cross-tenant data through an error message, that
+  would be a new, different finding — this decision only covers the
+  schema-naming-exposure shape described here.
+- **Files**: every `lib/*.ts` file (systemic pattern, not one file).
+
+---
+
 ## MongoDB-to-Supabase migration is complete
 
 - **Date**: 2026-08-13

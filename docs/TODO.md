@@ -32,9 +32,17 @@ state and the exact next step.
 
 ## Later
 
+- **See `docs/SAAS-READINESS-ROADMAP.md`** for a larger, tiered roadmap of
+  what's hardcoded/too coupled to nation `LND`'s specific workflow, written
+  after the Mongo→Supabase migration — not urgent (one customer today), but
+  worth consulting before onboarding a second organization with a
+  materially different workflow. Ends with a security-audit section (2026-08-13,
+  zero confirmed vulnerabilities, one hardening recommendation).
 - **Fix stale building-name lookup tables** in `lib/laundry-account.ts` and
   `lib/rentalobjects.ts`. Prefer the existing `fastigheter.prefixes` data
-  over another hardcoded map.
+  over another hardcoded map. (Also tracked as item 3.3 in
+  `docs/SAAS-READINESS-ROADMAP.md` — do this regardless of SaaS plans, it's
+  a live correctness bug for `LND` today.)
 - **Add `GMAIL_CLIENT_ID` and `GMAIL_CLIENT_SECRET` to
   `.env.local.example`.** They are read by the Gmail OAuth routes but absent
   from the example.

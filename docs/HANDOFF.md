@@ -6,10 +6,14 @@ were verified immediately before writing this file.
 ## Current objective
 
 None — the Mongo→Supabase migration (see `docs/SESSION.md`) is complete and
-verified. The next objective is whatever the user asks for next; the
-pre-existing, unrelated items in `docs/TODO.md` (responsive-UX QA pass,
-`RentalObject.typ` data cleanup, apartments Excel-import mapping) are still
-outstanding and predate this migration.
+verified, and a follow-on SaaS-readiness roadmap + security audit
+(`docs/SAAS-READINESS-ROADMAP.md`, see `docs/SESSION.md`'s "Follow-on work
+this session" section) has also been written. The next objective is
+whatever the user asks for next; the pre-existing, unrelated items in
+`docs/TODO.md` (responsive-UX QA pass, `RentalObject.typ` data cleanup,
+apartments Excel-import mapping) are still outstanding and predate this
+migration — and everything in `docs/SAAS-READINESS-ROADMAP.md` is planned,
+not implemented.
 
 ## Completed this session
 
@@ -34,6 +38,14 @@ blockers are documented there (missing default `GRANT`s on
 migration-created tables, the `role: "authenticated"` Auth0 claim
 requirement, and `@supabase/ssr` being incompatible with third-party
 `accessToken` mode) that are easy to rediscover the hard way otherwise.
+
+5. After the migration was verified, wrote `docs/SAAS-READINESS-ROADMAP.md`
+   — a 7-tier "what's hardcoded/too coupled to LND's specific workflow"
+   roadmap (from two parallel codebase audits) plus a full security audit
+   as its final section (3-phase identify/filter/confidence-gate process,
+   zero confirmed vulnerabilities, one non-urgent hardening recommendation
+   re: raw Postgres errors reaching the browser). Purely planning — nothing
+   in that file has been implemented. `docs/TODO.md` points to it.
 
 ## Validation status
 
@@ -89,6 +101,9 @@ machine this session ran on, logging to `/tmp/lnd-dev-server.log`.
    fastighet-name lookup tables, deliberately not touched here (see the
    migration plan's explicit "flagged, not bundled" decision, preserved in
    the DECISIONS.md schema-design entries from this session).
+5. `docs/SAAS-READINESS-ROADMAP.md` is the entry point for any future
+   "make this sellable to a second organization" work — read it before
+   re-auditing the codebase for hardcoded/LND-specific assumptions again.
 
 ## Blockers
 

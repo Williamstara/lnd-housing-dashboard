@@ -92,6 +92,31 @@ pass, `RentalObject.typ` data-quality cleanup, apartments Excel-import
 mapping) — worth a quick sanity pass on the Postgres-backed app since they
 predate this migration, but nothing about them is migration-specific.
 
+## Follow-on work this session (after the migration itself)
+
+Once the migration was verified complete, the user asked for a
+SaaS-readiness audit — what's still hardcoded/too coupled to nation `LND`'s
+specific workflow, beyond what the migration touched — plus a full security
+audit, both as durable planning artifacts for a future session (not
+implemented now):
+
+- **`docs/SAAS-READINESS-ROADMAP.md`** (new file) — a 7-tier roadmap built
+  from two parallel codebase audits (UI/components layer, `lib/*.ts` +
+  Server Actions layer) plus the six items already known from migration
+  planning. Covers everything from schema-level assumptions (the
+  `fastighet`/`lagenhetsnummer` property hierarchy, single-`nationsID`-
+  per-user) down to minor polish (hardcoded key-handover UI). See the file
+  itself for the full breakdown and suggested implementation sequence.
+- **Security audit**, appended as the roadmap file's final section: a
+  3-phase identify → independent-false-positive-filter → confidence-gate
+  process (via the `security-review` skill) over the full migration diff.
+  Zero findings survived the confidence bar — two candidates (a Storage
+  path-filename concern, raw Postgres errors reaching the browser) were
+  investigated and ruled out as not concretely exploitable, though the
+  second is kept as a non-urgent hardening recommendation.
+- `docs/TODO.md` now points to the roadmap file; both are also saved to
+  memory (`project-customization-roadmap`) for cross-session recall.
+
 ## Out-of-milestone notes
 
 - **A MongoDB connection string with an embedded password was accidentally

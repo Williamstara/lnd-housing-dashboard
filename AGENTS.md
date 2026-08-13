@@ -327,6 +327,12 @@ Before considering any change complete:
   after every meaningful work session.
 - `docs/DECISIONS.md` — durable, non-obvious decisions.
 - `docs/TODO.md` — concrete, verified outstanding work.
+- `docs/SAAS-READINESS-ROADMAP.md` — a longer-horizon, not-yet-implemented
+  roadmap of what's hardcoded/too coupled to nation `LND`'s specific
+  workflow, for if/when a second organization with a different workflow is
+  onboarded. Not part of the "read every session" list above — consult it
+  specifically for multi-tenant/customization/permission-model work, not
+  routine changes.
 
 ## Standard Agent Workflow
 
