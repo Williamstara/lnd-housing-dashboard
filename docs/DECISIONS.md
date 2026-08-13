@@ -8,6 +8,188 @@ maintained.
 
 ---
 
+## MongoDB-to-Supabase migration is complete
+
+- **Date**: 2026-08-13
+- **Status**: accepted
+- **Context**: The app ran on MongoDB with app-layer-only tenant isolation
+  (see the entries below for the specific blockers hit along the way). The
+  full migration — schema, RLS, data migration, and converting every
+  `lib/*.ts` file — is described across this file's other 2026-08-13
+  entries and `docs/SESSION.md`.
+- **Decision**: `mongodb` and the unused `@supabase/ssr` dependency were
+  removed from `package.json`; `lib/mongodb.ts` was deleted;
+  `MONGODB_URI`/`MONGODB_DB` were removed from `.env.local`. `AGENTS.md` and
+  `docs/ARCHITECTURE.md` were rewritten to describe the Postgres/Supabase
+  architecture as current, not MongoDB.
+- **Reason**: Nothing in the app reads from MongoDB after every `lib/*.ts`
+  file was converted (verified: `grep` for `mongodb`/`MONGODB` imports
+  across `lib/`, `app/`, `components/` returns nothing but `lib/mongodb.ts`
+  itself, which was then deleted) — keeping the dependency and unused env
+  vars around serves no purpose once every read path is gone.
+- **Consequences**: There is no MongoDB fallback anymore. If a bug surfaces
+  that seems related to data that "should still be in Mongo," it isn't —
+  the one-time migration script (deleted after use, per
+  `scripts/backfill-nations-id.mjs`'s established precedent) already moved
+  everything real that existed at migration time. `scripts/backfill-nations-id.mjs`
+  and `scripts/fix-data-quality.mjs` still exist as historical, never-rerun
+  artifacts of the pre-Supabase era and still `import` from `mongodb` —
+  they will fail if actually executed now that the package is gone, which
+  is fine (they're not meant to be re-run) but worth knowing if someone
+  stumbles on them.
+- **Files**: `package.json`, `lib/mongodb.ts` (deleted), `.env.local`,
+  `AGENTS.md`, `docs/ARCHITECTURE.md`.
+
+---
+
+## `missed-rent.ts` surfaced a real cross-database ID mismatch during the phased conversion — expected, not a bug
+
+- **Date**: 2026-08-13
+- **Status**: accepted (informational — a gotcha for any future phased
+  migration in this repo, not an ongoing issue)
+- **Context**: Converting `lib/*.ts` files one at a time (rather than all at
+  once) means, for the files converted first, some *other* file they
+  cross-reference is still reading from MongoDB. Concretely: after
+  converting `lib/apartments.ts` to Postgres (new UUID primary keys) but
+  before converting `lib/missed-rent.ts`, `/lediga-lagenheter` crashed with
+  `invalid input syntax for type uuid: "6a6b74d57dc21aaf00bb0007"` — a
+  Mongo ObjectId string, still being read from the not-yet-converted
+  `missed-rent` collection's `apartmentId` field, was passed into the
+  now-Postgres `getApartmentsByIds`, which expects real UUIDs.
+- **Decision**: No code fix was needed beyond continuing the planned
+  conversion order — `rentalobjects.ts` then `missed-rent.ts` were
+  converted next specifically because `missed-rent.ts` cross-references
+  both, exactly as the original migration plan's phase ordering called for.
+  Once `missed-rent.ts` itself moved to Postgres (reading `apartment_id`/
+  `rental_object_id` as real UUIDs, populated correctly by the earlier data
+  migration script's in-memory ID-mapping), the error was gone.
+- **Reason**: This is the expected shape of a collection-by-collection
+  migration, not a design flaw — any two `lib/*.ts` files with a
+  cross-reference must be converted in the same "generation" (or the
+  referencing one must go last) or a transient type mismatch like this
+  will surface. Recorded here so a future agent doing a similar phased
+  conversion (of anything, not just this stack) recognizes this failure
+  mode immediately instead of suspecting a data-migration bug.
+- **Consequences**: None ongoing — purely a mid-migration transient state.
+  Worth remembering if `docs/TODO.md`-style future multi-file conversions
+  come up again in this repo.
+- **Files**: `lib/missed-rent.ts`, `lib/apartments.ts`, `lib/rentalobjects.ts`.
+
+---
+
+## Supabase third-party auth requires a plain `role: "authenticated"` claim on the Auth0 ID token — separate from the app's own roles claim
+
+- **Date**: 2026-08-13
+- **Status**: accepted
+- **Context**: While building the Postgres/RLS proof of concept
+  (`lib/supabase-server.ts`, Phase 2 of the Mongo→Supabase migration —
+  see `docs/SESSION.md`), a real, valid, correctly-issued Auth0 ID token
+  (matching issuer, RS256, containing the app's own namespaced
+  `https://lnd-housing-dashboard/nationsID`/`.../roles` claims) was
+  forwarded to Supabase via Third-Party Auth, yet every request was
+  silently executed as the Postgres `anon` role instead of `authenticated`
+  — confirmed by comparing a request with the real token against a request
+  with no `Authorization` header at all: byte-identical responses. No
+  error was raised; RLS/grants just quietly denied everything, which is
+  easy to misdiagnose as a grants or RLS policy bug (both were in fact
+  fine — see the entry below). Root cause (confirmed via Supabase's own
+  support AI, then verified by fix): PostgREST/Supabase's Third-Party Auth
+  determines which Postgres role to execute a request as by reading a
+  **plain, non-namespaced `role` claim** directly on the token. Auth0 does
+  not set this by default, and it is unrelated to this app's own
+  `ROLES_CLAIM` (`ekonomi`/`husvd`/`husforman`/`vaktmastare`/`admin`) —
+  same English word, two unrelated systems (Postgres execution role vs.
+  this app's authorization roles).
+- **Decision**: The Auth0 Post-Login Action that already sets the app's
+  two namespaced claims (see `lib/nations.ts`/`lib/roles.ts` code comments
+  for its expected shape) must also call
+  `api.idToken.setCustomClaim('role', 'authenticated')`. This lives only
+  in the Auth0 dashboard (not version-controlled in this repo, per
+  `docs/ARCHITECTURE.md`'s existing note on the Action). Documented
+  directly in `lib/supabase-server.ts` since nothing in this repo would
+  otherwise reveal the dependency.
+- **Reason**: No alternative exists that keeps Auth0 as the identity
+  provider — this claim is specifically how Supabase's Third-Party Auth
+  integration maps an external, Supabase-unaware JWT issuer onto its own
+  role-based Data API execution model.
+- **Consequences**: A logged-in user's *existing* session/token predates
+  this claim and will keep silently hitting `anon` until they log out and
+  back in (a fresh Auth0 login is required to mint a token with the new
+  claim — this is not something a page refresh or token silent-refresh
+  fixes). If the Auth0 Action is ever edited by hand again, this line must
+  be preserved. If Supabase's third-party auth stops giving `anon`-like
+  silent denials for no visible reason, this claim is the first thing to
+  check.
+- **Files**: `lib/supabase-server.ts` (comment only — the Action itself is
+  external to this repo).
+
+---
+
+## New Postgres tables need explicit `GRANT`s to `authenticated`, separate from RLS policies
+
+- **Date**: 2026-08-13
+- **Status**: accepted
+- **Context**: Tables created via a plain SQL migration (`supabase db
+  push`, not the Supabase dashboard's Table Editor) do **not** automatically
+  receive the base table privileges (`SELECT`/`INSERT`/`UPDATE`/`DELETE`)
+  that Supabase's dashboard-created tables get by default — only
+  `REFERENCES`/`TRIGGER`/`TRUNCATE` are granted automatically. RLS policies
+  only restrict *which rows* an already-permitted operation can see/touch;
+  without the base `GRANT`, Postgres blocks the operation before RLS is
+  even consulted, raising `42501 permission denied for table X` — easy to
+  misread as an RLS policy bug when the policies are in fact correct (this
+  exact error, plus the `role: authenticated` issue above, compounded and
+  had to be debugged separately during the same session).
+- **Decision**: `supabase/migrations/20260813001732_grants.sql` explicitly
+  grants `SELECT, INSERT, UPDATE, DELETE` on every table in `public` to
+  `authenticated`, plus `ALTER DEFAULT PRIVILEGES` so future `create table`
+  migrations don't need to repeat it. `anon` gets nothing — this app has no
+  anonymous access anywhere (every route requires an Auth0 session,
+  enforced in `proxy.ts`).
+- **Reason**: Matches this app's existing model where any authenticated
+  user can attempt any operation and role-specific restrictions are
+  enforced in `app/*/actions.ts`, with RLS enforcing tenant isolation
+  underneath — the base grant just has to exist for RLS to have anything
+  to filter.
+- **Consequences**: Any future table added outside a migration that
+  includes this default-privileges setup (e.g. created directly via the
+  SQL editor in a way that bypasses migration history) may need the same
+  explicit grant repeated.
+- **Files**: `supabase/migrations/20260813001732_grants.sql`.
+
+---
+
+## `@supabase/ssr`'s `createServerClient` is incompatible with third-party `accessToken` mode — use plain `@supabase/supabase-js` `createClient` instead
+
+- **Date**: 2026-08-13
+- **Status**: accepted
+- **Context**: `@supabase/ssr`'s `createServerClient` (v0.12.4) always
+  calls `client.auth.onAuthStateChange(...)` internally, to sync a
+  Supabase-native session to cookies on token refresh. When the client is
+  configured with the `accessToken` option (third-party auth mode, used
+  here to forward the Auth0 ID token), `@supabase/supabase-js` turns
+  `client.auth` into a Proxy that throws on any property access — by
+  design, since third-party auth means Supabase's own native auth flow
+  should never be touched. `createServerClient`'s own internal
+  `onAuthStateChange` call therefore throws immediately at client
+  construction: `"Supabase Client is configured with the accessToken
+  option, accessing supabase.auth.onAuthStateChange is not possible"`.
+- **Decision**: `lib/supabase-server.ts` uses the plain `createClient` from
+  `@supabase/supabase-js` directly, not `createServerClient` from
+  `@supabase/ssr`.
+- **Reason**: `@supabase/ssr`'s entire value-add is the cookie-sync
+  machinery for a Supabase-native session — irrelevant here, since Auth0
+  owns the only session that exists in this app. There is nothing
+  `@supabase/ssr` provides that this server-only, per-request client needs.
+- **Consequences**: `@supabase/ssr` is an installed dependency
+  (`package.json`) that is not actually used anywhere in this codebase —
+  worth removing if no future need for a Supabase-native/cookie-based flow
+  emerges (e.g. this app never gained a reason to run Supabase Auth
+  natively alongside Auth0).
+- **Files**: `lib/supabase-server.ts`.
+
+---
+
 ## The besiktningar "Status" bar became a shared `SegmentedBar` component; Missade hyresintäkter gained a "Per ansvarig" breakdown using it
 
 - **Date**: 2026-08-04

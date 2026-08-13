@@ -1,6 +1,5 @@
 import "server-only";
-import { ObjectId } from "mongodb";
-import { getDb } from "@/lib/mongodb";
+import { createSupabaseServerClient } from "@/lib/supabase-server";
 import {
   getAllApartments,
   getApartmentsByIds,
@@ -15,16 +14,20 @@ import { getRentalObjectsByIds } from "@/lib/rentalobjects";
 // reasons other than a listed vacancy — e.g. an occupied unit that simply
 // never paid). manualLedigFrom only applies to the rentalObjectId case,
 // since RentalObject has no ledigFrom of its own to derive one from.
-type MissedRentDoc = {
-  nationsID: string;
-  apartmentId: string | null;
-  rentalObjectId: string | null;
-  manualLedigFrom: string | null;
-  faktisktInflyttDatum: string | null;
-  ovrigaMissadeKostnader: number;
-  kommentar: string;
-  ansvarig: string;
+// (Enforced in Postgres by missed_rent's XOR check constraint.)
+type MissedRentRecord = {
+  id: string;
+  apartment_id: string | null;
+  rental_object_id: string | null;
+  manual_ledig_from: string | null;
+  faktiskt_inflytt_datum: string | null;
+  ovriga_missade_kostnader: number | null;
+  kommentar: string | null;
+  ansvarig: string | null;
 };
+
+const MISSED_RENT_COLUMNS =
+  "id, apartment_id, rental_object_id, manual_ledig_from, faktiskt_inflytt_datum, ovriga_missade_kostnader, kommentar, ansvarig" as const;
 
 export type MissedRentRow = {
   id: string;
@@ -53,11 +56,6 @@ export type MissedRentUpdateInput = {
   kommentar?: string;
   ansvarig?: string;
 };
-
-async function getCollection() {
-  const db = await getDb();
-  return db.collection<MissedRentDoc>("missed-rent");
-}
 
 function today(): string {
   return new Date().toISOString().slice(0, 10);
@@ -95,61 +93,75 @@ export async function syncMissedRent(nationsId: string): Promise<void> {
   const pastDue = await getApartmentsWithPastLedigFrom(nationsId, today());
   if (pastDue.length === 0) return;
 
-  const col = await getCollection();
-  const existing = await col
-    .find(
-      { nationsID: nationsId, apartmentId: { $in: pastDue.map((a) => a.id) } },
-      { projection: { apartmentId: 1 } }
-    )
-    .toArray();
-  const existingIds = new Set(existing.map((d) => d.apartmentId));
+  const supabase = createSupabaseServerClient();
+  const { data: existing, error: findError } = await supabase
+    .from("missed_rent")
+    .select("apartment_id")
+    .eq("nations_id", nationsId)
+    .in("apartment_id", pastDue.map((a) => a.id));
+  if (findError) throw findError;
+  const existingIds = new Set((existing as { apartment_id: string | null }[]).map((d) => d.apartment_id));
 
   const missing = pastDue.filter((a) => !existingIds.has(a.id));
   if (missing.length === 0) return;
 
-  await col.insertMany(
+  const { error } = await supabase.from("missed_rent").insert(
     missing.map((a) => ({
-      nationsID: nationsId,
-      apartmentId: a.id,
-      rentalObjectId: null,
-      manualLedigFrom: null,
-      faktisktInflyttDatum: null,
-      ovrigaMissadeKostnader: 0,
+      nations_id: nationsId,
+      apartment_id: a.id,
+      rental_object_id: null,
+      manual_ledig_from: null,
+      faktiskt_inflytt_datum: null,
+      ovriga_missade_kostnader: 0,
       kommentar: "",
       ansvarig: "",
     }))
   );
+  if (error) throw error;
 }
 
 // Apartments that don't already have a missed-rent row — the pick-list for
 // manually adding one.
 export async function getApartmentsAvailableForManualEntry(nationsId: string): Promise<Apartment[]> {
-  const [apartments, col] = await Promise.all([getAllApartments(nationsId), getCollection()]);
-  const tracked = await col
-    .find({ nationsID: nationsId }, { projection: { apartmentId: 1 } })
-    .toArray();
-  const trackedIds = new Set(tracked.map((d) => d.apartmentId).filter((id): id is string => !!id));
+  const supabase = createSupabaseServerClient();
+  const [apartments, tracked] = await Promise.all([
+    getAllApartments(nationsId),
+    supabase.from("missed_rent").select("apartment_id").eq("nations_id", nationsId),
+  ]);
+  if (tracked.error) throw tracked.error;
+  const trackedIds = new Set(
+    (tracked.data as { apartment_id: string | null }[])
+      .map((d) => d.apartment_id)
+      .filter((id): id is string => !!id)
+  );
   return apartments.filter((a) => !trackedIds.has(a.id));
 }
 
 // Manually flags an apartment as a missed-rent case — e.g. a contract with
 // wrong numbers, discovered outside the automatic ledig-fr.o.m.-passed sync.
 export async function createManualMissedRent(nationsId: string, apartmentId: string): Promise<void> {
-  const col = await getCollection();
-  const existing = await col.findOne({ nationsID: nationsId, apartmentId });
+  const supabase = createSupabaseServerClient();
+  const { data: existing, error: findError } = await supabase
+    .from("missed_rent")
+    .select("id")
+    .eq("nations_id", nationsId)
+    .eq("apartment_id", apartmentId)
+    .maybeSingle();
+  if (findError) throw findError;
   if (existing) {
     throw new Error("Den här lägenheten finns redan i listan över missade hyror.");
   }
-  await col.insertOne({
-    nationsID: nationsId,
-    apartmentId,
-    rentalObjectId: null,
-    manualLedigFrom: null,
-    faktisktInflyttDatum: null,
-    ovrigaMissadeKostnader: 0,
+  const { error } = await supabase.from("missed_rent").insert({
+    nations_id: nationsId,
+    apartment_id: apartmentId,
+    rental_object_id: null,
+    manual_ledig_from: null,
+    faktiskt_inflytt_datum: null,
+    ovriga_missade_kostnader: 0,
     kommentar: "",
     ansvarig: "",
   });
+  if (error) throw error;
 }
 
 // A rental object may have no Apartment record at all (e.g. it's currently
@@ -163,30 +175,42 @@ export async function createManualMissedRentFromRentalObject(
   rentalObjectId: string,
   missedSince: string
 ): Promise<void> {
-  const col = await getCollection();
-  const existing = await col.findOne({ nationsID: nationsId, rentalObjectId });
+  const supabase = createSupabaseServerClient();
+  const { data: existing, error: findError } = await supabase
+    .from("missed_rent")
+    .select("id")
+    .eq("nations_id", nationsId)
+    .eq("rental_object_id", rentalObjectId)
+    .maybeSingle();
+  if (findError) throw findError;
   if (existing) {
     throw new Error("Den här lägenheten finns redan i listan över missade hyror.");
   }
-  await col.insertOne({
-    nationsID: nationsId,
-    apartmentId: null,
-    rentalObjectId,
-    manualLedigFrom: missedSince,
-    faktisktInflyttDatum: null,
-    ovrigaMissadeKostnader: 0,
+  const { error } = await supabase.from("missed_rent").insert({
+    nations_id: nationsId,
+    apartment_id: null,
+    rental_object_id: rentalObjectId,
+    manual_ledig_from: missedSince,
+    faktiskt_inflytt_datum: null,
+    ovriga_missade_kostnader: 0,
     kommentar: "",
     ansvarig: "",
   });
+  if (error) throw error;
 }
 
 export async function getMissedRentRows(nationsId: string): Promise<MissedRentRow[]> {
-  const col = await getCollection();
-  const docs = await col.find({ nationsID: nationsId }).toArray();
+  const supabase = createSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("missed_rent")
+    .select(MISSED_RENT_COLUMNS)
+    .eq("nations_id", nationsId);
+  if (error) throw error;
+  const docs = data as MissedRentRecord[];
   if (docs.length === 0) return [];
 
-  const apartmentIds = docs.filter((d) => d.apartmentId).map((d) => d.apartmentId!);
-  const rentalObjectIds = docs.filter((d) => d.rentalObjectId).map((d) => d.rentalObjectId!);
+  const apartmentIds = docs.filter((d) => d.apartment_id).map((d) => d.apartment_id!);
+  const rentalObjectIds = docs.filter((d) => d.rental_object_id).map((d) => d.rental_object_id!);
   const [apartments, rentalObjects] = await Promise.all([
     getApartmentsByIds(nationsId, apartmentIds),
     getRentalObjectsByIds(nationsId, rentalObjectIds),
@@ -206,8 +230,8 @@ export async function getMissedRentRows(nationsId: string): Promise<MissedRentRo
     let arshyraMedRed: number;
     let manadshyra: number;
 
-    if (doc.apartmentId) {
-      const apartment = apartmentById.get(doc.apartmentId);
+    if (doc.apartment_id) {
+      const apartment = apartmentById.get(doc.apartment_id);
       if (!apartment) continue; // apartment was deleted since — skip defensively
       source = "apartment";
       lagenhetsnummer = apartment.lagenhetsnummer;
@@ -218,13 +242,13 @@ export async function getMissedRentRows(nationsId: string): Promise<MissedRentRo
       hyresreduktion = apartment.hyresreduktion;
       arshyraMedRed = apartment.arshyraMedRed;
       manadshyra = apartment.manadshyra;
-    } else if (doc.rentalObjectId) {
-      const rentalObject = rentalObjectById.get(doc.rentalObjectId);
+    } else if (doc.rental_object_id) {
+      const rentalObject = rentalObjectById.get(doc.rental_object_id);
       if (!rentalObject) continue; // rental object was deleted since — skip defensively
       source = "databas";
       lagenhetsnummer = rentalObject.lagenhetsnummer;
       fastighet = rentalObject.fastighet;
-      ledigFrom = doc.manualLedigFrom ?? today();
+      ledigFrom = doc.manual_ledig_from ?? today();
       arshyra = rentalObject.malbildshyra ?? 0;
       hyresrabatt = rentalObject.hyresrabatt ?? 0;
       hyresreduktion = rentalObject.hyresred ?? 0;
@@ -234,20 +258,20 @@ export async function getMissedRentRows(nationsId: string): Promise<MissedRentRo
       continue; // malformed doc — neither reference set
     }
 
-    const endDate = doc.faktisktInflyttDatum ?? today();
+    const endDate = doc.faktiskt_inflytt_datum ?? today();
     const missedMonths = monthsBetween(ledigFrom, endDate);
     const missadIntakt = Math.round(manadshyra * missedMonths);
-    const ovrigaMissadeKostnader = doc.ovrigaMissadeKostnader ?? 0;
+    const ovrigaMissadeKostnader = doc.ovriga_missade_kostnader ?? 0;
 
     rows.push({
-      id: doc._id.toString(),
-      apartmentId: doc.apartmentId,
-      rentalObjectId: doc.rentalObjectId,
+      id: doc.id,
+      apartmentId: doc.apartment_id,
+      rentalObjectId: doc.rental_object_id,
       source,
       lagenhetsnummer,
       fastighet,
       ledigFrom,
-      faktisktInflyttDatum: doc.faktisktInflyttDatum,
+      faktisktInflyttDatum: doc.faktiskt_inflytt_datum,
       arshyra,
       hyresrabatt,
       hyresreduktion,
@@ -256,8 +280,8 @@ export async function getMissedRentRows(nationsId: string): Promise<MissedRentRo
       missadIntakt,
       ovrigaMissadeKostnader,
       totalMissat: missadIntakt + ovrigaMissadeKostnader,
-      kommentar: doc.kommentar,
-      ansvarig: doc.ansvarig,
+      kommentar: doc.kommentar ?? "",
+      ansvarig: doc.ansvarig ?? "",
     });
   }
 
@@ -269,11 +293,26 @@ export async function updateMissedRent(
   id: string,
   input: MissedRentUpdateInput
 ): Promise<void> {
-  const col = await getCollection();
-  await col.updateOne({ _id: new ObjectId(id), nationsID: nationsId }, { $set: input });
+  const supabase = createSupabaseServerClient();
+  const update: Record<string, unknown> = {};
+  if ("faktisktInflyttDatum" in input) update.faktiskt_inflytt_datum = input.faktisktInflyttDatum;
+  if ("ovrigaMissadeKostnader" in input) update.ovriga_missade_kostnader = input.ovrigaMissadeKostnader;
+  if ("kommentar" in input) update.kommentar = input.kommentar;
+  if ("ansvarig" in input) update.ansvarig = input.ansvarig;
+  const { error } = await supabase
+    .from("missed_rent")
+    .update(update)
+    .eq("id", id)
+    .eq("nations_id", nationsId);
+  if (error) throw error;
 }
 
 export async function deleteMissedRent(nationsId: string, id: string): Promise<void> {
-  const col = await getCollection();
-  await col.deleteOne({ _id: new ObjectId(id), nationsID: nationsId });
+  const supabase = createSupabaseServerClient();
+  const { error } = await supabase
+    .from("missed_rent")
+    .delete()
+    .eq("id", id)
+    .eq("nations_id", nationsId);
+  if (error) throw error;
 }

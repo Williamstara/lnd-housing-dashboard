@@ -1,5 +1,5 @@
 import "server-only";
-import { getDb } from "@/lib/mongodb";
+import { createSupabaseServerClient } from "@/lib/supabase-server";
 import type {
   FastighetAlias,
   ImportKey,
@@ -44,48 +44,70 @@ export {
   resolveTabGroups,
 } from "@/lib/table-columns";
 
-type NationSettingsDoc = NationSettings & { updatedAt: Date };
+type NationRow = {
+  nations_id: string;
+  tables: NationSettings["tables"] | null;
+  imports: NationSettings["imports"] | null;
+  rentalobjects_multi_tab: boolean | null;
+  rentalobjects_tab_groups: RentalObjectTabGroup[] | null;
+  fastighet_aliases: FastighetAlias[] | null;
+};
 
-async function getCollection() {
-  const db = await getDb();
-  return db.collection<NationSettingsDoc>("nations");
-}
+const NATION_COLUMNS =
+  "nations_id, tables, imports, rentalobjects_multi_tab, rentalobjects_tab_groups, fastighet_aliases" as const;
 
 export async function getNationSettings(nationsId: string): Promise<NationSettings | null> {
-  const col = await getCollection();
-  const doc = await col.findOne({ nationsID: nationsId }, { projection: { _id: 0 } });
-  return doc
-    ? {
-        nationsID: doc.nationsID,
-        tables: doc.tables,
-        imports: doc.imports,
-        rentalobjectsMultiTab: doc.rentalobjectsMultiTab,
-        rentalobjectsTabGroups: doc.rentalobjectsTabGroups,
-        fastighetAliases: doc.fastighetAliases,
-      }
-    : null;
+  const supabase = createSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("nations")
+    .select(NATION_COLUMNS)
+    .eq("nations_id", nationsId)
+    .maybeSingle();
+  if (error) throw error;
+  if (!data) return null;
+  const row = data as NationRow;
+  return {
+    nationsID: row.nations_id,
+    tables: row.tables ?? {},
+    imports: row.imports ?? undefined,
+    rentalobjectsMultiTab: row.rentalobjects_multi_tab ?? undefined,
+    rentalobjectsTabGroups: row.rentalobjects_tab_groups ?? undefined,
+    fastighetAliases: row.fastighet_aliases ?? undefined,
+  };
 }
 
 export async function createNation(nationsId: string): Promise<void> {
-  const col = await getCollection();
-  await col.updateOne(
-    { nationsID: nationsId },
-    { $setOnInsert: { nationsID: nationsId, tables: {} }, $set: { updatedAt: new Date() } },
-    { upsert: true }
-  );
+  const supabase = createSupabaseServerClient();
+  const { error } = await supabase
+    .from("nations")
+    .upsert({ nations_id: nationsId }, { onConflict: "nations_id", ignoreDuplicates: true });
+  if (error) throw error;
 }
 
+// tables/imports are JSONB objects keyed by table/import name — Mongo could
+// $set just one dot-path key atomically; Postgres has no equivalent through
+// the query builder without an RPC, so this reads the current object,
+// merges the one key in JS, and writes the whole object back. A real race
+// (two admins editing different keys for the same nation at the same
+// instant) could lose an update, but this is a single-admin-at-a-time
+// config screen — not worth a stored procedure for that edge case.
 export async function saveTableSettings(
   nationsId: string,
   table: TableKey,
   columns: TableColumnConfig[]
 ): Promise<void> {
-  const col = await getCollection();
-  await col.updateOne(
-    { nationsID: nationsId },
-    { $set: { [`tables.${table}`]: { columns }, updatedAt: new Date() } },
-    { upsert: true }
-  );
+  const supabase = createSupabaseServerClient();
+  const { data: existing, error: findError } = await supabase
+    .from("nations")
+    .select("tables")
+    .eq("nations_id", nationsId)
+    .maybeSingle();
+  if (findError) throw findError;
+  const tables = { ...(existing?.tables ?? {}), [table]: { columns } };
+  const { error } = await supabase
+    .from("nations")
+    .upsert({ nations_id: nationsId, tables }, { onConflict: "nations_id" });
+  if (error) throw error;
 }
 
 export async function saveImportMapping(
@@ -93,73 +115,58 @@ export async function saveImportMapping(
   key: ImportKey,
   fields: ImportMapping["fields"]
 ): Promise<void> {
-  const col = await getCollection();
-  await col.updateOne(
-    { nationsID: nationsId },
-    { $set: { [`imports.${key}`]: { fields }, updatedAt: new Date() } },
-    { upsert: true }
-  );
+  const supabase = createSupabaseServerClient();
+  const { data: existing, error: findError } = await supabase
+    .from("nations")
+    .select("imports")
+    .eq("nations_id", nationsId)
+    .maybeSingle();
+  if (findError) throw findError;
+  const imports = { ...(existing?.imports ?? {}), [key]: { fields } };
+  const { error } = await supabase
+    .from("nations")
+    .upsert({ nations_id: nationsId, imports }, { onConflict: "nations_id" });
+  if (error) throw error;
 }
 
 export async function setRentalobjectsMultiTab(nationsId: string, multiTab: boolean): Promise<void> {
-  const col = await getCollection();
-  await col.updateOne(
-    { nationsID: nationsId },
-    { $set: { rentalobjectsMultiTab: multiTab, updatedAt: new Date() } },
-    { upsert: true }
-  );
+  const supabase = createSupabaseServerClient();
+  const { error } = await supabase
+    .from("nations")
+    .upsert({ nations_id: nationsId, rentalobjects_multi_tab: multiTab }, { onConflict: "nations_id" });
+  if (error) throw error;
 }
 
 export async function saveRentalobjectTabGroups(
   nationsId: string,
   groups: RentalObjectTabGroup[]
 ): Promise<void> {
-  const col = await getCollection();
-  await col.updateOne(
-    { nationsID: nationsId },
-    { $set: { rentalobjectsTabGroups: groups, updatedAt: new Date() } },
-    { upsert: true }
-  );
+  const supabase = createSupabaseServerClient();
+  const { error } = await supabase
+    .from("nations")
+    .upsert({ nations_id: nationsId, rentalobjects_tab_groups: groups }, { onConflict: "nations_id" });
+  if (error) throw error;
 }
 
 export async function saveFastighetAliases(
   nationsId: string,
   aliases: FastighetAlias[]
 ): Promise<void> {
-  const col = await getCollection();
-  await col.updateOne(
-    { nationsID: nationsId },
-    { $set: { fastighetAliases: aliases, updatedAt: new Date() } },
-    { upsert: true }
-  );
+  const supabase = createSupabaseServerClient();
+  const { error } = await supabase
+    .from("nations")
+    .upsert({ nations_id: nationsId, fastighet_aliases: aliases }, { onConflict: "nations_id" });
+  if (error) throw error;
 }
 
-// Every nation-scoped collection in the app — a nation only needs a row in
-// one of these (not necessarily apartments/rentalobjects/tenants) to show
-// up in the admin picker.
-const NATION_SCOPED_COLLECTIONS = [
-  "apartments",
-  "rentalobjects",
-  "tenants",
-  "fastigheter",
-  "todos",
-  "uppsagningar",
-  "besiktningar",
-  "mail-templates",
-  "floor-plans",
-  "missed-rent",
-  "andrahandsgaster",
-  "nations",
-];
-
-// Every nationsID known to the app: either it already has data, or an admin
-// has already created settings for it. Lets the admin page offer a picker
-// without needing to ask Auth0 at all.
+// nations is now a real registry table (every nation gets a row, created
+// first in the migration) instead of Mongo's inferred-by-distinct-across-
+// every-collection approach — this is now a plain select.
 export async function listAllNationIds(): Promise<string[]> {
-  const db = await getDb();
-  const results = await Promise.all(
-    NATION_SCOPED_COLLECTIONS.map((name) => db.collection(name).distinct("nationsID"))
-  );
-  const ids = new Set<string>(results.flat());
-  return Array.from(ids).sort((a, b) => a.localeCompare(b, "sv", { sensitivity: "base" }));
+  const supabase = createSupabaseServerClient();
+  const { data, error } = await supabase.from("nations").select("nations_id");
+  if (error) throw error;
+  return (data as { nations_id: string }[])
+    .map((r) => r.nations_id)
+    .sort((a, b) => a.localeCompare(b, "sv", { sensitivity: "base" }));
 }

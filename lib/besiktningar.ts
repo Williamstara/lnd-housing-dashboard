@@ -1,6 +1,5 @@
 import "server-only";
-import { ObjectId } from "mongodb";
-import { getDb } from "@/lib/mongodb";
+import { createSupabaseServerClient } from "@/lib/supabase-server";
 
 export type BesiktningStatus = "aktiv" | "arkiverad";
 
@@ -39,29 +38,54 @@ export type BesiktningImportInput = BesiktningEditInput & {
 
 export type BulkUpsertResult = { inserted: number; updated: number };
 
-type BesiktningDoc = Omit<Besiktning, "id"> & { nationsID: string };
+type BesiktningRow = {
+  id: string;
+  lagenhetsnummer: string;
+  besiktningsdatum: string;
+  kostnad_stadning: number;
+  vaktmastare_anteckning: string | null;
+  godkand: boolean | null;
+  husforman_anteckning: string | null;
+  ovriga_anteckningar: string | null;
+  totalt_avdrag: number;
+  klar_for_betalning_datum: string | null;
+  klar_for_betalning_av: string | null;
+  betalning_gjord_datum: string | null;
+  betalning_gjord_av: string | null;
+  status: BesiktningStatus;
+};
 
-async function getCollection() {
-  const db = await getDb();
-  return db.collection<BesiktningDoc>("besiktningar");
+const BESIKTNING_COLUMNS =
+  "id, lagenhetsnummer, besiktningsdatum, kostnad_stadning, vaktmastare_anteckning, godkand, husforman_anteckning, ovriga_anteckningar, totalt_avdrag, klar_for_betalning_datum, klar_for_betalning_av, betalning_gjord_datum, betalning_gjord_av, status" as const;
+
+function mapRow(row: BesiktningRow): Besiktning {
+  return {
+    id: row.id,
+    lagenhetsnummer: row.lagenhetsnummer,
+    besiktningsdatum: row.besiktningsdatum,
+    kostnadStadning: row.kostnad_stadning,
+    vaktmastareAnteckning: row.vaktmastare_anteckning ?? "",
+    godkand: row.godkand,
+    husformanAnteckning: row.husforman_anteckning ?? "",
+    ovrigaAnteckningar: row.ovriga_anteckningar ?? "",
+    totaltAvdrag: row.totalt_avdrag,
+    klarForBetalningDatum: row.klar_for_betalning_datum,
+    klarForBetalningAv: row.klar_for_betalning_av ?? null,
+    betalningGjordDatum: row.betalning_gjord_datum,
+    betalningGjordAv: row.betalning_gjord_av ?? null,
+    status: row.status,
+  };
 }
 
-function mapDoc(doc: BesiktningDoc & { _id: ObjectId }): Besiktning {
+function editInputToRow(input: BesiktningEditInput) {
   return {
-    id: doc._id.toString(),
-    lagenhetsnummer: doc.lagenhetsnummer,
-    besiktningsdatum: doc.besiktningsdatum,
-    kostnadStadning: doc.kostnadStadning,
-    vaktmastareAnteckning: doc.vaktmastareAnteckning,
-    godkand: doc.godkand,
-    husformanAnteckning: doc.husformanAnteckning,
-    ovrigaAnteckningar: doc.ovrigaAnteckningar ?? "",
-    totaltAvdrag: doc.totaltAvdrag,
-    klarForBetalningDatum: doc.klarForBetalningDatum,
-    klarForBetalningAv: doc.klarForBetalningAv ?? null,
-    betalningGjordDatum: doc.betalningGjordDatum,
-    betalningGjordAv: doc.betalningGjordAv ?? null,
-    status: doc.status,
+    besiktningsdatum: input.besiktningsdatum,
+    kostnad_stadning: input.kostnadStadning,
+    vaktmastare_anteckning: input.vaktmastareAnteckning,
+    godkand: input.godkand,
+    husforman_anteckning: input.husformanAnteckning,
+    ovriga_anteckningar: input.ovrigaAnteckningar,
+    totalt_avdrag: input.totaltAvdrag,
   };
 }
 
@@ -78,21 +102,27 @@ function previousWorkday(dateStr: string): string {
 }
 
 export async function getBesiktningar(nationsId: string): Promise<Besiktning[]> {
-  const col = await getCollection();
-  const docs = await col
-    .find({ nationsID: nationsId, status: { $ne: "arkiverad" } })
-    .sort({ besiktningsdatum: 1 })
-    .toArray();
-  return docs.map((d) => mapDoc(d as BesiktningDoc & { _id: ObjectId }));
+  const supabase = createSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("besiktningar")
+    .select(BESIKTNING_COLUMNS)
+    .eq("nations_id", nationsId)
+    .neq("status", "arkiverad")
+    .order("besiktningsdatum", { ascending: true });
+  if (error) throw error;
+  return (data as BesiktningRow[]).map(mapRow);
 }
 
 export async function getArkiveradeBesiktningar(nationsId: string): Promise<Besiktning[]> {
-  const col = await getCollection();
-  const docs = await col
-    .find({ nationsID: nationsId, status: "arkiverad" })
-    .sort({ besiktningsdatum: -1 })
-    .toArray();
-  return docs.map((d) => mapDoc(d as BesiktningDoc & { _id: ObjectId }));
+  const supabase = createSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("besiktningar")
+    .select(BESIKTNING_COLUMNS)
+    .eq("nations_id", nationsId)
+    .eq("status", "arkiverad")
+    .order("besiktningsdatum", { ascending: false });
+  if (error) throw error;
+  return (data as BesiktningRow[]).map(mapRow);
 }
 
 // Called when a lease termination is confirmed and the apartment is
@@ -103,41 +133,42 @@ export async function createBesiktning(
   lagenhetsnummer: string,
   nyttInflyttningsdatum: string
 ): Promise<void> {
-  const col = await getCollection();
-  const doc: BesiktningDoc = {
-    nationsID: nationsId,
+  const supabase = createSupabaseServerClient();
+  const { error } = await supabase.from("besiktningar").insert({
+    nations_id: nationsId,
     lagenhetsnummer,
     besiktningsdatum: previousWorkday(nyttInflyttningsdatum),
-    kostnadStadning: 0,
-    vaktmastareAnteckning: "",
+    kostnad_stadning: 0,
+    vaktmastare_anteckning: "",
     godkand: null,
-    husformanAnteckning: "",
-    ovrigaAnteckningar: "",
-    totaltAvdrag: 0,
-    klarForBetalningDatum: null,
-    klarForBetalningAv: null,
-    betalningGjordDatum: null,
-    betalningGjordAv: null,
+    husforman_anteckning: "",
+    ovriga_anteckningar: "",
+    totalt_avdrag: 0,
+    klar_for_betalning_datum: null,
+    klar_for_betalning_av: null,
+    betalning_gjord_datum: null,
+    betalning_gjord_av: null,
     status: "aktiv",
-  };
-  await col.insertOne(doc);
+  });
+  if (error) throw error;
 }
 
 export async function createManualBesiktning(
   nationsId: string,
   input: BesiktningImportInput
 ): Promise<void> {
-  const col = await getCollection();
-  const doc: BesiktningDoc = {
-    nationsID: nationsId,
-    ...input,
-    klarForBetalningDatum: null,
-    klarForBetalningAv: null,
-    betalningGjordDatum: null,
-    betalningGjordAv: null,
+  const supabase = createSupabaseServerClient();
+  const { error } = await supabase.from("besiktningar").insert({
+    nations_id: nationsId,
+    lagenhetsnummer: input.lagenhetsnummer,
+    ...editInputToRow(input),
+    klar_for_betalning_datum: null,
+    klar_for_betalning_av: null,
+    betalning_gjord_datum: null,
+    betalning_gjord_av: null,
     status: "aktiv",
-  };
-  await col.insertOne(doc);
+  });
+  if (error) throw error;
 }
 
 export async function updateBesiktning(
@@ -145,43 +176,59 @@ export async function updateBesiktning(
   id: string,
   input: BesiktningEditInput
 ): Promise<void> {
-  const col = await getCollection();
-  await col.updateOne({ _id: new ObjectId(id), nationsID: nationsId }, { $set: input });
+  const supabase = createSupabaseServerClient();
+  const { error } = await supabase
+    .from("besiktningar")
+    .update(editInputToRow(input))
+    .eq("id", id)
+    .eq("nations_id", nationsId);
+  if (error) throw error;
 }
 
 export async function markKlarForBetalning(nationsId: string, id: string, utfordAv: string): Promise<void> {
-  const col = await getCollection();
-  await col.updateOne(
-    { _id: new ObjectId(id), nationsID: nationsId },
-    { $set: { klarForBetalningDatum: new Date().toISOString().slice(0, 10), klarForBetalningAv: utfordAv } }
-  );
+  const supabase = createSupabaseServerClient();
+  const { error } = await supabase
+    .from("besiktningar")
+    .update({ klar_for_betalning_datum: new Date().toISOString().slice(0, 10), klar_for_betalning_av: utfordAv })
+    .eq("id", id)
+    .eq("nations_id", nationsId);
+  if (error) throw error;
 }
 
 export async function markBetalningGjord(nationsId: string, id: string, utfordAv: string): Promise<void> {
-  const col = await getCollection();
-  await col.updateOne(
-    { _id: new ObjectId(id), nationsID: nationsId },
-    { $set: { betalningGjordDatum: new Date().toISOString().slice(0, 10), betalningGjordAv: utfordAv } }
-  );
+  const supabase = createSupabaseServerClient();
+  const { error } = await supabase
+    .from("besiktningar")
+    .update({ betalning_gjord_datum: new Date().toISOString().slice(0, 10), betalning_gjord_av: utfordAv })
+    .eq("id", id)
+    .eq("nations_id", nationsId);
+  if (error) throw error;
 }
 
 export type BulkActionResult = { updated: number; skipped: number };
 
 // Only touches rows not already marked, so re-running over an overlapping
 // selection is harmless — already-marked rows are simply counted as skipped
-// rather than having their date/utfordAv overwritten.
+// rather than having their date/utfordAv overwritten. `.select("id")` after
+// the update returns exactly the rows that matched every filter (including
+// the not-already-marked one), giving an accurate modified count the same
+// way Mongo's `result.modifiedCount` did.
 export async function markKlarForBetalningBulk(
   nationsId: string,
   ids: string[],
   utfordAv: string
 ): Promise<BulkActionResult> {
-  const col = await getCollection();
-  const objectIds = ids.map((id) => new ObjectId(id));
-  const result = await col.updateMany(
-    { _id: { $in: objectIds }, nationsID: nationsId, klarForBetalningDatum: null },
-    { $set: { klarForBetalningDatum: new Date().toISOString().slice(0, 10), klarForBetalningAv: utfordAv } }
-  );
-  return { updated: result.modifiedCount, skipped: ids.length - result.modifiedCount };
+  const supabase = createSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("besiktningar")
+    .update({ klar_for_betalning_datum: new Date().toISOString().slice(0, 10), klar_for_betalning_av: utfordAv })
+    .eq("nations_id", nationsId)
+    .in("id", ids)
+    .is("klar_for_betalning_datum", null)
+    .select("id");
+  if (error) throw error;
+  const updated = (data as { id: string }[]).length;
+  return { updated, skipped: ids.length - updated };
 }
 
 // Mirrors the single-row rule (payment can't be marked done before it's
@@ -191,86 +238,118 @@ export async function markBetalningGjordBulk(
   ids: string[],
   utfordAv: string
 ): Promise<BulkActionResult> {
-  const col = await getCollection();
-  const objectIds = ids.map((id) => new ObjectId(id));
-  const result = await col.updateMany(
-    {
-      _id: { $in: objectIds },
-      nationsID: nationsId,
-      klarForBetalningDatum: { $ne: null },
-      betalningGjordDatum: null,
-    },
-    { $set: { betalningGjordDatum: new Date().toISOString().slice(0, 10), betalningGjordAv: utfordAv } }
-  );
-  return { updated: result.modifiedCount, skipped: ids.length - result.modifiedCount };
+  const supabase = createSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("besiktningar")
+    .update({ betalning_gjord_datum: new Date().toISOString().slice(0, 10), betalning_gjord_av: utfordAv })
+    .eq("nations_id", nationsId)
+    .in("id", ids)
+    .not("klar_for_betalning_datum", "is", null)
+    .is("betalning_gjord_datum", null)
+    .select("id");
+  if (error) throw error;
+  const updated = (data as { id: string }[]).length;
+  return { updated, skipped: ids.length - updated };
 }
 
 // Mirrors archiveBesiktning's rule (payment must be done first) but skips
 // ineligible rows instead of throwing, since a bulk selection commonly mixes
 // ready and not-yet-ready rows.
 export async function archiveBesiktningarBulk(nationsId: string, ids: string[]): Promise<BulkActionResult> {
-  const col = await getCollection();
-  const objectIds = ids.map((id) => new ObjectId(id));
-  const result = await col.updateMany(
-    {
-      _id: { $in: objectIds },
-      nationsID: nationsId,
-      betalningGjordDatum: { $ne: null },
-      status: { $ne: "arkiverad" },
-    },
-    { $set: { status: "arkiverad" as BesiktningStatus } }
-  );
-  return { updated: result.modifiedCount, skipped: ids.length - result.modifiedCount };
+  const supabase = createSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("besiktningar")
+    .update({ status: "arkiverad" })
+    .eq("nations_id", nationsId)
+    .in("id", ids)
+    .not("betalning_gjord_datum", "is", null)
+    .neq("status", "arkiverad")
+    .select("id");
+  if (error) throw error;
+  const updated = (data as { id: string }[]).length;
+  return { updated, skipped: ids.length - updated };
 }
 
 // Upserts one row per (lägenhetsnummer, besiktningsdatum) among non-archived
 // besiktningar — matches an existing row from the Excel import and updates
-// it, or creates a new "aktiv" row if none matches.
+// it, or creates a new "aktiv" row if none matches. No DB-level unique
+// constraint backs this (matches Mongo's original filter-based upsert, not a
+// real unique index), so it's a pre-fetched map + per-row insert/update,
+// same shape as bulkUpsertApartments.
 export async function bulkUpsertBesiktningar(
   nationsId: string,
   inputs: BesiktningImportInput[]
 ): Promise<BulkUpsertResult> {
-  const col = await getCollection();
+  const supabase = createSupabaseServerClient();
+  const { data: existing, error: findError } = await supabase
+    .from("besiktningar")
+    .select("id, lagenhetsnummer, besiktningsdatum")
+    .eq("nations_id", nationsId)
+    .neq("status", "arkiverad");
+  if (findError) throw findError;
+  const existingByKey = new Map(
+    (existing as { id: string; lagenhetsnummer: string; besiktningsdatum: string }[]).map((r) => [
+      `${r.lagenhetsnummer}|${r.besiktningsdatum}`,
+      r.id,
+    ])
+  );
+
   let inserted = 0;
   let updated = 0;
-  for (const { lagenhetsnummer, besiktningsdatum, ...rest } of inputs) {
-    const result = await col.updateOne(
-      { nationsID: nationsId, lagenhetsnummer, besiktningsdatum, status: { $ne: "arkiverad" } },
-      {
-        $set: { ...rest },
-        $setOnInsert: {
-          nationsID: nationsId,
-          lagenhetsnummer,
-          besiktningsdatum,
-          klarForBetalningDatum: null,
-          klarForBetalningAv: null,
-          betalningGjordDatum: null,
-          betalningGjordAv: null,
-          status: "aktiv" as BesiktningStatus,
-        },
-      },
-      { upsert: true }
-    );
-    if (result.upsertedCount > 0) inserted++;
-    else updated++;
+  for (const input of inputs) {
+    const existingId = existingByKey.get(`${input.lagenhetsnummer}|${input.besiktningsdatum}`);
+    if (existingId) {
+      const { error } = await supabase
+        .from("besiktningar")
+        .update(editInputToRow(input))
+        .eq("id", existingId);
+      if (error) throw error;
+      updated++;
+    } else {
+      const { error } = await supabase.from("besiktningar").insert({
+        nations_id: nationsId,
+        lagenhetsnummer: input.lagenhetsnummer,
+        ...editInputToRow(input),
+        klar_for_betalning_datum: null,
+        klar_for_betalning_av: null,
+        betalning_gjord_datum: null,
+        betalning_gjord_av: null,
+        status: "aktiv",
+      });
+      if (error) throw error;
+      inserted++;
+    }
   }
   return { inserted, updated };
 }
 
 export async function deleteBesiktning(nationsId: string, id: string): Promise<void> {
-  const col = await getCollection();
-  await col.deleteOne({ _id: new ObjectId(id), nationsID: nationsId });
+  const supabase = createSupabaseServerClient();
+  const { error } = await supabase
+    .from("besiktningar")
+    .delete()
+    .eq("id", id)
+    .eq("nations_id", nationsId);
+  if (error) throw error;
 }
 
 export async function archiveBesiktning(nationsId: string, id: string): Promise<void> {
-  const col = await getCollection();
-  const doc = await col.findOne({ _id: new ObjectId(id), nationsID: nationsId });
-  if (!doc) throw new Error("Besiktningen hittades inte.");
-  if (!doc.betalningGjordDatum) {
+  const supabase = createSupabaseServerClient();
+  const { data, error: findError } = await supabase
+    .from("besiktningar")
+    .select("betalning_gjord_datum")
+    .eq("id", id)
+    .eq("nations_id", nationsId)
+    .maybeSingle();
+  if (findError) throw findError;
+  if (!data) throw new Error("Besiktningen hittades inte.");
+  if (!data.betalning_gjord_datum) {
     throw new Error("Besiktningen kan inte arkiveras förrän betalning är gjord.");
   }
-  await col.updateOne(
-    { _id: new ObjectId(id), nationsID: nationsId },
-    { $set: { status: "arkiverad" as BesiktningStatus } }
-  );
+  const { error } = await supabase
+    .from("besiktningar")
+    .update({ status: "arkiverad" })
+    .eq("id", id)
+    .eq("nations_id", nationsId);
+  if (error) throw error;
 }

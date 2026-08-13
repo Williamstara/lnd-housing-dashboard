@@ -79,17 +79,21 @@ client components. Swedish label shown in the app's nav is in parentheses.
 
 ## Module responsibilities (`lib/`)
 
-One file per MongoDB collection, `server-only`, typed CRUD:
+One file per Postgres table, `server-only`, typed CRUD built on
+`createSupabaseServerClient()` (`lib/supabase-server.ts`):
 `lib/apartments.ts` (`apartments`), `lib/tenants.ts` (`tenants`),
 `lib/andrahandsgaster.ts` (`andrahandsgaster`), `lib/rentalobjects.ts`
 (`rentalobjects`), `lib/fastigheter.ts` (`fastigheter`),
-`lib/besiktningar.ts` (`besiktningar`), `lib/todos.ts` (`todos`),
-`lib/uppsagningar.ts` (`uppsagningar`), `lib/missed-rent.ts`
-(`missed-rent`), `lib/mail-templates.ts` (`mail-templates`),
-`lib/floor-plans.ts` (`floor-plans`), `lib/gmail-tokens.ts`
-(`gmail-tokens`), `lib/recipient-groups.ts`, `lib/statistik.ts`,
-`lib/nation-settings.ts` (`nations` — see below), `lib/app-users.ts` (talks
-to the Auth0 Management API, not MongoDB).
+`lib/besiktningar.ts` (`besiktningar`), `lib/todos.ts` (`todos` +
+`todo_subtasks`, normalized out of Mongo's embedded array — see
+`docs/DECISIONS.md`), `lib/uppsagningar.ts` (`uppsagningar`),
+`lib/missed-rent.ts` (`missed_rent`), `lib/mail-templates.ts`
+(`mail_templates`), `lib/floor-plans.ts` (`floor_plans`),
+`lib/gmail-tokens.ts` (`gmail_tokens`), `lib/recipient-groups.ts` (no table
+of its own — pure derived queries over `tenants`/`apartments`),
+`lib/statistik.ts` (pure aggregation over already-fetched arrays, no
+queries of its own), `lib/nation-settings.ts` (`nations` — see below),
+`lib/app-users.ts` (talks to the Auth0 Management API, not the database).
 
 Not server-only (imported by client components too):
 - `lib/table-columns.ts` — pure types + defaults + resolver helpers for
@@ -100,7 +104,7 @@ Not server-only (imported by client components too):
   `applyFastighetAlias`, `resolveFastighetFromPrefix`,
   `excelDateCellToISO`, `columnIndexToLetter`/`columnLetterToIndex`,
   `describeMapping`, `mappingToLookup`). `lib/nation-settings.ts` wraps
-  this with the actual Mongo-touching CRUD (`getNationSettings`,
+  this with the actual Supabase-touching CRUD (`getNationSettings`,
   `saveTableSettings`, `saveImportMapping`, `saveFastighetAliases`,
   `saveRentalobjectTabGroups`, `setRentalobjectsMultiTab`) and re-exports
   the pure pieces so callers only need one import path server-side.
@@ -128,7 +132,7 @@ Not server-only (imported by client components too):
    session — **never trusts a nationsId passed from the client** — sanitizes
    input, calls the matching `lib/*.ts` function, and calls
    `revalidatePath(...)` for every page the change could affect (a change in
-   one collection often has to invalidate more than one route — e.g. saving
+   one table often has to invalidate more than one route — e.g. saving
    a `fastigheter` prefix revalidates both `/fastigheter` and
    `/lediga-lagenheter`).
 4. Next.js re-renders the affected Server Component(s) on next navigation/
@@ -141,19 +145,47 @@ Only the parsed, already-validated JSON rows are sent to a Server Action.
 
 ## State and persistence
 
-- **MongoDB**, one database, many collections — see the table above. No
-  ORM; each `lib/*.ts` file defines its own TS types for documents and maps
-  `_id: ObjectId` to a string `id` on read.
-- **Every collection is scoped by a `nationsID` string field.** See
-  `lib/mongodb.ts`'s `INDEX_SPECS` for the authoritative list of indexed
-  collections and their query-shape-derived compound indexes (all leading
-  with `nationsID`).
-- Index creation (`ensureIndexes` in `lib/mongodb.ts`) runs once per cold
-  start, lazily on first `getDb()` call, and is deliberately non-fatal on
-  failure (a restricted DB user just means unindexed queries, not an outage).
-- Floor plans and mail-template attachments are stored as MongoDB `Binary`
-  directly in their documents (`lib/floor-plans.ts`, `lib/mail-templates.ts`)
-  — no external object storage (e.g. S3/Vercel Blob) is used.
+- **Supabase (Postgres)**, one project, one `public` schema, one table per
+  collection listed above — see `supabase/migrations/*.sql` for the
+  authoritative schema (tables, enums, `check` constraints, foreign keys,
+  indexes). No ORM; each `lib/*.ts` file defines its own `Row` TS type
+  (snake_case, matching actual Postgres columns) and a `mapRow` function
+  converting it to the camelCase type the rest of the app uses.
+- **Every nation-scoped table has a `nations_id text references
+  nations(nations_id)` column**, filtered explicitly in every query
+  (`.eq("nations_id", nationsId)`) *and* independently enforced by Postgres
+  Row Level Security (`supabase/migrations/20260812231542_rls.sql`) — a
+  fail-closed backstop: a query that somehow omitted the filter would return
+  zero rows, not another tenant's data. `gmail_tokens` is the one exception,
+  scoped by `user_id` (Auth0 `sub`) instead — it's per-user, not per-nation.
+- RLS policies read `nations_id`/role claims out of `auth.jwt()`, populated
+  by forwarding the Auth0 ID token to Supabase's Data API via a Third-Party
+  Auth integration (`lib/supabase-server.ts`) — Auth0 remains the identity
+  system of record, Supabase never runs its own native auth flow. RLS
+  enforces tenant isolation only; role/permission checks stay entirely in
+  `app/*/actions.ts` (see `docs/DECISIONS.md` for why they weren't
+  duplicated into RLS policies).
+- `todos.subtasks` (an embedded array in the old Mongo model) is normalized
+  into a `todo_subtasks` child table with a real foreign key. The parent
+  `todos.klar` completion flag — previously recomputed by an explicit
+  `syncTodoCompletion()` call after every subtask mutation — is now
+  recomputed by a Postgres trigger (`sync_todo_completion`,
+  `supabase/migrations/20260812231459_schema.sql`) firing on every
+  `todo_subtasks` insert/`klar`-update/delete. `lib/todos.ts` no longer
+  calls anything explicitly to keep it in sync.
+- Floor plans, uppsägning documents, and mail-template attachments are
+  stored in **Supabase Storage** (three private buckets — `floor-plans`,
+  `uppsagningar-dokument`, `mail-template-attachments` — see
+  `supabase/migrations/20260812233434_storage.sql`), not inline in the
+  database. Each bucket's objects live at a `{nations_id}/{row_id}/{filename}`
+  path, with a Storage RLS policy checking the first path segment against
+  the caller's `nationsID` claim — the same tenant-scoping shape as every
+  table policy. The corresponding `lib/*.ts` file stores only a
+  `storage_path`/filename/content-type pointer; API routes that stream a
+  file (`app/api/floor-plans/[id]/file`, `app/api/uppsagningar/[id]/file`)
+  needed no changes during the migration since `getFloorPlanFile`/
+  `getUppsagningFile` kept the exact same `{data: Buffer, contentType,
+  ...}` return shape.
 - `lib/use-column-visibility.ts` is the one piece of client-side persistent
   state (`localStorage`, keyed per table), independent of server state.
 
@@ -179,13 +211,17 @@ Only the parsed, already-validated JSON rows are sent to a Server Action.
   `docs/TODO.md`.
 - **Google (Gmail API)** via `googleapis` — OAuth2 connect flow
   (`app/api/auth/gmail/*`), refresh tokens stored per-user in
-  `gmail-tokens`; outgoing mail is sent through a `nodemailer` transport
+  `gmail_tokens`; outgoing mail is sent through a `nodemailer` transport
   configured with those OAuth2 credentials (`app/api/send-mail/route.ts`).
-- **MongoDB Atlas** — `Needs verification` for the exact hosting/plan, but
-  `lib/mongodb.ts`'s connection-pool comments and the `mongodb.net` shard
-  hostnames seen in a real `.env.local` during this session confirm Atlas
-  is the actual database host (not a local/self-hosted instance in
-  production).
+- **Supabase** — Postgres database, Row Level Security, and Storage (see
+  "State and persistence" above), plus Third-Party Auth (accepts Auth0's ID
+  token as a bearer token, verified against Auth0's JWKS — configured in the
+  Supabase dashboard, not version-controlled in this repo). Applying schema
+  migrations or bypassing RLS for admin/bulk scripts requires a direct
+  Postgres connection (`SUPABASE_DB_URL`) or the secret key
+  (`SUPABASE_SECRET_KEY`) — normal app request paths use only the
+  publishable key (`NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`) plus the
+  forwarded Auth0 token.
 
 ## Authentication and authorization
 
@@ -218,10 +254,13 @@ See `.env.local.example` and the "Security and data-handling rules" section
 of `AGENTS.md` for the full, verified list. Grouped by service: Auth0 app
 login (`APP_BASE_URL`, `AUTH0_DOMAIN`, `AUTH0_CLIENT_ID`,
 `AUTH0_CLIENT_SECRET`, `AUTH0_SECRET`), Auth0 Management API
-(`AUTH0_M2M_CLIENT_ID`, `AUTH0_M2M_CLIENT_SECRET`), MongoDB (`MONGODB_URI`,
-`MONGODB_DB`), Gmail (`GMAIL_CLIENT_ID`, `GMAIL_CLIENT_SECRET` — **not**
-currently in `.env.local.example`, a verified documentation gap), laundry
-Auth0 tenant (`LAUNDRY_AUTH0_DOMAIN`, `LAUNDRY_AUTH0_MGMT_CLIENT_ID`,
+(`AUTH0_M2M_CLIENT_ID`, `AUTH0_M2M_CLIENT_SECRET`), Supabase
+(`NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` — used
+in normal app request paths; `SUPABASE_DB_URL`, `SUPABASE_SECRET_KEY` —
+admin/migration only, never used inside a Server Action or Route Handler),
+Gmail (`GMAIL_CLIENT_ID`, `GMAIL_CLIENT_SECRET` — **not** currently in
+`.env.local.example`, a verified documentation gap), laundry Auth0 tenant
+(`LAUNDRY_AUTH0_DOMAIN`, `LAUNDRY_AUTH0_MGMT_CLIENT_ID`,
 `LAUNDRY_AUTH0_MGMT_CLIENT_SECRET`, `LAUNDRY_AUTH0_CONNECTION`).
 
 ## Error handling
@@ -236,8 +275,9 @@ Auth0 tenant (`LAUNDRY_AUTH0_DOMAIN`, `LAUNDRY_AUTH0_MGMT_CLIENT_ID`,
   functions for the pattern.
 - Route Handlers (`app/api/**`) return `Response.json({ error }, { status })`
   rather than throwing.
-- `lib/mongodb.ts`'s index creation swallows failures on purpose (see
-  "State and persistence" above).
+- Every `lib/*.ts` Supabase call checks `error` and re-throws it directly
+  (no message translation) — the calling Server Action's own `try/catch`
+  is what turns it into a Swedish user-facing message.
 
 ## Testing structure
 
@@ -250,16 +290,22 @@ Auth0 tenant (`LAUNDRY_AUTH0_DOMAIN`, `LAUNDRY_AUTH0_MGMT_CLIENT_ID`,
 `Needs verification` — no `vercel.json`/`.vercel/` found in the repository,
 so the exact deployment target isn't confirmed from the repo alone. Strong
 circumstantial evidence points to Vercel: `README.md` is the stock
-`create-next-app` boilerplate (which recommends Vercel), and
-`lib/mongodb.ts` explicitly caps its connection pool with comments about
-serverless instances each opening their own pool.
+`create-next-app` boilerplate (which recommends Vercel). The database
+connection concerns a serverless deployment previously had to manage by
+hand (MongoDB connection pooling, capped in `lib/mongodb.ts`, now deleted)
+don't apply to Supabase's Data API — each request is a stateless HTTPS call
+through PostgREST/`@supabase/supabase-js`, not a pooled driver connection
+held open per server instance.
 
 ## Known technical limitations
 
 - No automated tests.
-- No schema validation beyond TypeScript types — documents can drift from
-  the current type shape (e.g. `Fastighet.prefixes` is absent on documents
-  created before that field existed; every reader must default it).
+- Real schema constraints now exist at the database layer (types, enums,
+  `check` constraints, foreign keys — `supabase/migrations/*.sql`), but the
+  hand-written `Row`/mapping types in each `lib/*.ts` file are not generated
+  from that schema and can still drift from it silently if a migration
+  changes a column without the corresponding `lib/*.ts` file being updated
+  to match — there's no build-time check tying the two together.
 - Five Excel-importer dialogs (`ExcelImportDialog.tsx`,
   `AndrahandsgastExcelImportDialog.tsx`, `BesiktningarExcelImportDialog.tsx`,
   `ApartmentExcelImport.tsx`, `RentalObjectExcelImport.tsx`) each define

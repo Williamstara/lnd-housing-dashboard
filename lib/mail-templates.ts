@@ -1,6 +1,5 @@
 import "server-only";
-import { Binary, ObjectId } from "mongodb";
-import { getDb } from "@/lib/mongodb";
+import { createSupabaseServerClient } from "@/lib/supabase-server";
 
 export type MailTemplate = {
   id: string;
@@ -12,42 +11,48 @@ export type MailTemplate = {
   updatedAt: Date;
 };
 
-type MailTemplateDoc = {
-  nationsID: string;
+const BUCKET = "mail-template-attachments";
+
+const TEMPLATE_COLUMNS =
+  "id, name, message, starred, attachment_storage_path, attachment_filename, attachment_content_type, created_at, updated_at" as const;
+
+type MailTemplateRow = {
+  id: string;
   name: string;
   message: string;
-  starred?: boolean;
-  attachment?: {
-    filename: string;
-    data: Binary;
-    contentType: string;
-  };
-  createdAt: Date;
-  updatedAt: Date;
+  starred: boolean | null;
+  attachment_storage_path: string | null;
+  attachment_filename: string | null;
+  attachment_content_type: string | null;
+  created_at: string;
+  updated_at: string;
 };
 
-async function getCollection() {
-  const db = await getDb();
-  return db.collection<MailTemplateDoc>("mail-templates");
+function mapRow(row: MailTemplateRow): MailTemplate {
+  return {
+    id: row.id,
+    name: row.name,
+    message: row.message,
+    starred: row.starred ?? false,
+    attachmentName: row.attachment_filename ?? null,
+    createdAt: new Date(row.created_at),
+    updatedAt: new Date(row.updated_at),
+  };
 }
 
 export async function getMailTemplates(nationsId: string): Promise<MailTemplate[]> {
-  const col = await getCollection();
-  const docs = await col
-    .find({ nationsID: nationsId }, { projection: { "attachment.data": 0 } })
-    .sort({ name: 1 })
-    .toArray();
-  return docs.map((doc) => ({
-    id: doc._id.toString(),
-    name: doc.name,
-    message: doc.message,
-    starred: doc.starred ?? false,
-    attachmentName: doc.attachment?.filename ?? null,
-    createdAt: doc.createdAt,
-    updatedAt: doc.updatedAt,
-  }));
+  const supabase = createSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("mail_templates")
+    .select(TEMPLATE_COLUMNS)
+    .eq("nations_id", nationsId)
+    .order("name", { ascending: true });
+  if (error) throw error;
+  return (data as MailTemplateRow[]).map(mapRow);
 }
 
+// upsert: true — this also handles replacing an existing attachment, not
+// just the first upload (the storage migration's UPDATE policy covers this).
 export async function setTemplateAttachment(
   nationsId: string,
   id: string,
@@ -55,41 +60,104 @@ export async function setTemplateAttachment(
   data: Buffer,
   contentType: string
 ): Promise<boolean> {
-  const col = await getCollection();
-  const result = await col.updateOne(
-    { _id: new ObjectId(id), nationsID: nationsId },
-    { $set: { attachment: { filename, data: new Binary(data), contentType }, updatedAt: new Date() } }
-  );
-  return result.matchedCount > 0;
+  const supabase = createSupabaseServerClient();
+  const { data: existing, error: findError } = await supabase
+    .from("mail_templates")
+    .select("id")
+    .eq("id", id)
+    .eq("nations_id", nationsId)
+    .maybeSingle();
+  if (findError) throw findError;
+  if (!existing) return false;
+
+  const storagePath = `${nationsId}/${id}/${filename}`;
+  const { error: uploadError } = await supabase.storage
+    .from(BUCKET)
+    .upload(storagePath, data, { contentType, upsert: true });
+  if (uploadError) throw uploadError;
+
+  const { error } = await supabase
+    .from("mail_templates")
+    .update({
+      attachment_storage_path: storagePath,
+      attachment_filename: filename,
+      attachment_content_type: contentType,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", id)
+    .eq("nations_id", nationsId);
+  if (error) throw error;
+  return true;
 }
 
 export async function removeTemplateAttachment(nationsId: string, id: string): Promise<boolean> {
-  const col = await getCollection();
-  const result = await col.updateOne(
-    { _id: new ObjectId(id), nationsID: nationsId },
-    { $unset: { attachment: "" }, $set: { updatedAt: new Date() } }
-  );
-  return result.matchedCount > 0;
+  const supabase = createSupabaseServerClient();
+  const { data: existing, error: findError } = await supabase
+    .from("mail_templates")
+    .select("attachment_storage_path")
+    .eq("id", id)
+    .eq("nations_id", nationsId)
+    .maybeSingle();
+  if (findError) throw findError;
+  if (!existing) return false;
+
+  const { error } = await supabase
+    .from("mail_templates")
+    .update({
+      attachment_storage_path: null,
+      attachment_filename: null,
+      attachment_content_type: null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", id)
+    .eq("nations_id", nationsId);
+  if (error) throw error;
+
+  if (existing.attachment_storage_path) {
+    await supabase.storage.from(BUCKET).remove([existing.attachment_storage_path]);
+  }
+  return true;
 }
 
 export async function getTemplateAttachment(
   nationsId: string,
   id: string
 ): Promise<{ filename: string; data: Buffer; contentType: string } | null> {
-  const col = await getCollection();
-  const doc = await col.findOne({ _id: new ObjectId(id), nationsID: nationsId });
-  if (!doc?.attachment) return null;
+  const supabase = createSupabaseServerClient();
+  const { data: row, error: findError } = await supabase
+    .from("mail_templates")
+    .select("attachment_storage_path, attachment_filename, attachment_content_type")
+    .eq("id", id)
+    .eq("nations_id", nationsId)
+    .maybeSingle();
+  if (findError) throw findError;
+  if (!row?.attachment_storage_path) return null;
+
+  const { data: blob, error: downloadError } = await supabase.storage
+    .from(BUCKET)
+    .download(row.attachment_storage_path);
+  if (downloadError) throw downloadError;
   return {
-    filename: doc.attachment.filename,
-    data: Buffer.from(doc.attachment.data.buffer as unknown as ArrayBuffer),
-    contentType: doc.attachment.contentType,
+    filename: row.attachment_filename ?? "",
+    data: Buffer.from(await blob.arrayBuffer()),
+    contentType: row.attachment_content_type ?? "application/octet-stream",
   };
 }
 
 export async function setStarredTemplate(nationsId: string, id: string): Promise<void> {
-  const col = await getCollection();
-  await col.updateMany({ nationsID: nationsId }, { $set: { starred: false } });
-  await col.updateOne({ _id: new ObjectId(id), nationsID: nationsId }, { $set: { starred: true } });
+  const supabase = createSupabaseServerClient();
+  const { error: unsetError } = await supabase
+    .from("mail_templates")
+    .update({ starred: false })
+    .eq("nations_id", nationsId);
+  if (unsetError) throw unsetError;
+
+  const { error } = await supabase
+    .from("mail_templates")
+    .update({ starred: true })
+    .eq("id", id)
+    .eq("nations_id", nationsId);
+  if (error) throw error;
 }
 
 export async function createMailTemplate(
@@ -97,17 +165,14 @@ export async function createMailTemplate(
   name: string,
   message: string
 ): Promise<MailTemplate> {
-  const col = await getCollection();
-  const now = new Date();
-  const result = await col.insertOne({
-    nationsID: nationsId,
-    name,
-    message,
-    starred: false,
-    createdAt: now,
-    updatedAt: now,
-  });
-  return { id: result.insertedId.toString(), name, message, starred: false, attachmentName: null, createdAt: now, updatedAt: now };
+  const supabase = createSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("mail_templates")
+    .insert({ nations_id: nationsId, name, message, starred: false })
+    .select(TEMPLATE_COLUMNS)
+    .single();
+  if (error) throw error;
+  return mapRow(data as MailTemplateRow);
 }
 
 export async function updateMailTemplate(
@@ -115,16 +180,37 @@ export async function updateMailTemplate(
   id: string,
   data: { name?: string; message?: string }
 ): Promise<boolean> {
-  const col = await getCollection();
-  const result = await col.updateOne(
-    { _id: new ObjectId(id), nationsID: nationsId },
-    { $set: { ...data, updatedAt: new Date() } }
-  );
-  return result.matchedCount > 0;
+  const supabase = createSupabaseServerClient();
+  const { data: rows, error } = await supabase
+    .from("mail_templates")
+    .update({ ...data, updated_at: new Date().toISOString() })
+    .eq("id", id)
+    .eq("nations_id", nationsId)
+    .select("id");
+  if (error) throw error;
+  return (rows as { id: string }[]).length > 0;
 }
 
 export async function deleteMailTemplate(nationsId: string, id: string): Promise<boolean> {
-  const col = await getCollection();
-  const result = await col.deleteOne({ _id: new ObjectId(id), nationsID: nationsId });
-  return result.deletedCount > 0;
+  const supabase = createSupabaseServerClient();
+  const { data: existing, error: findError } = await supabase
+    .from("mail_templates")
+    .select("attachment_storage_path")
+    .eq("id", id)
+    .eq("nations_id", nationsId)
+    .maybeSingle();
+  if (findError) throw findError;
+  if (!existing) return false;
+
+  const { error } = await supabase
+    .from("mail_templates")
+    .delete()
+    .eq("id", id)
+    .eq("nations_id", nationsId);
+  if (error) throw error;
+
+  if (existing.attachment_storage_path) {
+    await supabase.storage.from(BUCKET).remove([existing.attachment_storage_path]);
+  }
+  return true;
 }

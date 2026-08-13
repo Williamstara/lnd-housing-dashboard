@@ -1,6 +1,5 @@
 import "server-only";
-import { ObjectId } from "mongodb";
-import { getDb } from "@/lib/mongodb";
+import { createSupabaseServerClient } from "@/lib/supabase-server";
 
 export type Fastighet = {
   id: string;
@@ -11,22 +10,25 @@ export type Fastighet = {
   prefixes: string[];
 };
 
-type FastighetDoc = {
-  nationsID: string;
+type FastighetRow = {
+  id: string;
   namn: string;
-  prefixes?: string[];
+  prefixes: string[] | null;
 };
 
-async function getCollection() {
-  const db = await getDb();
-  return db.collection<FastighetDoc>("fastigheter");
+function mapRow(row: FastighetRow): Fastighet {
+  return { id: row.id, namn: row.namn, prefixes: row.prefixes ?? [] };
 }
 
-// _id embeds creation time, so sorting by it preserves insertion order.
 export async function getFastigheter(nationsId: string): Promise<Fastighet[]> {
-  const col = await getCollection();
-  const docs = await col.find({ nationsID: nationsId }).sort({ _id: 1 }).toArray();
-  return docs.map((doc) => ({ id: doc._id.toString(), namn: doc.namn, prefixes: doc.prefixes ?? [] }));
+  const supabase = createSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("fastigheter")
+    .select("id, namn, prefixes")
+    .eq("nations_id", nationsId)
+    .order("created_at", { ascending: true });
+  if (error) throw error;
+  return (data as FastighetRow[]).map(mapRow);
 }
 
 export async function getFastighetNamn(nationsId: string): Promise<string[]> {
@@ -39,9 +41,14 @@ export async function createFastighet(
   namn: string,
   prefixes: string[] = []
 ): Promise<Fastighet> {
-  const col = await getCollection();
-  const result = await col.insertOne({ nationsID: nationsId, namn, prefixes });
-  return { id: result.insertedId.toString(), namn, prefixes };
+  const supabase = createSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("fastigheter")
+    .insert({ nations_id: nationsId, namn, prefixes })
+    .select("id, namn, prefixes")
+    .single();
+  if (error) throw error;
+  return mapRow(data as FastighetRow);
 }
 
 export async function updateFastighet(
@@ -50,14 +57,21 @@ export async function updateFastighet(
   namn: string,
   prefixes: string[]
 ): Promise<void> {
-  const col = await getCollection();
-  await col.updateOne(
-    { _id: new ObjectId(id), nationsID: nationsId },
-    { $set: { namn, prefixes } }
-  );
+  const supabase = createSupabaseServerClient();
+  const { error } = await supabase
+    .from("fastigheter")
+    .update({ namn, prefixes })
+    .eq("id", id)
+    .eq("nations_id", nationsId);
+  if (error) throw error;
 }
 
 export async function deleteFastighet(nationsId: string, id: string): Promise<void> {
-  const col = await getCollection();
-  await col.deleteOne({ _id: new ObjectId(id), nationsID: nationsId });
+  const supabase = createSupabaseServerClient();
+  const { error } = await supabase
+    .from("fastigheter")
+    .delete()
+    .eq("id", id)
+    .eq("nations_id", nationsId);
+  if (error) throw error;
 }

@@ -1,6 +1,5 @@
 import "server-only";
-import { ObjectId } from "mongodb";
-import { getDb } from "@/lib/mongodb";
+import { createSupabaseServerClient } from "@/lib/supabase-server";
 
 export type Andrahandsgast = {
   id: string;
@@ -25,36 +24,62 @@ export type AndrahandsgastInput = {
   typ: Boendeform;
 };
 
-type AndrahandsgastDocument = AndrahandsgastInput & { nationsID: string };
+type AndrahandsgastRow = {
+  id: string;
+  lagenhetsnummer: string;
+  fastighet: string;
+  namn: string;
+  personnummer: string | null;
+  mejladress: string;
+  telefonnummer: string;
+  typ: Boendeform | null;
+};
 
-async function getCollection() {
-  const db = await getDb();
-  return db.collection<AndrahandsgastDocument>("andrahandsgaster");
+function mapRow(row: AndrahandsgastRow): Andrahandsgast {
+  return {
+    id: row.id,
+    lagenhetsnummer: row.lagenhetsnummer,
+    fastighet: row.fastighet,
+    namn: row.namn,
+    personnummer: row.personnummer ?? "",
+    mejladress: row.mejladress,
+    telefonnummer: row.telefonnummer,
+    typ: row.typ ?? "andrahandsgast",
+  };
+}
+
+function toRow(input: AndrahandsgastInput) {
+  return {
+    lagenhetsnummer: input.lagenhetsnummer,
+    fastighet: input.fastighet,
+    namn: input.namn,
+    personnummer: input.personnummer,
+    mejladress: input.mejladress,
+    telefonnummer: input.telefonnummer,
+    typ: input.typ,
+  };
 }
 
 export async function getAndrahandsgaster(nationsId: string): Promise<Andrahandsgast[]> {
-  const collection = await getCollection();
-  const docs = await collection
-    .find({ nationsID: nationsId })
-    .sort({ lagenhetsnummer: 1 })
-    .toArray();
-
-  return docs.map((doc) => ({
-    id: doc._id.toString(),
-    lagenhetsnummer: doc.lagenhetsnummer,
-    fastighet: doc.fastighet,
-    namn: doc.namn,
-    personnummer: doc.personnummer ?? "",
-    mejladress: doc.mejladress,
-    telefonnummer: doc.telefonnummer,
-    typ: doc.typ ?? "andrahandsgast",
-  }));
+  const supabase = createSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("andrahandsgaster")
+    .select("id, lagenhetsnummer, fastighet, namn, personnummer, mejladress, telefonnummer, typ")
+    .eq("nations_id", nationsId)
+    .order("lagenhetsnummer", { ascending: true });
+  if (error) throw error;
+  return (data as AndrahandsgastRow[]).map(mapRow);
 }
 
 export async function createAndrahandsgast(nationsId: string, input: AndrahandsgastInput): Promise<string> {
-  const collection = await getCollection();
-  const result = await collection.insertOne({ ...input, nationsID: nationsId });
-  return result.insertedId.toString();
+  const supabase = createSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("andrahandsgaster")
+    .insert({ nations_id: nationsId, ...toRow(input) })
+    .select("id")
+    .single();
+  if (error) throw error;
+  return data.id;
 }
 
 export async function updateAndrahandsgast(
@@ -62,35 +87,56 @@ export async function updateAndrahandsgast(
   id: string,
   input: AndrahandsgastInput
 ): Promise<void> {
-  const collection = await getCollection();
-  await collection.updateOne(
-    { _id: new ObjectId(id), nationsID: nationsId },
-    { $set: input }
-  );
+  const supabase = createSupabaseServerClient();
+  const { error } = await supabase
+    .from("andrahandsgaster")
+    .update(toRow(input))
+    .eq("id", id)
+    .eq("nations_id", nationsId);
+  if (error) throw error;
 }
 
 export async function deleteAndrahandsgast(nationsId: string, id: string): Promise<void> {
-  const collection = await getCollection();
-  await collection.deleteOne({ _id: new ObjectId(id), nationsID: nationsId });
+  const supabase = createSupabaseServerClient();
+  const { error } = await supabase
+    .from("andrahandsgaster")
+    .delete()
+    .eq("id", id)
+    .eq("nations_id", nationsId);
+  if (error) throw error;
 }
 
 export type BulkUpsertAndrahandsgastResult = { inserted: number; updated: number };
 
+// Two round trips total regardless of row count — see the identical
+// pattern/rationale in bulkUpsertTenants (lib/tenants.ts).
 export async function bulkUpsertAndrahandsgaster(
   nationsId: string,
   inputs: AndrahandsgastInput[]
 ): Promise<BulkUpsertAndrahandsgastResult> {
-  const collection = await getCollection();
+  if (inputs.length === 0) return { inserted: 0, updated: 0 };
+  const supabase = createSupabaseServerClient();
+
+  const { data: existing, error: findError } = await supabase
+    .from("andrahandsgaster")
+    .select("lagenhetsnummer")
+    .eq("nations_id", nationsId);
+  if (findError) throw findError;
+  const existingKeys = new Set((existing as { lagenhetsnummer: string }[]).map((r) => r.lagenhetsnummer));
+
+  const { error } = await supabase
+    .from("andrahandsgaster")
+    .upsert(
+      inputs.map((input) => ({ nations_id: nationsId, ...toRow(input) })),
+      { onConflict: "nations_id,lagenhetsnummer" }
+    );
+  if (error) throw error;
+
   let inserted = 0;
   let updated = 0;
   for (const input of inputs) {
-    const result = await collection.updateOne(
-      { nationsID: nationsId, lagenhetsnummer: input.lagenhetsnummer },
-      { $set: { ...input, nationsID: nationsId } },
-      { upsert: true }
-    );
-    if (result.upsertedCount > 0) inserted++;
-    else updated++;
+    if (existingKeys.has(input.lagenhetsnummer)) updated++;
+    else inserted++;
   }
   return { inserted, updated };
 }

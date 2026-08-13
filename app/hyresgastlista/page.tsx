@@ -23,7 +23,7 @@ async function loadTenants(nationsId: string): Promise<{ tenants: Tenant[]; erro
     return {
       tenants: [],
       error:
-        "Kunde inte hämta hyresgäster. Kontrollera MongoDB-anslutningen (MONGODB_URI / MONGODB_DB).",
+        "Kunde inte hämta hyresgäster. Kontrollera Supabase-anslutningen (NEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY).",
     };
   }
 }
