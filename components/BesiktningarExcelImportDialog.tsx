@@ -15,12 +15,7 @@ import { read, utils } from "xlsx";
 import { importBesiktningarFromExcelAction } from "@/app/besiktningar/actions";
 import type { BesiktningImportInput } from "@/lib/besiktningar";
 import ResponsivePreview from "@/components/ResponsivePreview";
-import { describeMapping, excelDateCellToISO, mappingToLookup, type ImportFieldConfig } from "@/lib/table-columns";
-
-function cellStr(row: unknown[], index: number): string {
-  const val = (row as Record<number, unknown>)[index];
-  return val == null ? "" : String(val).trim();
-}
+import { cellStr, describeMapping, excelDateCellToISO, mappingToLookup, type ImportFieldConfig } from "@/lib/table-columns";
 
 function godkandLabel(godkand: boolean | null): string {
   if (godkand === true) return "Ja";

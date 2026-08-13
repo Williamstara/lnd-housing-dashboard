@@ -16,17 +16,13 @@ import { importTenantsFromExcelAction } from "@/app/hyresgastlista/actions";
 import type { TenantInput } from "@/lib/tenants";
 import ResponsivePreview from "@/components/ResponsivePreview";
 import {
+  cellStr,
   describeMapping,
   mappingToLookup,
   resolveFastighetName,
   type FastighetAlias,
   type ImportFieldConfig,
 } from "@/lib/table-columns";
-
-function cellStr(row: unknown[], index: number): string {
-  const val = (row as Record<number, unknown>)[index];
-  return val == null ? "" : String(val).trim();
-}
 
 function parseRows(
   data: ArrayBuffer,

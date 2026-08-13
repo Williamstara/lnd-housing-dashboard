@@ -1,17 +1,16 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { auth0 } from "@/lib/auth0";
 import { createFastighet, deleteFastighet, updateFastighet } from "@/lib/fastigheter";
-import { requireNationsId } from "@/lib/nations";
-import { ROLES, hasRole } from "@/lib/roles";
+import { requirePermission } from "@/lib/permissions";
+import { PERMISSIONS } from "@/lib/roles";
 
 async function requireHusformanRole(): Promise<string> {
-  const session = await auth0.getSession();
-  if (!session?.user || !hasRole(session.user, ROLES.HUSFORMAN)) {
-    throw new Error("Endast användare med rollen husförman har åtkomst.");
-  }
-  return requireNationsId(session.user);
+  const { nationsId } = await requirePermission(
+    PERMISSIONS.FASTIGHETER_MANAGE,
+    "Endast användare med rollen husförman har åtkomst."
+  );
+  return nationsId;
 }
 
 function cleanPrefixes(prefixes: string[]): string[] {

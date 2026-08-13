@@ -39,7 +39,13 @@ import {
 } from "@/app/hyresgastlista/actions";
 import { exportRowsToXlsx } from "@/lib/export-xlsx";
 import type { Andrahandsgast, AndrahandsgastInput } from "@/lib/andrahandsgaster";
-import type { FastighetAlias, ImportFieldConfig } from "@/lib/table-columns";
+import {
+  FEATURES,
+  isFeatureEnabled,
+  type FastighetAlias,
+  type ImportFieldConfig,
+  type TableColumnConfig,
+} from "@/lib/table-columns";
 import AndrahandsgastFormDialog from "@/components/AndrahandsgastFormDialog";
 import AndrahandsgastLaundryAccountDialog from "@/components/AndrahandsgastLaundryAccountDialog";
 import ColumnVisibilityMenu from "@/components/ColumnVisibilityMenu";
@@ -55,9 +61,10 @@ type Props = {
   fastigheter: string[];
   aliases: FastighetAlias[];
   importMapping: ImportFieldConfig[];
+  enabledFeatures?: string[];
+  columnSettings: TableColumnConfig[];
 };
 
-type SortableColumn = Exclude<keyof Andrahandsgast, "id">;
 type Order = "asc" | "desc";
 
 const BOENDEFORM_LABELS = {
@@ -65,15 +72,10 @@ const BOENDEFORM_LABELS = {
   inneboende: "Inneboende",
 } as const;
 
-const columns: Array<{ key: SortableColumn; label: string }> = [
-  { key: "typ", label: "Boendeform" },
-  { key: "lagenhetsnummer", label: "Lägenhetsnummer" },
-  { key: "fastighet", label: "Fastighet" },
-  { key: "namn", label: "Namn" },
-  { key: "personnummer", label: "Personnummer" },
-  { key: "mejladress", label: "Mejladress" },
-  { key: "telefonnummer", label: "Telefonnummer" },
-];
+function getColumnValue(row: Andrahandsgast, key: string): string | number {
+  if (key === "typ") return BOENDEFORM_LABELS[row.typ];
+  return row[key as keyof Andrahandsgast];
+}
 
 function matchesSearch(row: Andrahandsgast, query: string): boolean {
   if (!query) return true;
@@ -88,7 +90,10 @@ export default function AndrahandsgasterTable({
   fastigheter,
   aliases,
   importMapping,
+  enabledFeatures,
+  columnSettings,
 }: Props) {
+  const laundryEnabled = isFeatureEnabled(enabledFeatures, FEATURES.LAUNDRY_ACCOUNTS);
   const [formOpen, setFormOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [editingRow, setEditingRow] = useState<Andrahandsgast | null>(null);
@@ -99,12 +104,13 @@ export default function AndrahandsgasterTable({
   // state instead of syncing props via an effect.
   const [dialogKey, setDialogKey] = useState(0);
   const [search, setSearch] = useState("");
-  const [orderBy, setOrderBy] = useState<SortableColumn>("lagenhetsnummer");
+  const [orderBy, setOrderBy] = useState<keyof Andrahandsgast>("lagenhetsnummer");
   const [order, setOrder] = useState<Order>("asc");
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(10);
   const { isVisible, toggle } = useColumnVisibility("andrahandsgaster");
-  const visibleColumnDefs = columns.filter((c) => isVisible(c.key));
+  const nationColumns = useMemo(() => columnSettings.filter((c) => c.visible), [columnSettings]);
+  const visibleColumnDefs = nationColumns.filter((c) => isVisible(c.key));
 
   const visibleRows = useMemo(() => {
     const query = search.trim().toLocaleLowerCase("sv");
@@ -115,7 +121,7 @@ export default function AndrahandsgasterTable({
     );
   }, [andrahandsgaster, search, orderBy, order]);
 
-  function handleSort(column: SortableColumn) {
+  function handleSort(column: keyof Andrahandsgast) {
     if (orderBy === column) {
       setOrder((prev) => (prev === "asc" ? "desc" : "asc"));
     } else {
@@ -157,10 +163,8 @@ export default function AndrahandsgasterTable({
   function handleExport() {
     exportRowsToXlsx(
       `andrahandsgaster-${new Date().toISOString().slice(0, 10)}.xlsx`,
-      columns.map((c) => c.label),
-      visibleRows.map((row) =>
-        columns.map((c) => (c.key === "typ" ? BOENDEFORM_LABELS[row.typ] : row[c.key]))
-      )
+      nationColumns.map((c) => c.label),
+      visibleRows.map((row) => nationColumns.map((c) => getColumnValue(row, c.key)))
     );
   }
 
@@ -230,7 +234,7 @@ export default function AndrahandsgasterTable({
           <TableHead>
             <TableRow>
               <TableCell padding="checkbox">
-                <ColumnVisibilityMenu columns={columns} isVisible={isVisible} onToggle={toggle} />
+                <ColumnVisibilityMenu columns={nationColumns} isVisible={isVisible} onToggle={toggle} />
               </TableCell>
               {visibleColumnDefs.map((column) => (
                 <TableCell
@@ -240,7 +244,7 @@ export default function AndrahandsgasterTable({
                   <TableSortLabel
                     active={orderBy === column.key}
                     direction={orderBy === column.key ? order : "asc"}
-                    onClick={() => handleSort(column.key)}
+                    onClick={() => handleSort(column.key as keyof Andrahandsgast)}
                   >
                     {column.label}
                   </TableSortLabel>
@@ -264,18 +268,20 @@ export default function AndrahandsgasterTable({
                   <TableCell padding="checkbox" />
                   {visibleColumnDefs.map((column) => (
                     <TableCell key={column.key}>
-                      {column.key === "typ" ? BOENDEFORM_LABELS[row.typ] : row[column.key]}
+                      {getColumnValue(row, column.key)}
                     </TableCell>
                   ))}
                   <TableCell align="right">
-                    <IconButton
-                      aria-label="Skapa tvättstugekonto"
-                      size="small"
-                      onClick={() => setLaundryRow(row)}
-                      title="Skapa tvättstugekonto"
-                    >
-                      <LocalLaundryServiceIcon fontSize="small" />
-                    </IconButton>
+                    {laundryEnabled && (
+                      <IconButton
+                        aria-label="Skapa tvättstugekonto"
+                        size="small"
+                        onClick={() => setLaundryRow(row)}
+                        title="Skapa tvättstugekonto"
+                      >
+                        <LocalLaundryServiceIcon fontSize="small" />
+                      </IconButton>
+                    )}
                     <IconButton
                       aria-label="Redigera"
                       size="small"
@@ -301,7 +307,7 @@ export default function AndrahandsgasterTable({
 
       <Box sx={{ display: { xs: "block", sm: "none" } }}>
         <Stack direction="row" sx={{ justifyContent: "flex-end", mb: 1 }}>
-          <ColumnVisibilityMenu columns={columns} isVisible={isVisible} onToggle={toggle} />
+          <ColumnVisibilityMenu columns={nationColumns} isVisible={isVisible} onToggle={toggle} />
         </Stack>
         {visibleRows.length === 0 ? (
           <Typography variant="body2" color="text.secondary" sx={{ textAlign: "center", py: 4 }}>
@@ -313,14 +319,16 @@ export default function AndrahandsgasterTable({
               <Card key={row.id} variant="outlined">
                 <CardContent sx={{ "&:last-child": { pb: 2 } }}>
                   <Stack direction="row" sx={{ justifyContent: "flex-end", gap: 0.5, mb: 1 }}>
-                    <IconButton
-                      aria-label="Skapa tvättstugekonto"
-                      size="small"
-                      onClick={() => setLaundryRow(row)}
-                      title="Skapa tvättstugekonto"
-                    >
-                      <LocalLaundryServiceIcon fontSize="small" />
-                    </IconButton>
+                    {laundryEnabled && (
+                      <IconButton
+                        aria-label="Skapa tvättstugekonto"
+                        size="small"
+                        onClick={() => setLaundryRow(row)}
+                        title="Skapa tvättstugekonto"
+                      >
+                        <LocalLaundryServiceIcon fontSize="small" />
+                      </IconButton>
+                    )}
                     <IconButton aria-label="Redigera" size="small" onClick={() => openEditDialog(row)}>
                       <EditIcon fontSize="small" />
                     </IconButton>
@@ -335,7 +343,7 @@ export default function AndrahandsgasterTable({
                           {column.label}
                         </Typography>
                         <Box sx={{ overflowWrap: "break-word" }}>
-                          {column.key === "typ" ? BOENDEFORM_LABELS[row.typ] : row[column.key]}
+                          {getColumnValue(row, column.key)}
                         </Box>
                       </Box>
                     ))}

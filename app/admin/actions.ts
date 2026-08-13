@@ -1,20 +1,24 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { auth0 } from "@/lib/auth0";
+import { getCachedSession } from "@/lib/auth0";
 import { ROLES, hasRole } from "@/lib/roles";
 import { assignNationsId, assignRoles, deleteUser, getAvailableRoles, type AppRole } from "@/lib/app-users";
 import {
   createNation,
+  getNationRolePermissions,
   getNationSettings,
+  saveEnabledFeatures,
   saveFastighetAliases,
   saveImportMapping,
+  saveNationRolePermissions,
   saveRentalobjectTabGroups,
   saveTableSettings,
   setRentalobjectsMultiTab,
   type FastighetAlias,
   type ImportFieldConfig,
   type ImportKey,
+  type NationRolePermissions,
   type NationSettings,
   type RentalObjectTabGroup,
   type TableColumnConfig,
@@ -22,7 +26,7 @@ import {
 } from "@/lib/nation-settings";
 
 async function requireAdmin(): Promise<void> {
-  const session = await auth0.getSession();
+  const session = await getCachedSession();
   if (!session?.user || !hasRole(session.user, ROLES.ADMIN)) {
     throw new Error("Endast administratörer har åtkomst.");
   }
@@ -88,6 +92,32 @@ export async function saveFastighetAliasesAction(
   await saveFastighetAliases(nationsId, aliases);
   revalidatePath("/hyresgastlista");
   revalidatePath("/databas");
+}
+
+// revalidatePath("/", "layout") — feature flags affect nav visibility on
+// every page (rendered from app/layout.tsx), not just one route.
+export async function saveEnabledFeaturesAction(nationsId: string, features: string[]): Promise<void> {
+  await requireAdmin();
+  await saveEnabledFeatures(nationsId, features);
+  revalidatePath("/", "layout");
+}
+
+export async function getNationRolePermissionsAction(nationsId: string): Promise<NationRolePermissions> {
+  await requireAdmin();
+  return getNationRolePermissions(nationsId);
+}
+
+// No revalidatePath here — requirePermission (lib/permissions.ts) re-fetches
+// nation_role_permissions fresh on every Server Action invocation (only
+// cached within a single request via React's cache()), so a saved change
+// takes effect on the very next action call, nothing rendered needs
+// invalidating.
+export async function saveNationRolePermissionsAction(
+  nationsId: string,
+  mapping: NationRolePermissions
+): Promise<void> {
+  await requireAdmin();
+  await saveNationRolePermissions(nationsId, mapping);
 }
 
 export async function getAvailableRolesAction(): Promise<AppRole[]> {

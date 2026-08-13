@@ -38,7 +38,13 @@ import {
   updateTenantAction,
 } from "@/app/hyresgastlista/actions";
 import { exportRowsToXlsx } from "@/lib/export-xlsx";
-import type { FastighetAlias, ImportFieldConfig } from "@/lib/table-columns";
+import {
+  FEATURES,
+  isFeatureEnabled,
+  type FastighetAlias,
+  type ImportFieldConfig,
+  type TableColumnConfig,
+} from "@/lib/table-columns";
 import type { Tenant, TenantInput } from "@/lib/tenants";
 import ColumnVisibilityMenu from "@/components/ColumnVisibilityMenu";
 import LaundryAccountDialog from "@/components/LaundryAccountDialog";
@@ -52,19 +58,11 @@ type Props = {
   fastigheter: string[];
   aliases: FastighetAlias[];
   importMapping: ImportFieldConfig[];
+  enabledFeatures?: string[];
+  columnSettings: TableColumnConfig[];
 };
 
-type SortableColumn = Exclude<keyof Tenant, "id">;
 type Order = "asc" | "desc";
-
-const columns: Array<{ key: SortableColumn; label: string }> = [
-  { key: "lagenhetsnummer", label: "Lägenhetsnummer" },
-  { key: "fastighet", label: "Fastighet" },
-  { key: "namn", label: "Namn" },
-  { key: "personnummer", label: "Personnummer" },
-  { key: "mejladress", label: "Mejladress" },
-  { key: "telefonnummer", label: "Telefonnummer" },
-];
 
 function matchesSearch(tenant: Tenant, query: string): boolean {
   if (!query) return true;
@@ -81,7 +79,15 @@ function matchesSearch(tenant: Tenant, query: string): boolean {
   return haystack.includes(query);
 }
 
-export default function TenantsTable({ tenants, fastigheter, aliases, importMapping }: Props) {
+export default function TenantsTable({
+  tenants,
+  fastigheter,
+  aliases,
+  importMapping,
+  enabledFeatures,
+  columnSettings,
+}: Props) {
+  const laundryEnabled = isFeatureEnabled(enabledFeatures, FEATURES.LAUNDRY_ACCOUNTS);
   const [formOpen, setFormOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [editingTenant, setEditingTenant] = useState<Tenant | null>(null);
@@ -92,12 +98,13 @@ export default function TenantsTable({ tenants, fastigheter, aliases, importMapp
   // instead of syncing props via an effect.
   const [dialogKey, setDialogKey] = useState(0);
   const [search, setSearch] = useState("");
-  const [orderBy, setOrderBy] = useState<SortableColumn>("fastighet");
+  const [orderBy, setOrderBy] = useState<keyof Tenant>("fastighet");
   const [order, setOrder] = useState<Order>("asc");
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(10);
   const { isVisible, toggle } = useColumnVisibility("tenants");
-  const visibleColumnDefs = columns.filter((c) => isVisible(c.key));
+  const nationColumns = useMemo(() => columnSettings.filter((c) => c.visible), [columnSettings]);
+  const visibleColumnDefs = nationColumns.filter((c) => isVisible(c.key));
 
   const visibleTenants = useMemo(() => {
     const query = search.trim().toLocaleLowerCase("sv");
@@ -109,7 +116,7 @@ export default function TenantsTable({ tenants, fastigheter, aliases, importMapp
     );
   }, [tenants, search, orderBy, order]);
 
-  function handleSort(column: SortableColumn) {
+  function handleSort(column: keyof Tenant) {
     if (orderBy === column) {
       setOrder((prev) => (prev === "asc" ? "desc" : "asc"));
     } else {
@@ -151,8 +158,8 @@ export default function TenantsTable({ tenants, fastigheter, aliases, importMapp
   function handleExport() {
     exportRowsToXlsx(
       `hyresgastlista-${new Date().toISOString().slice(0, 10)}.xlsx`,
-      columns.map((c) => c.label),
-      visibleTenants.map((tenant) => columns.map((c) => tenant[c.key]))
+      nationColumns.map((c) => c.label),
+      visibleTenants.map((tenant) => nationColumns.map((c) => tenant[c.key as keyof Tenant]))
     );
   }
 
@@ -222,7 +229,7 @@ export default function TenantsTable({ tenants, fastigheter, aliases, importMapp
           <TableHead>
             <TableRow>
               <TableCell padding="checkbox">
-                <ColumnVisibilityMenu columns={columns} isVisible={isVisible} onToggle={toggle} />
+                <ColumnVisibilityMenu columns={nationColumns} isVisible={isVisible} onToggle={toggle} />
               </TableCell>
               {visibleColumnDefs.map((column) => (
                 <TableCell
@@ -232,7 +239,7 @@ export default function TenantsTable({ tenants, fastigheter, aliases, importMapp
                   <TableSortLabel
                     active={orderBy === column.key}
                     direction={orderBy === column.key ? order : "asc"}
-                    onClick={() => handleSort(column.key)}
+                    onClick={() => handleSort(column.key as keyof Tenant)}
                   >
                     {column.label}
                   </TableSortLabel>
@@ -255,17 +262,19 @@ export default function TenantsTable({ tenants, fastigheter, aliases, importMapp
                 <TableRow key={tenant.id}>
                   <TableCell padding="checkbox" />
                   {visibleColumnDefs.map((column) => (
-                    <TableCell key={column.key}>{tenant[column.key]}</TableCell>
+                    <TableCell key={column.key}>{tenant[column.key as keyof Tenant]}</TableCell>
                   ))}
                   <TableCell align="right">
-                    <IconButton
-                      aria-label="Skapa tvättstugekonto"
-                      size="small"
-                      onClick={() => setLaundryTenant(tenant)}
-                      title="Skapa tvättstugekonto"
-                    >
-                      <LocalLaundryServiceIcon fontSize="small" />
-                    </IconButton>
+                    {laundryEnabled && (
+                      <IconButton
+                        aria-label="Skapa tvättstugekonto"
+                        size="small"
+                        onClick={() => setLaundryTenant(tenant)}
+                        title="Skapa tvättstugekonto"
+                      >
+                        <LocalLaundryServiceIcon fontSize="small" />
+                      </IconButton>
+                    )}
                     <IconButton
                       aria-label="Redigera"
                       size="small"
@@ -291,7 +300,7 @@ export default function TenantsTable({ tenants, fastigheter, aliases, importMapp
 
       <Box sx={{ display: { xs: "block", sm: "none" } }}>
         <Stack direction="row" sx={{ justifyContent: "flex-end", mb: 1 }}>
-          <ColumnVisibilityMenu columns={columns} isVisible={isVisible} onToggle={toggle} />
+          <ColumnVisibilityMenu columns={nationColumns} isVisible={isVisible} onToggle={toggle} />
         </Stack>
         {visibleTenants.length === 0 ? (
           <Typography variant="body2" color="text.secondary" sx={{ textAlign: "center", py: 4 }}>
@@ -303,14 +312,16 @@ export default function TenantsTable({ tenants, fastigheter, aliases, importMapp
               <Card key={tenant.id} variant="outlined">
                 <CardContent sx={{ "&:last-child": { pb: 2 } }}>
                   <Stack direction="row" sx={{ justifyContent: "flex-end", gap: 0.5, mb: 1 }}>
-                    <IconButton
-                      aria-label="Skapa tvättstugekonto"
-                      size="small"
-                      onClick={() => setLaundryTenant(tenant)}
-                      title="Skapa tvättstugekonto"
-                    >
-                      <LocalLaundryServiceIcon fontSize="small" />
-                    </IconButton>
+                    {laundryEnabled && (
+                      <IconButton
+                        aria-label="Skapa tvättstugekonto"
+                        size="small"
+                        onClick={() => setLaundryTenant(tenant)}
+                        title="Skapa tvättstugekonto"
+                      >
+                        <LocalLaundryServiceIcon fontSize="small" />
+                      </IconButton>
+                    )}
                     <IconButton aria-label="Redigera" size="small" onClick={() => openEditDialog(tenant)}>
                       <EditIcon fontSize="small" />
                     </IconButton>
@@ -324,7 +335,7 @@ export default function TenantsTable({ tenants, fastigheter, aliases, importMapp
                         <Typography variant="caption" color="text.secondary" sx={{ display: "block" }}>
                           {column.label}
                         </Typography>
-                        <Box sx={{ overflowWrap: "break-word" }}>{tenant[column.key]}</Box>
+                        <Box sx={{ overflowWrap: "break-word" }}>{tenant[column.key as keyof Tenant]}</Box>
                       </Box>
                     ))}
                   </Box>

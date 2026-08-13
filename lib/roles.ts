@@ -52,6 +52,71 @@ export function hasAnyRole(
   return roles.some((role) => hasRole(user, role));
 }
 
+// Every distinct role-gated action in the app (docs/SAAS-READINESS-ROADMAP.md
+// Tier 2.1's catalog, deduplicated — several actions.ts files independently
+// defined the same check under different function names). Deliberately
+// excludes "admin.manage" — admin is a cross-nation superuser (see hasRole's
+// bypass above), not something a nation should be able to configure for
+// itself; app/admin/actions.ts's requireAdmin stays hardcoded to
+// ROLES.ADMIN, not routed through this permission table.
+export const PERMISSIONS = {
+  BESIKTNINGAR_MARK_PAYMENT: "besiktningar.mark_payment",
+  BESIKTNINGAR_DELETE: "besiktningar.delete",
+  BESIKTNINGAR_ARCHIVE: "besiktningar.archive",
+  FASTIGHETER_MANAGE: "fastigheter.manage",
+  STATISTIK_MANAGE_MISSED_RENT: "statistik.manage_missed_rent",
+  UPPSAGNING_CREATE: "uppsagning.create",
+  LEDIGA_LAGENHETER_MANAGE_TENANT: "lediga_lagenheter.manage_tenant",
+  LEDIGA_LAGENHETER_MANAGE_FASTIGHET: "lediga_lagenheter.manage_fastighet",
+  LEDIGA_LAGENHETER_ARCHIVE: "lediga_lagenheter.archive",
+} as const;
+
+export type PermissionKey = (typeof PERMISSIONS)[keyof typeof PERMISSIONS];
+
+// A human label per key, for the admin permissions editor — kept next to
+// PERMISSIONS so a new key can't be added to one list without the other.
+export const PERMISSION_LABELS: Record<PermissionKey, string> = {
+  [PERMISSIONS.BESIKTNINGAR_MARK_PAYMENT]: "Besiktningar: markera betalning",
+  [PERMISSIONS.BESIKTNINGAR_DELETE]: "Besiktningar: ta bort",
+  [PERMISSIONS.BESIKTNINGAR_ARCHIVE]: "Besiktningar: arkivera",
+  [PERMISSIONS.FASTIGHETER_MANAGE]: "Fastigheter: hantera",
+  [PERMISSIONS.STATISTIK_MANAGE_MISSED_RENT]: "Statistik: hantera missade hyror",
+  [PERMISSIONS.UPPSAGNING_CREATE]: "Uppsägning: skapa",
+  [PERMISSIONS.LEDIGA_LAGENHETER_MANAGE_TENANT]: "Lediga lägenheter: hantera hyresgäst",
+  [PERMISSIONS.LEDIGA_LAGENHETER_MANAGE_FASTIGHET]: "Lediga lägenheter: hantera fastighet",
+  [PERMISSIONS.LEDIGA_LAGENHETER_ARCHIVE]: "Lediga lägenheter: arkivera",
+};
+
+// LND's exact current hardcoded behavior, preserved as the fallback a
+// nation with no saved nation_role_permissions rows gets — same "saved ??
+// default" pattern as resolveColumns/resolveImportMapping
+// (lib/table-columns.ts). Admin always passes regardless (hasAnyRole ->
+// hasRole's superuser bypass), so it's never listed explicitly here.
+export const DEFAULT_PERMISSION_ROLES: Record<PermissionKey, string[]> = {
+  [PERMISSIONS.BESIKTNINGAR_MARK_PAYMENT]: [ROLES.HUSVD, ROLES.EKONOMI],
+  [PERMISSIONS.BESIKTNINGAR_DELETE]: ARCHIVE_ROLES,
+  [PERMISSIONS.BESIKTNINGAR_ARCHIVE]: [ROLES.HUSVD],
+  [PERMISSIONS.FASTIGHETER_MANAGE]: [ROLES.HUSFORMAN],
+  [PERMISSIONS.STATISTIK_MANAGE_MISSED_RENT]: [ROLES.HUSFORMAN],
+  [PERMISSIONS.UPPSAGNING_CREATE]: [ROLES.EKONOMI],
+  [PERMISSIONS.LEDIGA_LAGENHETER_MANAGE_TENANT]: [ROLES.EKONOMI],
+  [PERMISSIONS.LEDIGA_LAGENHETER_MANAGE_FASTIGHET]: [ROLES.HUSFORMAN],
+  [PERMISSIONS.LEDIGA_LAGENHETER_ARCHIVE]: ARCHIVE_ROLES,
+};
+
+// Pure check — takes the nation's saved role list for this permission (or
+// null/empty to use the default) so this file stays DB-free and importable
+// client-side. lib/permissions.ts composes this with the actual Supabase
+// fetch + session read for use in Server Actions.
+export function hasPermission(
+  user: User | null | undefined,
+  permissionKey: PermissionKey,
+  savedRoles: string[] | null | undefined
+): boolean {
+  const allowedRoles = savedRoles && savedRoles.length > 0 ? savedRoles : DEFAULT_PERMISSION_ROLES[permissionKey];
+  return hasAnyRole(user, allowedRoles);
+}
+
 // vaktmästare is the one role that *narrows* access instead of adding to
 // it — a user whose only role is vaktmästare gets nothing but the todo
 // list (enforced in proxy.ts, and reflected in the nav in NavBar/NavGrid).

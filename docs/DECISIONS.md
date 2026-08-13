@@ -8,6 +8,225 @@ maintained.
 
 ---
 
+## `TenantFormDialog.tsx`/`AndrahandsgastFormDialog.tsx` intentionally not wired to admin column visibility
+
+- **Date**: 2026-08-13
+- **Status**: accepted
+- **Context**: Tier 4.1 of `docs/SAAS-READINESS-ROADMAP.md` (form dialogs
+  should hide fields a nation has hidden from the list view, matching what
+  the admin column config already controls for the list itself) was
+  implemented for `ApartmentFormDialog.tsx`/`RentalObjectFormDialog.tsx` in
+  the same session. Attempting the identical change for
+  `TenantFormDialog.tsx`/`AndrahandsgastFormDialog.tsx` surfaced a real
+  blocker: `app/hyresgastlista/actions.ts`'s `sanitizeInput`/
+  `sanitizeAndrahandsgastInput` blanket-require every field on those two
+  input types to be non-blank server-side
+  (`Object.values(trimmed).some((value) => value === "")`), unlike
+  apartments' sanitizer, which only hard-requires 4 specific fields and
+  treats numeric fields as optional (blank → `0` via `Number("")`, never
+  rejected).
+- **Decision**: Left `TenantFormDialog.tsx`/`AndrahandsgastFormDialog.tsx`
+  exactly as they were — full hardcoded field list, no `visibleKeys` prop.
+  Both files carry a code comment explaining why.
+- **Reason**: Wiring the client-side field-hiding alone, without also
+  making the server-side check nation-settings-aware, would let an admin
+  hide a field via `/admin`'s column config and then have every single
+  tenant/andrahandsgast save silently fail with "Alla fält måste fyllas
+  i." — a worse outcome than not offering the toggle at all. This is a
+  belt-and-suspenders validation, not a display concern, so fixing it
+  properly means threading `NationSettings` (or at least the resolved
+  visible-field set) into the Server Action's sanitize function too — a
+  larger, coupled change that wasn't attempted this session.
+- **Consequences**: Do not add a `visibleKeys` prop to either dialog by
+  copying the `ApartmentFormDialog.tsx` pattern without first relaxing the
+  corresponding server-side blanket check. Do both together, or not at
+  all. See `docs/TODO.md`'s "Later" section for the concrete follow-up.
+- **Files**: `components/TenantFormDialog.tsx`,
+  `components/AndrahandsgastFormDialog.tsx`,
+  `app/hyresgastlista/actions.ts` (the blocker, not itself modified).
+
+---
+
+## SaaS-readiness roadmap: build configuration infrastructure now, defer the two biggest architectural bets
+
+- **Date**: 2026-08-13
+- **Status**: accepted
+- **Context**: `docs/SAAS-READINESS-ROADMAP.md` was written speculatively
+  (no real second customer at the time). By this session, several real
+  Swedish student nations were genuinely interested — the user explicitly
+  asked whether to build multi-organization support now versus later,
+  worried about breaking things once in production. Re-audited the roadmap
+  with `graphify` first (found two gaps — see the roadmap file's 2026-08-13
+  update note and Tier 3.4/6.2 entries), then discussed scope directly with
+  the user.
+- **Decision**: Build the *configuration infrastructure* items now — Tier
+  2.1 in full (including the per-nation permission model, previously
+  gated on "only once you have a concrete second customer"), Tier 1.2
+  (multi-nation operator support, previously also gated the same way),
+  3.2, 3.4 (new), 4.1, 4.2, 5.2's flag half, 6.1, 6.2, 7.1. Keep Tier 1.1
+  (property-hierarchy generalization), Tier 3.1 (workflow state-machine
+  configurability), and Tier 5.1 (email-provider abstraction) explicitly
+  deferred, even though real prospective nations now exist.
+- **Reason**: The user's own framing, confirmed correct on reflection: the
+  risk isn't "is it harder to change the schema once there's more
+  production data" (it's actually easier to change now, before more data
+  and more customers exist) — it's "will building this now mean guessing
+  at the wrong shape." Tier 1.2 and Tier 2.1 aren't guesses — they're about
+  how the *operator* manages multiple real, already-known customers, which
+  doesn't require knowing any nation's workflow specifics. Tier 1.1/3.1/5.1
+  do require that: generalizing the property hierarchy or the workflow
+  state machine without a real second shape to design against risks
+  building the wrong abstraction, which is a worse position once real data
+  and real customers depend on it than simply waiting for an actual
+  onboarding conversation to reveal the real requirement. The user's own
+  stated goal — configuring differences in the admin dashboard instead of
+  hardcoding them, worked out through conversations with each nation — is
+  better served by building the *configurable knobs* (permissions, feature
+  flags, admin column/form config, currency/locale) now and deciding the
+  *values* per nation later, than by guessing at structural differences
+  that may not even materialize (the prospective nations are the same type
+  of organization as `LND`, just not necessarily the same workflow).
+- **Consequences**: A future agent should not re-litigate this scope
+  question from scratch — re-read this entry and the roadmap's "Update"
+  note first. If a specific nation's onboarding conversation reveals a
+  concrete need for Tier 1.1/3.1/5.1, that's new information this decision
+  didn't have, and building it then is the right call — this decision only
+  covers building it *speculatively*, not building it once a real
+  requirement exists.
+- **Files**: `docs/SAAS-READINESS-ROADMAP.md` (updated with this session's
+  scope decision and the two graphify-audit findings).
+
+---
+
+## `auth0.getSession()` must be called via `getCachedSession()`, not directly
+
+- **Date**: 2026-08-13
+- **Status**: accepted
+- **Context**: A performance audit (prompted by a request to check whether
+  the app makes unnecessary Auth0/Supabase calls) traced a single page load
+  of `/lediga-lagenheter` and found **~7 independent `auth0.getSession()`
+  calls** for data that's identical throughout one request: one from
+  `auth0.withPageAuthRequired`'s internal check, one from the page's own
+  explicit call, and one more per `lib/*.ts` Supabase call in that page's
+  `Promise.all` — because `lib/supabase-server.ts`'s `accessToken` callback
+  (confirmed via `@supabase/supabase-js`'s source,
+  `node_modules/@supabase/supabase-js/dist/index.mjs:656,663`) calls
+  `auth0.getSession()` **once at client construction and again on every
+  `.from()`/Storage request**, and this codebase deliberately constructs a
+  fresh Supabase client per `lib/*.ts` function call (correct — not being
+  reversed here). `auth0.getSession()` itself does no network call (it
+  decrypts a stateless session cookie — confirmed via
+  `@auth0/nextjs-auth0/dist/server/auth-client.js`'s
+  `getSessionWithDomainCheck` → `sessionStore.get`), but the repeated
+  JWE-decrypt is real, avoidable CPU cost, once per request.
+- **Decision**: Added `getCachedSession` to `lib/auth0.ts` — `auth0.getSession`
+  wrapped in React's `cache()`, which dedupes an identical call across one
+  request/render pass in Next.js Server Components and Server Actions. Every
+  in-app call site (`lib/supabase-server.ts`, every `app/*/page.tsx`, every
+  `app/*/actions.ts` role-guard helper, every `app/api/**/route.ts` handler,
+  `app/layout.tsx`) now calls `getCachedSession()` instead of
+  `auth0.getSession()` directly.
+- **Reason**: `withPageAuthRequired`'s own internal session check is inside
+  the `@auth0/nextjs-auth0` SDK and isn't reachable without patching it, so
+  the realistic result is "1 SDK-internal + 1 cached app-level" per request
+  instead of "1 SDK-internal + ~6 app-level" — not a single call total, but
+  a ~70-85% cut with zero behavior change (same session data, same
+  freshness; `cache()` never leaks across requests or users).
+- **Consequences**: Any new `auth0.getSession()` call site added to this app
+  should use `getCachedSession()` instead — calling `auth0.getSession()`
+  directly still works, it just reintroduces the redundant-decrypt pattern
+  this decision removed.
+- **Files**: `lib/auth0.ts`, `lib/supabase-server.ts`, every `app/*/page.tsx`,
+  `app/*/actions.ts`, `app/api/**/route.ts`, `app/layout.tsx`.
+
+---
+
+## Only 2 of the 5 bulk Excel-importers needed write-batching — the other 3 already batch correctly
+
+- **Date**: 2026-08-13
+- **Status**: accepted
+- **Context**: Same performance audit as above. Initial investigation (a
+  `grep` for `for (const input of inputs)` across `lib/*.ts`) suggested all
+  five `bulkUpsertX` functions (`apartments.ts`, `besiktningar.ts`,
+  `andrahandsgaster.ts`, `tenants.ts`, `rentalobjects.ts`) wrote one row at a
+  time in a sequential loop — a real N-round-trip problem for an N-row
+  import. Reading each function's **full body** (not just the grep match)
+  before editing found this was only true for two of them:
+  - `bulkUpsertApartments` (`lib/apartments.ts`) and `bulkUpsertBesiktningar`
+    (`lib/besiktningar.ts`) genuinely looped and called `.insert()`/
+    `.update()` once per row. Both need this shape because their
+    existing-row lookup excludes archived rows
+    (`.neq("status", "arkiverad")`) — a `lagenhetsnummer` can legitimately
+    repeat across an archived and a current row, so a single
+    `.upsert(rows, { onConflict: "lagenhetsnummer" })` call would risk
+    matching the wrong (archived) row. These two must target by `id`.
+  - `bulkUpsertTenants`, `bulkUpsertAndrahandsgaster`, and
+    `bulkUpsertRentalObjects` were **already correct** — each does exactly
+    one batched `.upsert(inputs.map(...), { onConflict: "nations_id,lagenhetsnummer" })`
+    call for the whole import (two round trips total: one pre-fetch, one
+    upsert), because those three tables have no archived-row ambiguity, so a
+    composite-key upsert is safe. The `for (const input of inputs)` loop the
+    initial grep matched in these three files is a pure in-memory counter
+    running *after* the single upsert call already succeeded — not a
+    per-row DB call.
+- **Decision**: Only `bulkUpsertApartments` and `bulkUpsertBesiktningar`
+  were changed — both now split rows into insert/update sets, chunk each
+  into batches of `BULK_WRITE_CHUNK_SIZE` (50, `lib/supabase-server.ts`'s
+  new `chunkArray` helper), and send one batched `.insert()`/`.upsert(...,
+  { onConflict: "id" })` call per chunk. If a chunk's batched call fails,
+  that chunk falls back to the original per-row loop (throwing on the first
+  bad row, matching pre-existing fail-fast behavior) so the failure is
+  isolated to at most 50 rows instead of the whole import, without
+  inventing new "skip and continue" semantics for DB-level errors that
+  didn't exist before this change. Verified with an isolated,
+  non-network throwaway script exercising the exact chunk/fallback control
+  flow (chunking boundaries, an all-clean batch, and a batch with one bad
+  row producing the same fail-fast point as before) — deleted after
+  verifying, per `AGENTS.md` convention.
+- **Reason**: Root-cause fix only where the problem actually existed, not a
+  blanket rewrite of all five — the three already-correct functions didn't
+  need touching, and forcing them onto the chunk+fallback shape would have
+  been unnecessary churn on working code.
+- **Consequences**: Any *new* bulk-import function in this app should use
+  the composite-key single-`.upsert()` shape (`bulkUpsertTenants`'s pattern)
+  by default — reach for the chunk+fallback shape (`bulkUpsertApartments`'s
+  pattern) only if the target table has the same "archived rows share a key
+  with current rows" ambiguity that forces targeting by `id` instead of a
+  natural composite key.
+- **Files**: `lib/supabase-server.ts` (new `chunkArray`/`BULK_WRITE_CHUNK_SIZE`
+  exports), `lib/apartments.ts`, `lib/besiktningar.ts`.
+
+---
+
+## `importApartmentsFromExcelAction` re-fetched the fastighet list once per row — fixed to fetch once
+
+- **Date**: 2026-08-13
+- **Status**: accepted
+- **Context**: Same performance audit. `sanitizeApartmentInput`
+  (`app/lediga-lagenheter/actions.ts`) calls `getFastighetNamn(nationsId)` —
+  a real Supabase query — to validate a row's `fastighet` field. It's
+  correct for the plain create/update actions (one row, one fetch) but was
+  also being called from inside `importApartmentsFromExcelAction`'s
+  per-row loop, re-issuing the same query for every row in an Excel import.
+  The sibling `importTenantsFromExcelAction`
+  (`app/hyresgastlista/actions.ts`) already fetches `getFastighetNamn` once
+  before its loop and does the per-row check synchronously — this was
+  always the right pattern, just not applied to the apartments importer.
+- **Decision**: Gave `sanitizeApartmentInput` an optional `fastigheter?:
+  string[]` parameter that skips its own fetch when provided.
+  `importApartmentsFromExcelAction` now fetches `getFastighetNamn` once
+  before its loop and passes it through; the two single-row call sites
+  (`createApartmentAction`/`updateApartmentAction`) are unchanged and keep
+  fetching internally.
+- **Reason**: Matches the already-correct, already-established pattern in
+  the tenants importer rather than inventing a new one.
+- **Consequences**: Any future single-row sanitize helper reused inside a
+  bulk-import loop should take the same "optional pre-fetched list" shape
+  rather than re-fetching per row.
+- **Files**: `app/lediga-lagenheter/actions.ts`.
+
+---
+
 ## Raw Postgres/PostgREST errors reaching the browser are a hardening item, not a tracked vulnerability
 
 - **Date**: 2026-08-13

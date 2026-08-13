@@ -1,6 +1,6 @@
 import Container from "@mui/material/Container";
 import Typography from "@mui/material/Typography";
-import { auth0 } from "@/lib/auth0";
+import { auth0, getCachedSession } from "@/lib/auth0";
 import { requireAdminOrRedirect } from "@/lib/roles";
 import { listAllNationIds } from "@/lib/nation-settings";
 import { getAvailableRoles, getUsersWithoutNation } from "@/lib/app-users";
@@ -8,7 +8,7 @@ import AdminShell from "@/components/AdminShell";
 
 const Admin = auth0.withPageAuthRequired(
   async function Admin() {
-    const session = await auth0.getSession();
+    const session = await getCachedSession();
     requireAdminOrRedirect(session?.user);
 
     const [nationIds, usersWithoutNation, availableRoles] = await Promise.all([

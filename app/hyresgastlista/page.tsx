@@ -1,14 +1,17 @@
 import Alert from "@mui/material/Alert";
 import Container from "@mui/material/Container";
-import { auth0 } from "@/lib/auth0";
+import { auth0, getCachedSession } from "@/lib/auth0";
 import { getAndrahandsgaster } from "@/lib/andrahandsgaster";
 import { getFastighetNamn } from "@/lib/fastigheter";
-import { requireNationsIdOrRedirect } from "@/lib/nations";
+import { requireActiveNationsIdOrRedirect } from "@/lib/active-nation";
 import {
+  DEFAULT_ANDRAHANDSGAST_COLUMNS,
   DEFAULT_ANDRAHANDSGAST_IMPORT,
   DEFAULT_FASTIGHET_ALIASES,
+  DEFAULT_TENANT_COLUMNS,
   DEFAULT_TENANT_IMPORT,
   getNationSettings,
+  resolveColumns,
   resolveFastighetAliases,
   resolveImportMapping,
 } from "@/lib/nation-settings";
@@ -30,8 +33,8 @@ async function loadTenants(nationsId: string): Promise<{ tenants: Tenant[]; erro
 
 const HyresgastlistaPage = auth0.withPageAuthRequired(
   async function HyresgastlistaPage() {
-    const session = await auth0.getSession();
-    const nationsId = requireNationsIdOrRedirect(session?.user);
+    const session = await getCachedSession();
+    const nationsId = await requireActiveNationsIdOrRedirect(session?.user);
     const [{ tenants, error }, fastigheter, andrahandsgaster, nationSettings] = await Promise.all([
       loadTenants(nationsId),
       getFastighetNamn(nationsId),
@@ -50,6 +53,11 @@ const HyresgastlistaPage = auth0.withPageAuthRequired(
       DEFAULT_FASTIGHET_ALIASES,
       nationSettings?.fastighetAliases
     );
+    const tenantColumns = resolveColumns(DEFAULT_TENANT_COLUMNS, nationSettings?.tables.tenants);
+    const andrahandsgastColumns = resolveColumns(
+      DEFAULT_ANDRAHANDSGAST_COLUMNS,
+      nationSettings?.tables.andrahandsgaster
+    );
 
     return (
       <Container maxWidth={false} sx={{ py: { xs: 3, md: 4 } }}>
@@ -64,12 +72,16 @@ const HyresgastlistaPage = auth0.withPageAuthRequired(
           fastigheter={fastigheter}
           aliases={fastighetAliases}
           importMapping={tenantImportMapping}
+          enabledFeatures={nationSettings?.enabledFeatures}
+          columnSettings={tenantColumns}
         />
         <AndrahandsgasterTable
           andrahandsgaster={andrahandsgaster}
           fastigheter={fastigheter}
           aliases={fastighetAliases}
           importMapping={andrahandsgastImportMapping}
+          enabledFeatures={nationSettings?.enabledFeatures}
+          columnSettings={andrahandsgastColumns}
         />
       </Container>
     );

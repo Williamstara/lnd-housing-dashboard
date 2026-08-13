@@ -12,6 +12,27 @@ which makes several of these items (especially the permission-model and
 localization ones) meaningfully easier to build well than they would have
 been on the old Mongo/schemaless model — noted per item below.
 
+## Update (2026-08-13, same day, later session): scope decision + graphify re-audit
+
+Several more Swedish student nations are now genuinely interested (not
+hypothetical) — same *type* of organization as `LND`, not necessarily the
+same workflow. Re-audited this file with `graphify` (MCP knowledge-graph
+tools) plus targeted searches, looking specifically for anything a
+file-by-file manual audit would undercount. Two findings below (see Tier
+3.4, new, and Tier 6.2's corrected numbers).
+
+**Scope decision made this session, after discussion**: build all the
+*configuration infrastructure* items now (Tier 2.1 in full, 3.2, 3.4 (new),
+4.1, 4.2, 5.2's flag half, 6.1, 6.2, 7.1) — none of it requires guessing at
+a specific other nation's workflow, it's the knobs, not the values on them.
+**Explicitly deferred**: Tier 1.1 (property hierarchy), Tier 3.1 (workflow
+state machine), and Tier 5.1 (email provider) — each requires knowing a
+*real* second nation's actual different shape to design well, and building
+against a guess risks the wrong abstraction, which is a worse position than
+waiting (see the deferral notes on each item below, and
+`docs/DECISIONS.md`). Revisit each specifically when a nation's onboarding
+conversation reveals a concrete need — not preemptively.
+
 ## How to use this file
 
 Each item lists: what's hardcoded today (with file references), why it
@@ -42,6 +63,12 @@ edits to most `lib/*.ts` files, not a configuration change.
 customer whose hierarchy actually differs — YAGNI applies here. Worth
 revisiting only when a concrete second customer's data model is known.
 
+**Deferred (2026-08-13)**: explicitly re-confirmed as deferred even with
+real prospective nations in discussion — until a specific nation's onboarding
+conversation reveals their hierarchy genuinely differs from `LND`'s, building
+this against a guess risks designing the wrong abstraction, which is worse
+than waiting. See the "Update" note near the top of this file.
+
 ### 1.2 Exactly one `nationsID` per Auth0 user — no multi-org support for the SaaS operator
 
 `lib/nations.ts`'s `getNationsId` reads a single string claim. There's no
@@ -57,6 +84,10 @@ for admin-role users, or a proper multi-nation membership model (Auth0
 `roles` claim already supports arrays; nationsID could become an array too,
 with a "currently active nation" selection stored client-side). Needs Auth0
 Action changes (external to this repo) plus `lib/nations.ts` changes.
+
+**In scope now (2026-08-13)**: unlike 1.1/3.1/5.1, this one isn't a guess —
+real prospective nations mean the operator genuinely needs to manage more
+than one nation soon. See the "Update" note near the top of this file.
 
 ---
 
@@ -132,6 +163,11 @@ count or order — don't build it against a hypothetical. Note the Postgres
 `check` constraints would need to become data-driven too (or move into
 application-layer validation) if the stage rules become configurable.
 
+**Deferred (2026-08-13)**: same reasoning as Tier 1.1's deferral note —
+explicitly re-confirmed as deferred even with real prospective nations in
+discussion, until a specific nation's actual pipeline is known to differ.
+See the "Update" note near the top of this file.
+
 ### 3.2 Nav structure is one static list for every nation
 
 `lib/nav-links.tsx`'s `navLinks`/`NAV_GROUPS` are the same fixed set for
@@ -158,6 +194,39 @@ prioritize it above the rest of this roadmap regardless of SaaS plans.
 `resolveFastighetFromPrefix`/`FastighetAlias`, deleting the two hardcoded
 tables. See `docs/TODO.md` for the existing scoping note.
 
+### 3.4 Four Excel-import dialogs each duplicate their own cell-parsing helpers (new, 2026-08-13)
+
+Found via this session's graphify-assisted re-audit — already flagged in
+`docs/ARCHITECTURE.md`'s "Known technical limitations" but never carried
+into this roadmap. `ExcelImportDialog.tsx`,
+`AndrahandsgastExcelImportDialog.tsx`, `BesiktningarExcelImportDialog.tsx`,
+and `ApartmentExcelImport.tsx` each define their own local
+`cellStr`/`cellNum`/`cellDate`-style cell-parsing helpers instead of sharing
+one utility — only `excelDateCellToISO` (the date-cell timezone fix) has
+been centralized so far, into `lib/table-columns.ts`. Same "every new
+nation's importer touches N duplicated files" shape as 3.3 above: a new
+nation whose sheet needs slightly different cell handling means editing (or
+worse, re-copying) four files instead of one.
+
+**Direction**: extract shared `cellStr`/`cellNum`/`cellDate` helpers into
+`lib/table-columns.ts` next to `excelDateCellToISO`, repoint all four
+dialogs at them, delete each file's local copy. Contained, mechanical —
+verify against a real sample file per `AGENTS.md`'s established convention
+before considering it done, since it touches parsing logic.
+
+**Done (2026-08-13), narrower than originally scoped — verified by reading,
+not just grepping for similar names.** Only `cellStr(row, index)` was
+actually byte-identical across all four files, now in `lib/table-columns.ts`.
+`cellNum`/`cellDate` (`ApartmentExcelImport.tsx`) and besiktningar's
+`parseNumber`/`formatDateCell` (`BesiktningarExcelImportDialog.tsx`) looked
+like the same duplication pattern from the function names alone, but turned
+out to have different signatures and, for besiktningar's date handling,
+real importer-specific logic (merged-cell inheritance down a column, a
+YYMMDD-as-plain-number fallback) that a generic shared function would have
+had to either lose or special-case. Left those local rather than force a
+premature shared abstraction over genuinely different behavior — see
+`lib/table-columns.ts`'s comment on `cellStr` for the full reasoning.
+
 ---
 
 ## Tier 4 — Admin config coverage gaps
@@ -181,12 +250,43 @@ has what's needed; the form dialogs just need to read it instead of
 hardcoding their field arrays. Natural follow-on to 4.2 below since both
 need the same underlying config to be genuinely complete.
 
+**Done (2026-08-13), partially — `ApartmentFormDialog.tsx` and
+`RentalObjectFormDialog.tsx` only.** Both now take a `visibleKeys` prop
+(derived from the same `columnSettings`/`resolveColumns` output the list
+view already computes) and skip rendering + required-field validation for
+any field a nation has hidden. **`TenantFormDialog.tsx` and
+`AndrahandsgastFormDialog.tsx` were deliberately left unwired** — a real
+blocker was found, not just deferred for time: `app/hyresgastlista/actions.ts`'s
+`sanitizeInput`/`sanitizeAndrahandsgastInput` blanket-require every field on
+those two input types to be non-blank server-side
+(`Object.values(trimmed).some((value) => value === "")`), unlike
+apartments' sanitizer, which only hard-requires 4 specific fields and treats
+numeric fields as optional (blank → `0`, never rejected). Wiring the same
+`visibleKeys` pattern onto tenant/andrahandsgast forms without first making
+that server-side check nation-settings-aware would let an admin hide a
+field client-side and then have every single save silently fail with
+"Alla fält måste fyllas i." — worse than not offering the toggle. Revisit
+together (client field-hiding + the server validation relaxation) if a real
+need for optional tenant/andrahandsgast fields comes up; don't wire the
+client half alone.
+
 ### 4.2 Table-column admin config only covers `apartments`/`rentalobjects` — Hyresgästlista, Arkiv, Uppsägning, Todo use the identical rendering pattern but aren't wired in
 
 Confirmed low-effort: `TableKey` in `lib/table-columns.ts` is just
 `"apartments" | "rentalobjects"` — extending it to the other four tables
 that already follow the same `*Table.tsx` list-rendering shape is
 mechanical, not a new pattern.
+
+**Done (2026-08-13).** `TableKey` now includes `tenants`, `andrahandsgaster`,
+`arkiv`, `uppsagning`, and `todo`, each with a `DEFAULT_*_COLUMNS` array
+(`lib/table-columns.ts`) and a `ColumnConfigEditor` instance in
+`components/AdminPage.tsx`'s "Kolumner" tab. Unlike apartments/rentalobjects,
+none of these five row types has a `custom: Record<string, string>` bag to
+store a brand-new field's value in, so their editors pass
+`allowCustomFields={false}` — visibility/order/label of *existing* columns
+is configurable, adding a new custom field is not (there's nowhere to store
+it). `ColumnConfigEditor` gained that prop (default `true`, so apartments/
+rentalobjects are unaffected).
 
 ---
 
@@ -206,6 +306,9 @@ provider is needed, extract an `EmailProvider` interface
 (`{sendMail, listTemplatesAttachmentSupport, ...}`) that `lib/gmail-tokens.ts`
 implements, add the new provider alongside it, and make the choice a
 per-nation setting.
+
+**Deferred (2026-08-13)**: re-confirmed as deferred — no prospective nation
+has asked for non-Gmail yet. See the "Update" note near the top of this file.
 
 ### 5.2 Laundry-room integration is unconditional and vendor-specific
 
@@ -236,10 +339,21 @@ real second vendor).
   `ApartmentFormDialog.tsx` (`"Årshyra (kr)"`, `"Hyresrabatt (kr)"`, etc.),
   `RentalObjectFormDialog.tsx` (`"Målbildshyra (kr/år)"`, etc.).
 
-### 6.2 Swedish locale (`sv`/`sv-SE`) hardcoded in 6+ sort/format call sites
+### 6.2 Swedish locale (`sv`/`sv-SE`) hardcoded — scope corrected 2026-08-13, ~7x larger than originally documented
 
-`lib/nation-settings.ts`, `lib/app-users.ts` (×3), `lib/statistik.ts`,
-`lib/mail-utils.ts` (×2), plus the `StatistikOverview.tsx` site above.
+Originally documented as "6+ sort/format call sites" across `lib/nation-settings.ts`,
+`lib/app-users.ts` (×3), `lib/statistik.ts`, `lib/mail-utils.ts` (×2), plus
+the `StatistikOverview.tsx` site above. A full sweep this session
+(`grep -rnoE '(toLocaleString|toLocaleDateString|toLocaleLowerCase|toLocaleUpperCase|localeCompare|NumberFormat|DateTimeFormat)\("sv(-SE)?"'`
+across `app/`, `lib/`, `components/`) found the real number: **40
+occurrences across 18 files** — 26 `.toLocaleLowerCase("sv")` (case-insensitive
+search/filter, present in nearly every `*Table.tsx` component: `RentalObjectsTable`,
+`MissedRentTable`, `ContractsReadyTable`, `BesiktningarTable`,
+`ArkivBesiktningarTable`, `ArchiveTable`, `TenantsTable`,
+`AndrahandsgasterTable`, `ApartmentsTable`, `UppsagningTable`,
+`AdminUsersPanel`, plus the Excel-import dialogs), 12 `Intl.NumberFormat("sv-SE",
+...)`, and 2 `toLocaleDateString("sv-SE")`. The original list only captured
+the formatting sites, missing the much larger search/sort category entirely.
 
 **Direction for both**: add `currency`/`locale` fields to `NationSettings`
 (JSONB on the `nations` table already, low-cost to extend) with `"kr"`/
@@ -248,6 +362,29 @@ a formatting helper (`formatCurrency(value, nationSettings)`) through the
 handful of call sites above instead of the current ad-hoc
 `Intl.NumberFormat`/string-template calls. Contained, mechanical work —
 good candidate for a single focused session.
+
+**Done (2026-08-13), scoped to exactly the sites named above, plus one
+adjacent table's cell formatting.** `nations` gained `currency`/`locale`
+columns; `lib/table-columns.ts` gained
+`getCurrency`/`getLocale`/`formatCurrency`/`formatCurrencyWithUnit`.
+Threaded through `StatistikOverview.tsx`'s `kr` helper,
+`ApartmentFormDialog.tsx`'s and `RentalObjectFormDialog.tsx`'s labels (the
+literal Tier 6.1 examples), and `RentalObjectsTable.tsx`/`ApartmentsTable.tsx`
+(the two tables those form dialogs live inside — already threading
+`currency`/`locale` as props made wiring their own cell-formatting nearly
+free) plus `MissedRentTable.tsx` as one clear adjacent win. **Deliberately
+not threaded through the remaining ~6 files** with a bare `currency.format(x)`
+call and no unit suffix (`ArchiveTable.tsx`, `ContractsReadyTable.tsx`,
+`ArkivBesiktningarTable.tsx`, `BesiktningarTable.tsx`'s 4 `"... (kr)"`
+labels, `ApartmentExcelImport.tsx`, `RentalObjectExcelImport.tsx`,
+`ApartmentInterestDialog.tsx`) nor through the 26 `toLocaleLowerCase("sv")`/
+`localeCompare(..., "sv", ...)` search/sort sites across every `*Table.tsx` —
+same reasoning as the deferral note in `lib/table-columns.ts`'s `locale`
+field comment: every nation currently in discussion is Swedish-language and
+SEK-using, so this remaining sweep has real mechanical cost (6+ more files)
+for no actual near-term behavior difference. Revisit if/when a genuinely
+non-Swedish nation is onboarded — the infrastructure
+(`getCurrency`/`getLocale`) is already in place for it.
 
 ---
 
@@ -286,11 +423,20 @@ for `LND`), a reasonable order by effort-to-value ratio:
 
 1. **3.3** (fastighet-name consolidation) — do regardless of SaaS plans, it's a live correctness bug.
 2. **2.1 step 1** (de-duplicate the three copy-pasted role guards) — zero-risk cleanup, makes step 2/3 of that item easier later.
-3. **6.1 + 6.2** (currency/locale) — contained, mechanical, one session.
+3. **6.1 + 6.2** (currency/locale) — contained, mechanical, one session (bigger than it looks — see 6.2's corrected scope).
 4. **3.2 + 5.2's flag half + 7.1** (per-nation feature flags) — one shared mechanism covers three items.
 5. **4.1 + 4.2** (extend admin config to forms and to the other four tables) — natural pair, moderate effort.
-6. **2.1 steps 2-3** (real per-nation permission model) — only once you have a concrete second customer whose roles genuinely differ; don't speculate.
-7. **1.1, 1.2, 3.1, 5.1** — architecture-level or hard-dependency items; only tackle when a real second customer's requirements force the question, not preemptively.
+6. **3.4** (Excel cell-parser dedup) — contained, mechanical, independent of everything else in this list.
+7. **2.1 steps 2-3** (real per-nation permission model) — only once you have a concrete second customer whose roles genuinely differ; don't speculate.
+8. **1.1, 1.2, 3.1, 5.1** — architecture-level or hard-dependency items; only tackle when a real second customer's requirements force the question, not preemptively.
+
+**2026-08-13 update**: with real prospective nations now in discussion (see
+the "Update" note near the top of this file), the scope decision made was to
+build items 1-7 above as *configuration infrastructure* (including 2.1 steps
+2-3 and 1.2, since "how you the operator manage multiple real nations" is no
+longer hypothetical) while keeping 1.1, 3.1, and 5.1 explicitly deferred —
+those three specifically require knowing a real second nation's different
+shape to design well, which conversation alone doesn't yet provide.
 
 ---
 

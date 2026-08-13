@@ -1,12 +1,12 @@
 import { redirect } from "next/navigation";
 import Container from "@mui/material/Container";
 import Typography from "@mui/material/Typography";
-import { auth0 } from "@/lib/auth0";
+import { getCachedSession } from "@/lib/auth0";
 import { getGmailToken } from "@/lib/gmail-tokens";
 import ProfileGmailSection from "@/components/email/ProfileGmailSection";
 
 export default async function ProfilPage() {
-  const session = await auth0.getSession();
+  const session = await getCachedSession();
   if (!session?.user) redirect("/auth/login");
 
   const userId = session.user.sub as string;

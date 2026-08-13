@@ -14,6 +14,7 @@ import QueryStatsIcon from "@mui/icons-material/QueryStats";
 import StorageIcon from "@mui/icons-material/Storage";
 import SubjectIcon from "@mui/icons-material/Subject";
 import ChecklistIcon from "@mui/icons-material/Checklist";
+import { FEATURES, type FeatureKey } from "@/lib/table-columns";
 
 // Shared between NavBar (grouped dropdown menus) and the landing page
 // (flat quick-link cards), so the two never drift out of sync.
@@ -28,6 +29,11 @@ export type NavLink = {
   // Shows cross-nation data — hidden from nav for anyone without the admin
   // role, unlike every other link here (which only gate inside the page).
   adminOnly?: boolean;
+  // Hidden when the nation has explicitly disabled this feature (default:
+  // every feature enabled — see isFeatureEnabled, lib/table-columns.ts).
+  // Absent means "always shown", for every core route that isn't a
+  // per-nation-optional integration.
+  featureKey?: FeatureKey;
 };
 
 export const NAV_GROUPS: Array<{ key: NavGroupKey; label: string }> = [
@@ -78,6 +84,7 @@ export const navLinks: NavLink[] = [
     description: "Skicka e-post från Gmail med mallar och bifogade planritningar.",
     icon: EmailIcon,
     group: "husforman",
+    featureKey: FEATURES.GMAIL_EPOST,
   },
   {
     href: "/mallar",
@@ -85,6 +92,7 @@ export const navLinks: NavLink[] = [
     description: "Skapa och redigera mallar med variabler för utskick.",
     icon: SubjectIcon,
     group: "husforman",
+    featureKey: FEATURES.GMAIL_EPOST,
   },
   {
     href: "/fastigheter",

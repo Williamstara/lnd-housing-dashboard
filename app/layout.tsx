@@ -5,8 +5,9 @@ import CssBaseline from "@mui/material/CssBaseline";
 import Box from "@mui/material/Box";
 import { ThemeProvider } from "@mui/material/styles";
 import { Auth0Provider } from "@auth0/nextjs-auth0";
-import { auth0 } from "@/lib/auth0";
-import { getNationsId } from "@/lib/nations";
+import { getCachedSession } from "@/lib/auth0";
+import { getActiveNationsId } from "@/lib/active-nation";
+import { getNationSettings } from "@/lib/nation-settings";
 import theme from "@/lib/theme";
 import NavBar from "@/components/NavBar";
 import "./globals.css";
@@ -18,8 +19,8 @@ const montserrat = Montserrat({
 });
 
 export async function generateMetadata(): Promise<Metadata> {
-  const session = await auth0.getSession();
-  const nationsId = getNationsId(session?.user);
+  const session = await getCachedSession();
+  const nationsId = await getActiveNationsId(session?.user);
   return {
     title: `${nationsId ?? "LND"} Housing Dashboard`,
     description: "Dashboard för hyresgästhantering",
@@ -31,7 +32,9 @@ export default async function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  const session = await auth0.getSession();
+  const session = await getCachedSession();
+  const nationsId = await getActiveNationsId(session?.user);
+  const settings = nationsId ? await getNationSettings(nationsId) : null;
 
   return (
     <html lang="sv" className={montserrat.variable}>
@@ -60,7 +63,7 @@ export default async function RootLayout({
                 >
                   Hoppa till innehåll
                 </Box>
-                <NavBar />
+                <NavBar enabledFeatures={settings?.enabledFeatures} />
                 <Box
                   component="main"
                   id="main-content"

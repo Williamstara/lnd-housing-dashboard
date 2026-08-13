@@ -11,6 +11,7 @@ import DonutChart from "@/components/charts/DonutChart";
 import SegmentedBar from "@/components/charts/SegmentedBar";
 import StatTile from "@/components/charts/StatTile";
 import { CATEGORICAL, ORDINAL_BLUE, STATUS, type ChartMode } from "@/components/charts/palette";
+import { formatCurrencyWithUnit, type NationSettings } from "@/lib/table-columns";
 import type {
   AnsvarigBucket,
   Bestandsoversikt,
@@ -29,10 +30,8 @@ type Props = {
   missedRentByAnsvarig: AnsvarigBucket[];
   bestandsoversikt: Bestandsoversikt;
   lagenheterPerStatus: StatusBucket[];
+  nationSettings?: NationSettings | null;
 };
-
-const currency = new Intl.NumberFormat("sv-SE", { maximumFractionDigits: 0 });
-const kr = (value: number) => `${currency.format(value)} kr`;
 
 function ChartCard({ title, children }: { title: string; children: ReactNode }) {
   return (
@@ -53,11 +52,13 @@ export default function StatistikOverview({
   missedRentByAnsvarig,
   bestandsoversikt,
   lagenheterPerStatus,
+  nationSettings,
 }: Props) {
   const theme = useTheme();
   const mode: ChartMode = theme.palette.mode === "dark" ? "dark" : "light";
   const categorical = CATEGORICAL[mode];
   const ordinal = ORDINAL_BLUE[mode];
+  const kr = (value: number) => formatCurrencyWithUnit(value, nationSettings);
 
   const skickData: BarDatum[] = skick.map((bucket, index) => ({
     label: bucket.label,

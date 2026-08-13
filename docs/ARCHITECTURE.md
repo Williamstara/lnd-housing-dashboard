@@ -28,10 +28,15 @@ this file describes *what exists*, not *how to write more of it*.
 ## Entry points
 
 - `app/layout.tsx` — root layout. Loads the Auth0 session
-  (`auth0.getSession()`), wraps the app in MUI's `AppRouterCacheProvider` +
-  `ThemeProvider` (`lib/theme.ts`) + `CssBaseline`, then Auth0's
-  `Auth0Provider` (client-side session context), then renders `NavBar`
-  (`components/NavBar.tsx`) and `{children}`.
+  (`getCachedSession()`, `lib/auth0.ts` — a React `cache()`-wrapped
+  `auth0.getSession()`, so the many other calls to it elsewhere in one
+  request's render tree dedupe to one actual cookie decrypt), resolves the
+  active nation (`getActiveNationsId`, `lib/active-nation.ts`) and its
+  settings to know which nav entries/feature flags to show, wraps the app
+  in MUI's `AppRouterCacheProvider` + `ThemeProvider` (`lib/theme.ts`) +
+  `CssBaseline`, then Auth0's `Auth0Provider` (client-side session
+  context), then renders `NavBar` (`components/NavBar.tsx`, passed
+  `enabledFeatures`) and `{children}`.
 - `proxy.ts` (repository root) — Next.js 16's replacement for
   `middleware.ts`. Runs on every request matched by its `config.matcher`
   (everything except `_next/static`, `_next/image`, `favicon2.ico`, and
@@ -74,7 +79,7 @@ client components. Swedish label shown in the app's nav is in parentheses.
 | `app/planritningar` | Floor plan PDF upload/storage per lägenhetsnummer. `components/email/FloorPlanCard.tsx`, `UploadConfirmDialog.tsx`. |
 | `app/profil` | User profile — Gmail connection status. `components/email/ProfileGmailSection.tsx`. |
 | `app/todo` | Shared todo list. `components/TodoList.tsx`. |
-| `app/admin` | Cross-nation admin: table column config, Excel import column mappings, fastighet name aliases, rental-object multi-tab groups, user role/nationsID assignment. Admin-role only. `components/AdminPage.tsx`, `components/AdminShell.tsx`, `components/AdminUsersPanel.tsx`. |
+| `app/admin` | Cross-nation admin, four tabs per nation: Kolumner (table column config, now 7 tables), Import-mappningar (Excel import column mappings, fastighet name aliases, rental-object multi-tab groups), Behörigheter (per-nation role→permission mapping), Funktioner (per-nation feature flags). Plus user role/nationsID assignment. Admin-role only. `components/AdminPage.tsx`, `components/AdminShell.tsx`, `components/AdminUsersPanel.tsx`. |
 | `app/nationsid-saknas` | Explanation page for a logged-in user with no `nationsID` claim. |
 
 ## Module responsibilities (`lib/`)
@@ -92,8 +97,28 @@ One file per Postgres table, `server-only`, typed CRUD built on
 `lib/gmail-tokens.ts` (`gmail_tokens`), `lib/recipient-groups.ts` (no table
 of its own — pure derived queries over `tenants`/`apartments`),
 `lib/statistik.ts` (pure aggregation over already-fetched arrays, no
-queries of its own), `lib/nation-settings.ts` (`nations` — see below),
+queries of its own), `lib/nation-settings.ts` (`nations` +
+`nation_role_permissions` — see below),
 `lib/app-users.ts` (talks to the Auth0 Management API, not the database).
+
+Also `server-only`, not tied to one table:
+- `lib/permissions.ts` — `requirePermission(permissionKey, errorMessage)`,
+  the single shared guard every role-gated Server Action uses (replaced
+  ~10 independently hand-written `requireXRole()` functions —
+  `docs/DECISIONS.md`/`docs/SAAS-READINESS-ROADMAP.md` Tier 2.1). Resolves
+  the caller's active nationsId, fetches that nation's saved
+  `nation_role_permissions` rows (React `cache()`-deduped per request), and
+  checks against `lib/roles.ts`'s `hasPermission`.
+- `lib/active-nation.ts` — cookie-backed resolution of which nation a
+  multi-nation user (array-shaped nationsID claim — Tier 1.2) is currently
+  operating in: `getActiveNationsId`/`requireActiveNationsId`/
+  `requireActiveNationsIdOrRedirect`/`setActiveNation`. Deliberately kept
+  separate from `lib/nations.ts` (which stays client-safe) specifically so
+  `next/headers` never ends up in `NavBar.tsx`'s client bundle. Every
+  `page.tsx`/`actions.ts`/`app/api/**/route.ts` resolves nationsId through
+  this file now, not `lib/nations.ts`'s plain `requireNationsId`/
+  `requireNationsIdOrRedirect` directly (those still exist, used internally
+  by `lib/active-nation.ts` and by `lib/nations.ts`'s own pure helpers).
 
 Not server-only (imported by client components too):
 - `lib/table-columns.ts` — pure types + defaults + resolver helpers for
@@ -102,16 +127,38 @@ Not server-only (imported by client components too):
   functions `resolveColumns`, `resolveImportMapping`,
   `resolveFastighetAliases`, `resolveFastighetName`,
   `applyFastighetAlias`, `resolveFastighetFromPrefix`,
-  `excelDateCellToISO`, `columnIndexToLetter`/`columnLetterToIndex`,
-  `describeMapping`, `mappingToLookup`). `lib/nation-settings.ts` wraps
-  this with the actual Supabase-touching CRUD (`getNationSettings`,
-  `saveTableSettings`, `saveImportMapping`, `saveFastighetAliases`,
-  `saveRentalobjectTabGroups`, `setRentalobjectsMultiTab`) and re-exports
-  the pure pieces so callers only need one import path server-side.
-- `lib/roles.ts`, `lib/nations.ts` — read Auth0 custom claims; used both in
-  Server Components/Actions and client components (e.g. `NavBar`).
+  `excelDateCellToISO`, `cellStr`, `columnIndexToLetter`/
+  `columnLetterToIndex`, `describeMapping`, `mappingToLookup`,
+  `isFeatureEnabled`, `getCurrency`/`getLocale`/`formatCurrency`/
+  `formatCurrencyWithUnit`). `NationSettings` now also carries
+  `enabledFeatures`/`currency`/`locale`, and `TableKey` covers 7 tables
+  (`apartments`, `rentalobjects`, `tenants`, `andrahandsgaster`, `arkiv`,
+  `uppsagning`, `todo`). `lib/nation-settings.ts` wraps this with the
+  actual Supabase-touching CRUD (`getNationSettings`, `saveTableSettings`,
+  `saveImportMapping`, `saveFastighetAliases`,
+  `saveRentalobjectTabGroups`, `setRentalobjectsMultiTab`,
+  `saveEnabledFeatures`, `saveCurrencyLocale`, `getNationRolePermissions`,
+  `saveNationRolePermissions`) and re-exports the pure pieces so callers
+  only need one import path server-side.
+- `lib/roles.ts` — reads the Auth0 roles claim (`hasRole`/`hasAnyRole`/
+  `getUserRoles`, used both in Server Components/Actions and client
+  components e.g. `NavBar`) and also now defines the permission model:
+  `PERMISSIONS` (the fixed set of role-gated actions),
+  `DEFAULT_PERMISSION_ROLES` (the hardcoded fallback — `LND`'s current
+  behavior, used when a nation has no saved `nation_role_permissions`
+  rows), and pure `hasPermission(user, permissionKey, savedRoles)`. Admin
+  itself is never routed through this table — `hasRole`'s superuser bypass
+  stays hardcoded, deliberately not nation-configurable.
+- `lib/nations.ts` — reads the Auth0 nationsID claim. `getNationsId`
+  returns the first available nation (string or array claim, either way);
+  `getAvailableNations` returns all of them. `requireNationsId`/
+  `requireNationsIdOrRedirect` are the pure single-nation guards; prefer
+  `lib/active-nation.ts`'s active-nation-aware equivalents in app code (see
+  above) — these still exist because `lib/active-nation.ts` is built on
+  top of them.
 - `lib/nav-links.tsx` — the nav structure (`app/_components/nav-grid.tsx`,
-  `components/NavBar.tsx`).
+  `components/NavBar.tsx`); each `NavLink` can carry a `featureKey` that
+  hides it when a nation has that feature disabled.
 - `lib/mail-utils.ts` — pure string/placeholder helpers for email templates.
 - `lib/use-column-visibility.ts` — a client-only `localStorage`-backed hook
   for per-user column show/hide state (independent of the admin-configured
@@ -121,7 +168,8 @@ Not server-only (imported by client components too):
 ## Data flow
 
 1. A route's `page.tsx` (Server Component, wrapped in
-   `auth0.withPageAuthRequired`) calls `requireNationsIdOrRedirect`, then
+   `auth0.withPageAuthRequired`) calls
+   `requireActiveNationsIdOrRedirect` (`lib/active-nation.ts`), then
    fetches everything the page needs in parallel via `Promise.all`,
    resolving admin-configured settings against `DEFAULT_*` fallbacks.
 2. Data is passed as props into a `"use client"` `*Table.tsx` component,
@@ -188,6 +236,23 @@ Only the parsed, already-validated JSON rows are sent to a Server Action.
   ...}` return shape.
 - `lib/use-column-visibility.ts` is the one piece of client-side persistent
   state (`localStorage`, keyed per table), independent of server state.
+- `nation_role_permissions` (added 2026-08-13) is a proper many-rows-per-nation
+  table — `(nations_id, role_name, permission_key)`, unique-constrained —
+  not a JSONB blob on `nations` like every other admin-configurable setting.
+  Same tenant-isolation RLS shape as every other table. Empty for a nation =
+  falls back to `lib/roles.ts`'s `DEFAULT_PERMISSION_ROLES`.
+- `nations` gained three more nullable columns (also 2026-08-13):
+  `enabled_features text[]`, `currency text`, `locale text` — all
+  null/absent means "everything enabled" / `"kr"` / `"sv-SE"` respectively,
+  `LND`'s exact behavior today, same "saved ?? default" convention as every
+  other `NationSettings` field.
+- The **active-nation cookie** (`active-nations-id`, set by
+  `lib/active-nation.ts`) is the one other piece of client-visible
+  persistent state besides `lib/use-column-visibility.ts` — but unlike that
+  one, it's read server-side (`next/headers`'s `cookies()`) to resolve
+  which of a multi-nation user's nations is "active" for data scoping, and
+  every read re-validates it against the user's real Auth0 claim rather
+  than trusting it blindly.
 
 ## APIs and external services
 
@@ -231,22 +296,52 @@ Only the parsed, already-validated JSON rows are sent to a Server Action.
   and nationsID silently disappear from `session.user`.
 - **Multi-tenancy claim**: `NATIONS_ID_CLAIM` (`lib/nations.ts`) —
   `https://lnd-housing-dashboard/nationsID`. Set by an Auth0 Action (not in
-  this repo). `getNationsId`/`requireNationsId`/`requireNationsIdOrRedirect`
-  are the three access patterns (client-safe read, throw-in-Server-Action,
-  redirect-in-Server-Component).
+  this repo), as either a single string (every user today) or an array (an
+  operator account managing more than one nation — added 2026-08-13, no
+  real user has this yet since the Action hasn't been changed to emit it).
+  `lib/nations.ts`'s `getNationsId`/`getAvailableNations` are the pure,
+  client-safe reads. App code resolves the *active* nation (for a
+  multi-nation user, whichever one their session cookie says, always
+  re-validated against their real claim) via `lib/active-nation.ts`'s
+  `getActiveNationsId`/`requireActiveNationsId`/
+  `requireActiveNationsIdOrRedirect` — every `page.tsx`/`actions.ts`/
+  `app/api/**/route.ts` uses these, not `lib/nations.ts`'s plain
+  `requireNationsId`/`requireNationsIdOrRedirect` directly.
 - **Roles claim**: `ROLES_CLAIM` (`lib/roles.ts`) —
   `https://lnd-housing-dashboard/roles`. Known roles: `ekonomi`, `admin`,
   `husvd`, `husforman`, `vaktmastare`. `admin` satisfies every `hasRole`
   check (superuser). `vaktmastare` is access-*restricting*
   (`isRestrictedToTodo`) — enforced only in `proxy.ts` and reflected in nav
   visibility, not re-checked on every page.
+- **Permission model** (added 2026-08-13): which role can do what, beyond
+  the coarse role check above, is now per-nation-configurable rather than
+  hardcoded per action. `lib/roles.ts`'s `PERMISSIONS` enumerates the fixed
+  set of role-gated actions (e.g. `besiktningar.archive`); each nation can
+  save its own role→permission rows in the `nation_role_permissions` table
+  (editable via `/admin`'s "Behörigheter" tab), falling back to
+  `DEFAULT_PERMISSION_ROLES` (LND's original hardcoded mapping) when unset.
+  `admin` itself is never routed through this table — that bypass stays
+  hardcoded in `hasRole`, deliberately not nation-configurable (a nation
+  shouldn't be able to grant itself cross-tenant superuser access).
 - Page-level guards: `auth0.withPageAuthRequired` (must be logged in) +
-  `requireNationsIdOrRedirect` (must have a nationsID) +, for admin-only
-  pages, `requireAdminOrRedirect`.
-- Action-level guards: each `actions.ts` defines its own
-  `requireUser`/`requireXRole` helper that re-derives `nationsId` from the
-  session and throws (not redirects) on failure — the client catches the
-  thrown `Error.message` and displays it in an `Alert`.
+  `requireActiveNationsIdOrRedirect` (must have a nationsID) +, for
+  admin-only pages, `requireAdminOrRedirect`.
+- Action-level guards: `lib/permissions.ts`'s `requirePermission(permissionKey,
+  errorMessage)` is the single shared guard for anything gated by the
+  permission model above — it replaced ~10 independently hand-written
+  `requireXRole()` functions that used to live one per `actions.ts` file.
+  A handful of `actions.ts` files still keep their own local `requireUser()`
+  (any authenticated nation member, no permission check) for actions that
+  were never role-restricted. Both throw (not redirect) on failure — the
+  client catches the thrown `Error.message` and displays it in an `Alert`.
+- **Opt-out feature flags** (added 2026-08-13, unrelated to roles/permissions
+  — gates UI visibility, not authorization): `lib/table-columns.ts`'s
+  `FEATURES`/`isFeatureEnabled`, backed by `nations.enabled_features`,
+  editable via `/admin`'s "Funktioner" tab. Hides nav entries and buttons
+  for integrations a nation doesn't use (Gmail sending, laundry accounts,
+  key-handover tracking) — the underlying data/columns stay in place
+  either way, so this is purely a display concern, never enforced
+  server-side (nothing sensitive is gated behind it).
 
 ## Configuration and environment variables (names only)
 
@@ -306,14 +401,21 @@ held open per server instance.
   from that schema and can still drift from it silently if a migration
   changes a column without the corresponding `lib/*.ts` file being updated
   to match — there's no build-time check tying the two together.
-- Five Excel-importer dialogs (`ExcelImportDialog.tsx`,
-  `AndrahandsgastExcelImportDialog.tsx`, `BesiktningarExcelImportDialog.tsx`,
-  `ApartmentExcelImport.tsx`, `RentalObjectExcelImport.tsx`) each define
-  their own local `cellStr`/`cellNum`/`cellDate`-style cell-parsing helpers
-  rather than sharing one utility module — only the date-cell fix
-  (`excelDateCellToISO`) and the fastighet-name resolution helpers have
-  been centralized in `lib/table-columns.ts` so far. Duplication risk for
-  future bugs in the un-shared helpers.
+- Excel-importer dialogs each define some of their own local cell-parsing
+  helpers rather than sharing one utility module. `cellStr` (byte-identical
+  across `ExcelImportDialog.tsx`, `AndrahandsgastExcelImportDialog.tsx`,
+  `BesiktningarExcelImportDialog.tsx`, `ApartmentExcelImport.tsx`) was
+  centralized into `lib/table-columns.ts` 2026-08-13, alongside the
+  pre-existing `excelDateCellToISO` and the fastighet-name resolution
+  helpers. `cellNum`/`cellDate` (`ApartmentExcelImport.tsx`) and
+  besiktningar's `parseNumber`/`formatDateCell`
+  (`BesiktningarExcelImportDialog.tsx`) were investigated and found to have
+  different signatures and, for besiktningar's date handling, genuine
+  importer-specific logic (merged-cell inheritance down a column, a
+  YYMMDD-as-plain-number fallback) — left local rather than force a
+  premature shared abstraction over behavior that actually differs per
+  importer. `RentalObjectExcelImport.tsx` was never part of this pattern
+  (no local `cellStr`-equivalent).
 - `lib/laundry-account.ts` and `lib/rentalobjects.ts` contain hardcoded
   fastighet-name lookup tables using an obsolete long-form naming scheme —
   see "APIs and external services" above and `docs/TODO.md`. Verified
@@ -323,4 +425,23 @@ held open per server instance.
   version-controlled — it can only be inspected/changed in the Auth0
   dashboard, and its exact current script is `Needs verification` from the
   repo alone (code comments document the *expected* shape, not a guarantee
-  it matches what's actually deployed in Auth0).
+  it matches what's actually deployed in Auth0). It also does not yet emit
+  an array-shaped `nationsID` for any user — `lib/nations.ts`'s
+  multi-nation support (see "Authentication and authorization") exists in
+  the app but has never been exercised by a real session.
+- Nation-aware currency/locale formatting (`lib/table-columns.ts`'s
+  `getCurrency`/`getLocale`/`formatCurrency`) is only threaded through
+  `StatistikOverview.tsx`, `ApartmentFormDialog.tsx`,
+  `RentalObjectFormDialog.tsx`, their host tables, and `MissedRentTable.tsx`
+  — a deliberate scope decision (every nation currently in discussion is
+  Swedish/SEK), not an oversight. ~6 more files still call
+  `new Intl.NumberFormat("sv-SE", ...)` directly, and 26
+  `toLocaleLowerCase("sv")`/`localeCompare(..., "sv", ...)` search/sort
+  sites across nearly every `*Table.tsx` are still hardcoded to Swedish
+  collation. See `docs/TODO.md`'s "Later" section for the exact remaining
+  list.
+- `TenantFormDialog.tsx`/`AndrahandsgastFormDialog.tsx` don't respect
+  admin-configured column visibility the way `ApartmentFormDialog.tsx`/
+  `RentalObjectFormDialog.tsx` do — blocked on
+  `app/hyresgastlista/actions.ts`'s server-side validation, which
+  blanket-requires every field non-blank. See `docs/DECISIONS.md`.

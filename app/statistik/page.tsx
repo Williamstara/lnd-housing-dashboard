@@ -1,8 +1,9 @@
 import Container from "@mui/material/Container";
-import { auth0 } from "@/lib/auth0";
+import { auth0, getCachedSession } from "@/lib/auth0";
 import { getLedigaLagenheter } from "@/lib/apartments";
 import { getApartmentsAvailableForManualEntry, getMissedRentRows, syncMissedRent } from "@/lib/missed-rent";
-import { requireNationsIdOrRedirect } from "@/lib/nations";
+import { requireActiveNationsIdOrRedirect } from "@/lib/active-nation";
+import { getNationSettings } from "@/lib/nation-settings";
 import { getRentalObjects } from "@/lib/rentalobjects";
 import { getTenants } from "@/lib/tenants";
 import { getAndrahandsgaster } from "@/lib/andrahandsgaster";
@@ -20,18 +21,20 @@ import StatistikOverview from "@/components/StatistikOverview";
 
 const StatistikPage = auth0.withPageAuthRequired(
   async function StatistikPage() {
-    const session = await auth0.getSession();
-    const nationsId = requireNationsIdOrRedirect(session?.user);
+    const session = await getCachedSession();
+    const nationsId = await requireActiveNationsIdOrRedirect(session?.user);
     await syncMissedRent(nationsId);
 
-    const [rows, rentalObjects, vacantApartments, availableApartments, tenants, andrahandsgaster] = await Promise.all([
-      getMissedRentRows(nationsId),
-      getRentalObjects(nationsId),
-      getLedigaLagenheter(nationsId),
-      getApartmentsAvailableForManualEntry(nationsId),
-      getTenants(nationsId),
-      getAndrahandsgaster(nationsId),
-    ]);
+    const [rows, rentalObjects, vacantApartments, availableApartments, tenants, andrahandsgaster, nationSettings] =
+      await Promise.all([
+        getMissedRentRows(nationsId),
+        getRentalObjects(nationsId),
+        getLedigaLagenheter(nationsId),
+        getApartmentsAvailableForManualEntry(nationsId),
+        getTenants(nationsId),
+        getAndrahandsgaster(nationsId),
+        getNationSettings(nationsId),
+      ]);
 
     return (
       <Container maxWidth={false} sx={{ py: { xs: 3, md: 4 } }}>
@@ -43,8 +46,14 @@ const StatistikPage = auth0.withPageAuthRequired(
           missedRentByAnsvarig={getMissedRentByAnsvarig(rows)}
           bestandsoversikt={getBestandsoversikt(rentalObjects, tenants, andrahandsgaster)}
           lagenheterPerStatus={getLagenheterPerStatus(vacantApartments)}
+          nationSettings={nationSettings}
         />
-        <MissedRentTable rows={rows} availableApartments={availableApartments} rentalObjects={rentalObjects} />
+        <MissedRentTable
+          rows={rows}
+          availableApartments={availableApartments}
+          rentalObjects={rentalObjects}
+          nationSettings={nationSettings}
+        />
       </Container>
     );
   },

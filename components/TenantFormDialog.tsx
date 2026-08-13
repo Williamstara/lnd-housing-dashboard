@@ -29,6 +29,14 @@ type Props = {
   onSubmit: (input: TenantInput) => Promise<void>;
 };
 
+// Deliberately NOT wired to admin column visibility (unlike
+// ApartmentFormDialog/RentalObjectFormDialog — docs/SAAS-READINESS-ROADMAP.md
+// Tier 4.1): app/hyresgastlista/actions.ts's sanitizeInput blanket-requires
+// every TenantInput field non-blank server-side. Hiding a field here without
+// also making that server check nation-settings-aware would make every
+// submission with the hidden field blank fail with a generic error —
+// worse than not offering the toggle at all. Revisit together if this
+// becomes a real request, not as a client-only visual change.
 export default function TenantFormDialog({
   open,
   tenant,

@@ -1,10 +1,11 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { auth0 } from "@/lib/auth0";
+import { getCachedSession } from "@/lib/auth0";
+import { requireActiveNationsId } from "@/lib/active-nation";
 import { getFastighetNamn } from "@/lib/fastigheter";
-import { requireNationsId } from "@/lib/nations";
-import { ARCHIVE_ROLES, ROLES, getUserDisplayName, hasAnyRole, hasRole } from "@/lib/roles";
+import { requirePermission } from "@/lib/permissions";
+import { PERMISSIONS, getUserDisplayName } from "@/lib/roles";
 import {
   archiveByLedigFrom,
   assignTenantAndSendToContract,
@@ -36,38 +37,42 @@ import {
 type Actor = { nationsId: string; userName: string };
 
 async function requireUser(): Promise<Actor> {
-  const session = await auth0.getSession();
+  const session = await getCachedSession();
   if (!session?.user) {
     throw new Error("Unauthorized");
   }
-  return { nationsId: requireNationsId(session.user), userName: getUserDisplayName(session.user) };
+  return { nationsId: await requireActiveNationsId(session.user), userName: getUserDisplayName(session.user) };
 }
 
 async function requireEkonomiRole(): Promise<Actor> {
-  const session = await auth0.getSession();
-  if (!session?.user || !hasRole(session.user, ROLES.EKONOMI)) {
-    throw new Error("Endast användare med rollen ekonomi har åtkomst.");
-  }
-  return { nationsId: requireNationsId(session.user), userName: getUserDisplayName(session.user) };
+  return requirePermission(
+    PERMISSIONS.LEDIGA_LAGENHETER_MANAGE_TENANT,
+    "Endast användare med rollen ekonomi har åtkomst."
+  );
 }
 
 async function requireHusformanRole(): Promise<Actor> {
-  const session = await auth0.getSession();
-  if (!session?.user || !hasRole(session.user, ROLES.HUSFORMAN)) {
-    throw new Error("Endast användare med rollen husförman har åtkomst.");
-  }
-  return { nationsId: requireNationsId(session.user), userName: getUserDisplayName(session.user) };
+  return requirePermission(
+    PERMISSIONS.LEDIGA_LAGENHETER_MANAGE_FASTIGHET,
+    "Endast användare med rollen husförman har åtkomst."
+  );
 }
 
 async function requireArchiveRole(): Promise<Actor> {
-  const session = await auth0.getSession();
-  if (!session?.user || !hasAnyRole(session.user, ARCHIVE_ROLES)) {
-    throw new Error("Endast användare med rollen ekonomi, husvd eller admin har åtkomst.");
-  }
-  return { nationsId: requireNationsId(session.user), userName: getUserDisplayName(session.user) };
+  return requirePermission(
+    PERMISSIONS.LEDIGA_LAGENHETER_ARCHIVE,
+    "Endast användare med rollen ekonomi, husvd eller admin har åtkomst."
+  );
 }
 
-async function sanitizeApartmentInput(nationsId: string, input: ApartmentInput): Promise<ApartmentInput> {
+// fastigheter can be pre-fetched by a caller that already has the list (the
+// Excel-import loop below) to avoid re-querying it once per row — matches
+// importTenantsFromExcelAction's existing pattern (app/hyresgastlista/actions.ts).
+async function sanitizeApartmentInput(
+  nationsId: string,
+  input: ApartmentInput,
+  fastigheter?: string[]
+): Promise<ApartmentInput> {
   const trimmed: ApartmentInput = {
     lagenhetsnummer: input.lagenhetsnummer.trim(),
     fastighet: input.fastighet.trim(),
@@ -92,8 +97,8 @@ async function sanitizeApartmentInput(nationsId: string, input: ApartmentInput):
     throw new Error("Alla fält måste fyllas i.");
   }
 
-  const fastigheter = await getFastighetNamn(nationsId);
-  if (!fastigheter.includes(trimmed.fastighet)) {
+  const knownFastigheter = fastigheter ?? (await getFastighetNamn(nationsId));
+  if (!knownFastigheter.includes(trimmed.fastighet)) {
     throw new Error("Ogiltig fastighet.");
   }
 
@@ -220,11 +225,12 @@ export async function importApartmentsFromExcelAction(
 }> {
   const { nationsId } = await requireUser();
   if (rows.length === 0) throw new Error("Inga rader att importera.");
+  const fastigheter = await getFastighetNamn(nationsId);
   const sanitized: ApartmentImportInput[] = [];
   const skippedDetails: Array<{ lagenhetsnummer: string; reason: string }> = [];
   for (const row of rows) {
     try {
-      const specs = await sanitizeApartmentInput(nationsId, row);
+      const specs = await sanitizeApartmentInput(nationsId, row, fastigheter);
       sanitized.push({
         ...specs,
         hyresgastNamn: row.hyresgastNamn?.trim() || undefined,

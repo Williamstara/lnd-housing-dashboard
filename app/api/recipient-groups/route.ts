@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
-import { auth0 } from "@/lib/auth0";
-import { requireNationsId } from "@/lib/nations";
+import { getCachedSession } from "@/lib/auth0";
+import { requireActiveNationsId } from "@/lib/active-nation";
 import {
   getAllTenantRecipients,
   getInflyttningRecipients,
@@ -9,10 +9,10 @@ import {
 } from "@/lib/recipient-groups";
 
 async function requireAuth() {
-  const session = await auth0.getSession();
+  const session = await getCachedSession();
   if (!session?.user) return Response.json({ error: "Unauthorized" }, { status: 401 });
   try {
-    return { nationsId: requireNationsId(session.user) };
+    return { nationsId: await requireActiveNationsId(session.user) };
   } catch (err) {
     return Response.json({ error: err instanceof Error ? err.message : "Unauthorized" }, { status: 403 });
   }

@@ -5,109 +5,128 @@ were verified immediately before writing this file.
 
 ## Current objective
 
-None — the Mongo→Supabase migration (see `docs/SESSION.md`) is complete and
-verified, and a follow-on SaaS-readiness roadmap + security audit
-(`docs/SAAS-READINESS-ROADMAP.md`, see `docs/SESSION.md`'s "Follow-on work
-this session" section) has also been written. The next objective is
-whatever the user asks for next; the pre-existing, unrelated items in
-`docs/TODO.md` (responsive-UX QA pass, `RentalObject.typ` data cleanup,
-apartments Excel-import mapping) are still outstanding and predate this
-migration — and everything in `docs/SAAS-READINESS-ROADMAP.md` is planned,
-not implemented.
+None — the SaaS-readiness configuration-infrastructure implementation (all
+6 batches of `docs/SAAS-READINESS-ROADMAP.md`'s "build now" scope) is
+complete and statically verified. The one remaining piece is a live,
+authenticated pass through the app (see "Remaining work" below), which
+needs the user present since it involves real `LND` data. The next
+objective otherwise is whatever the user asks for next.
 
 ## Completed this session
 
-The full four-phase Mongo→Supabase migration — see `docs/SESSION.md` for the
-complete phase-by-phase breakdown and `docs/DECISIONS.md` for the specific
-non-obvious blockers hit and fixed along the way:
+Full detail and reasoning: `docs/SESSION.md` (current milestone section)
+and `docs/DECISIONS.md`'s 2026-08-13 entries. Summary:
 
-1. Schema, RLS, and Storage buckets applied to the live Supabase project via
-   four versioned migrations in `supabase/migrations/`.
-2. All real `LND` MongoDB data migrated to Postgres (throwaway script,
-   verified, then deleted).
-3. Every `lib/*.ts` file converted from the MongoDB driver to
-   `@supabase/supabase-js`, one at a time, each verified live in the browser
-   before moving to the next.
-4. Full cutover: `mongodb` dependency removed, `lib/mongodb.ts` deleted,
-   `MONGODB_URI`/`MONGODB_DB` removed from `.env.local`, `AGENTS.md` and
-   `docs/ARCHITECTURE.md` rewritten for the new stack.
-
-**Read `docs/DECISIONS.md`'s 2026-08-13 entries before touching Supabase
-client setup, RLS, or table grants again** — three genuinely non-obvious
-blockers are documented there (missing default `GRANT`s on
-migration-created tables, the `role: "authenticated"` Auth0 claim
-requirement, and `@supabase/ssr` being incompatible with third-party
-`accessToken` mode) that are easy to rediscover the hard way otherwise.
-
-5. After the migration was verified, wrote `docs/SAAS-READINESS-ROADMAP.md`
-   — a 7-tier "what's hardcoded/too coupled to LND's specific workflow"
-   roadmap (from two parallel codebase audits) plus a full security audit
-   as its final section (3-phase identify/filter/confidence-gate process,
-   zero confirmed vulnerabilities, one non-urgent hardening recommendation
-   re: raw Postgres errors reaching the browser). Purely planning — nothing
-   in that file has been implemented. `docs/TODO.md` points to it.
+1. **Batch 1**: per-nation permission model. New `nation_role_permissions`
+   table (migration applied), `lib/permissions.ts`'s `requirePermission()`
+   replaces ~10 duplicated `requireXRole()` guards, new admin
+   "Behörigheter" tab.
+2. **Batch 2**: multi-nation operator support. New `lib/active-nation.ts`
+   (cookie-backed, validated against the real Auth0 claim every time), nav
+   switcher (invisible until an Auth0 Action change makes nationsID an
+   array — external to this repo, not done). Every page/action/API route
+   swept onto it.
+3. **Batch 3**: feature flags (`enabled_features` column, migration
+   applied). Gates Gmail nav entries, laundry buttons, key-handover
+   toggles. New admin "Funktioner" tab.
+4. **Batch 4**: admin column config extended to 5 more tables + 2 of 4 form
+   dialogs. **`TenantFormDialog`/`AndrahandsgastFormDialog` intentionally
+   NOT wired** — see "Important gotchas" below, this is the single most
+   important thing not to accidentally "fix" without reading the reasoning
+   first.
+5. **Batch 5**: currency/locale settings (`currency`/`locale` columns,
+   migration applied) — wired through the roadmap's named examples only,
+   not exhaustively. See `docs/TODO.md`'s "Later" section for the
+   deliberately-deferred remainder.
+6. **Batch 6**: Excel cell-parser consolidation — only `cellStr` (the one
+   genuinely duplicated helper), not `cellNum`/`cellDate` (those turned out
+   to differ per file on closer reading).
 
 ## Validation status
 
 - `npx tsc --noEmit` — clean.
 - `npm run lint` — unchanged baseline (7 `react-hooks/set-state-in-effect`
-  errors + 1 unused-arg warning).
-- `npx next build` — clean, but needed a larger Node heap on this machine:
-  `NODE_OPTIONS=--max-old-space-size=8192 npx next build`. The default heap
-  limit isn't enough for this build's type-checking phase on this machine —
-  unrelated to the migration, but worth knowing if a build mysteriously
-  OOMs (`FATAL ERROR: ... JavaScript heap out of memory`) again.
-- Every route in the app verified live in a real authenticated browser
-  session against real `LND` data on Postgres — see `docs/SESSION.md` for
-  the full list.
+  errors + 1 unused-arg warning), verified after every batch individually.
+- 3 new Supabase migrations applied to the live project and confirmed via
+  `supabase migration list`:
+  `20260813140000_nation_role_permissions.sql`,
+  `20260813150000_nation_features.sql`,
+  `20260813160000_nation_currency_locale.sql`.
+- Dev server hot-reloaded every change; every touched route returns the
+  expected `307` with no new server errors (one pre-existing, unrelated
+  `/planritningar` 500 from a stale browser JWT — not caused by this
+  session, that route was never touched).
+- **Not done**: live authenticated verification. See "Remaining work" (1).
+
+## Important gotchas for the next agent
+
+1. **Do not wire `TenantFormDialog.tsx`/`AndrahandsgastFormDialog.tsx` to
+   admin column visibility without also fixing
+   `app/hyresgastlista/actions.ts`'s `sanitizeInput`/
+   `sanitizeAndrahandsgastInput` first.** Both blanket-require every field
+   non-blank server-side (`Object.values(trimmed).some((value) => value === "")`).
+   `ApartmentFormDialog`/`RentalObjectFormDialog` didn't have this problem
+   (their server-side checks only hard-require a few specific fields), which
+   is why only those two got wired this session. Doing the client half
+   alone here would make every save with a hidden field silently fail.
+2. **`bulkUpsertTenants`, `bulkUpsertAndrahandsgaster`, `bulkUpsertRentalObjects`
+   are already correctly batched** (one composite-key `.upsert()` call) —
+   from the earlier performance-audit session. Don't "fix" them again.
+3. **Locale/currency formatting is deliberately incomplete** — see
+   `docs/TODO.md`'s "Later" section for the exact list of what's still
+   hardcoded to `"sv-SE"`/`"kr"` and why that was a conscious call, not an
+   oversight.
+4. **Avoid chaining `git stash` with slow commands** (e.g.
+   `git stash && npm run lint && git stash pop` in one Bash call) — this
+   happened mid-session, the `lint` step ran long, the tool call timed out,
+   and `git stash pop` never ran, leaving the whole session's work sitting
+   in the stash. Caught and recovered, but do stash/pop as separate calls
+   going forward.
 
 ## Current Git and working-tree state
 
-**Nothing has been committed.** Everything from this entire migration is
-still uncommitted working-tree changes. Run `git status` for the exact
-current list — as of this writing it includes (non-exhaustively): every
-`lib/*.ts` file except `lib/theme.ts`/`lib/mail-utils.ts`/etc. (the
-never-touched-DB pure-logic files), `lib/supabase-server.ts` (new),
-`lib/mongodb.ts` (deleted), `supabase/` (new — CLI scaffold + 4 migration
-files), `package.json`/`package-lock.json`, `app/hyresgastlista/page.tsx`
-(one error-message string), `.env.local` (Mongo vars removed — not
-committed anyway, it's gitignored), `AGENTS.md`, `docs/SESSION.md`,
-`docs/HANDOFF.md`, `docs/DECISIONS.md`, `docs/ARCHITECTURE.md`.
-
-A dev server (`npm run dev`) was left running in the background on the
-machine this session ran on, logging to `/tmp/lnd-dev-server.log`.
+Nothing from this session (or the two prior sessions — the migration and
+the performance audit) has been committed. Run `git status` for the exact
+list. New untracked files from this session: `lib/active-nation.ts`,
+`lib/permissions.ts`, `app/actions.ts`, and the 3 new migration files under
+`supabase/migrations/`. Modified files span most of `lib/*.ts`, most of
+`app/*/page.tsx` and `app/*/actions.ts`, most of `app/api/**/route.ts`,
+`components/AdminPage.tsx`, `components/NavBar.tsx`,
+`components/ApartmentsTable.tsx`, `components/RentalObjectsTable.tsx`,
+`components/TenantsTable.tsx`, `components/AndrahandsgasterTable.tsx`,
+`components/ArchiveTable.tsx`, `components/UppsagningTable.tsx`,
+`components/TodoList.tsx`, `components/StatistikOverview.tsx`,
+`components/MissedRentTable.tsx`, `components/ApartmentFormDialog.tsx`,
+`components/RentalObjectFormDialog.tsx`, all 4 Excel-import dialogs, and
+the shared docs.
 
 ## Remaining work
 
-1. **Rotate or delete the MongoDB Atlas database user.** Its connection
-   string (with password) was accidentally printed into agent tool output
-   twice during this session (see `docs/SESSION.md`'s "Out-of-milestone
-   notes" and the corresponding `AGENTS.md` note). Since MongoDB is fully
-   decommissioned for this app, deleting the Atlas user is simpler than
-   rotating its password.
-2. Commit the working tree — only when the user explicitly asks. Given the
-   scale of this change (every `lib/*.ts` file, new migration files,
-   deleted `lib/mongodb.ts`, rewritten `AGENTS.md`/`docs/ARCHITECTURE.md`),
-   confirm with the user whether they want this as one commit or several
-   before running `git add`/`git commit`.
-3. The pre-existing items in `docs/TODO.md` (responsive-UX QA pass at
-   tablet/phone widths, `RentalObject.typ` data-quality cleanup, apartments
-   Excel-import mapping for `LND`) are unrelated to this migration and
-   still outstanding — worth a quick sanity pass now that the app runs on
-   Postgres, but nothing about them changed because of the migration.
-4. Optional, low-priority: `docs/DECISIONS.md`'s "stale fastighet naming in
-   laundry-account.ts and rentalobjects.ts" entry is unaffected by this
-   migration — those two files still carry their own hardcoded, stale
-   fastighet-name lookup tables, deliberately not touched here (see the
-   migration plan's explicit "flagged, not bundled" decision, preserved in
-   the DECISIONS.md schema-design entries from this session).
-5. `docs/SAAS-READINESS-ROADMAP.md` is the entry point for any future
-   "make this sellable to a second organization" work — read it before
-   re-auditing the codebase for hardcoded/LND-specific assumptions again.
+1. **Live authenticated verification** — do this with the user present.
+   Concretely: exercise the new admin tabs (Behörigheter, Funktioner, the 5
+   new Kolumner entries) against real `LND` data; run a real Excel import
+   through `/lediga-lagenheter` and/or `/besiktningar` including a
+   deliberately-bad row to confirm the (earlier session's) batched-write
+   fallback still isolates it correctly; the nation switcher can't be
+   exercised without an Auth0 Action change (external to this repo) first.
+2. Re-run `/graphify --update` so the graph reflects this session's new
+   files/functions.
+3. Everything in `docs/TODO.md` remains outstanding — see that file for
+   the full "Next"/"Later" breakdown, including the two items this session
+   specifically deferred (Tenant/Andrahandsgast form field-hiding, the
+   remaining currency/locale sites).
+4. MongoDB Atlas user rotation/deletion (carried over from the original
+   migration session) — check whether this has happened yet.
+5. Commit the working tree — only when the user explicitly asks. Given the
+   scale (3 sessions' worth of uncommitted work: the migration, the
+   performance audit, and this SaaS-readiness implementation), confirm with
+   the user how they want this split into commits before running `git add`/
+   `git commit`.
 
 ## Blockers
 
-None.
+None — the one open item (live verification) is a deliberate "needs the
+user present" pause, not a blocker.
 
 ## Timestamp
 

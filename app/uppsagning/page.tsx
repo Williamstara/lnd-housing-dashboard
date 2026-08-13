@@ -1,6 +1,7 @@
 import Container from "@mui/material/Container";
-import { auth0 } from "@/lib/auth0";
-import { requireNationsIdOrRedirect } from "@/lib/nations";
+import { auth0, getCachedSession } from "@/lib/auth0";
+import { requireActiveNationsIdOrRedirect } from "@/lib/active-nation";
+import { DEFAULT_UPPSAGNING_COLUMNS, getNationSettings, resolveColumns } from "@/lib/nation-settings";
 import { getUppsagningar } from "@/lib/uppsagningar";
 import { getTenants } from "@/lib/tenants";
 import UppsagningTable from "@/components/UppsagningTable";
@@ -10,16 +11,18 @@ import UppsagningTable from "@/components/UppsagningTable";
 // server-side in app/uppsagning/actions.ts).
 const UppsagningPage = auth0.withPageAuthRequired(
   async function UppsagningPage() {
-    const session = await auth0.getSession();
-    const nationsId = requireNationsIdOrRedirect(session?.user);
-    const [uppsagningar, tenants] = await Promise.all([
+    const session = await getCachedSession();
+    const nationsId = await requireActiveNationsIdOrRedirect(session?.user);
+    const [uppsagningar, tenants, nationSettings] = await Promise.all([
       getUppsagningar(nationsId),
       getTenants(nationsId),
+      getNationSettings(nationsId),
     ]);
+    const columnSettings = resolveColumns(DEFAULT_UPPSAGNING_COLUMNS, nationSettings?.tables.uppsagning);
 
     return (
       <Container maxWidth={false} sx={{ py: { xs: 3, md: 4 } }}>
-        <UppsagningTable uppsagningar={uppsagningar} tenants={tenants} />
+        <UppsagningTable uppsagningar={uppsagningar} tenants={tenants} columnSettings={columnSettings} />
       </Container>
     );
   },

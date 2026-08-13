@@ -1,8 +1,8 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { auth0 } from "@/lib/auth0";
-import { requireNationsId } from "@/lib/nations";
+import { getCachedSession } from "@/lib/auth0";
+import { requireActiveNationsId } from "@/lib/active-nation";
 import { getUserDisplayName } from "@/lib/roles";
 import {
   addSubtask,
@@ -18,9 +18,9 @@ import {
 import { getUsersInNation } from "@/lib/app-users";
 
 async function requireUser(): Promise<{ nationsId: string; userName: string }> {
-  const session = await auth0.getSession();
+  const session = await getCachedSession();
   if (!session?.user) throw new Error("Unauthorized");
-  return { nationsId: requireNationsId(session.user), userName: getUserDisplayName(session.user) };
+  return { nationsId: await requireActiveNationsId(session.user), userName: getUserDisplayName(session.user) };
 }
 
 async function resolveAssignee(nationsId: string, sub: string) {

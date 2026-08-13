@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { google } from "googleapis";
-import { auth0 } from "@/lib/auth0";
+import { getCachedSession } from "@/lib/auth0";
 import { upsertGmailToken } from "@/lib/gmail-tokens";
 
 export async function GET(request: NextRequest) {
-  const session = await auth0.getSession();
+  const session = await getCachedSession();
   const baseUrl = process.env.APP_BASE_URL ?? "http://localhost:3000";
 
   if (!session?.user)

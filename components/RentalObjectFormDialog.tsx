@@ -109,6 +109,15 @@ type Props = {
   object: RentalObject | null;
   fastigheter: string[];
   customFieldDefs?: Array<{ key: string; label: string }>;
+  // Same convention as ApartmentFormDialog.tsx — fields hidden from a
+  // nation's list view are hidden here too (docs/SAAS-READINESS-ROADMAP.md
+  // Tier 4.1). lagenhetsnummer stays always-shown regardless (required to
+  // create a meaningful record at all).
+  visibleKeys?: Set<string>;
+  // docs/SAAS-READINESS-ROADMAP.md Tier 6.1 — defaults to "kr" (LND's
+  // existing hardcoded suffix) when not passed.
+  currency?: string;
+  locale?: string;
   onClose: () => void;
   onSubmit: (input: RentalObjectInput) => Promise<void>;
 };
@@ -118,9 +127,13 @@ export default function RentalObjectFormDialog({
   object,
   fastigheter,
   customFieldDefs = [],
+  visibleKeys,
+  currency = "kr",
+  locale = "sv-SE",
   onClose,
   onSubmit,
 }: Props) {
+  const shows = (key: string) => !visibleKeys || visibleKeys.has(key);
   const [form, setForm] = useState<Form>(() => toForm(object));
   const [customValues, setCustomValues] = useState<Record<string, string>>(
     () => object?.custom ?? {}
@@ -156,7 +169,7 @@ export default function RentalObjectFormDialog({
   const manadshyra = n(form.individuellArshyra);
   const manadshyraDisplay =
     manadshyra != null
-      ? new Intl.NumberFormat("sv-SE", { maximumFractionDigits: 0 }).format(
+      ? new Intl.NumberFormat(locale, { maximumFractionDigits: 0 }).format(
           Math.round(manadshyra / 12)
         )
       : "—";
@@ -185,18 +198,20 @@ export default function RentalObjectFormDialog({
         <Stack spacing={2} sx={{ mt: 1 }}>
           {error && <Alert severity="error">{error}</Alert>}
 
-          <TextField
-            select
-            label="Fastighet"
-            value={form.fastighet}
-            onChange={(e) => set("fastighet", e.target.value)}
-            disabled={isPending}
-            fullWidth
-          >
-            {fastigheter.map((f) => (
-              <MenuItem key={f} value={f}>{f}</MenuItem>
-            ))}
-          </TextField>
+          {shows("fastighet") && (
+            <TextField
+              select
+              label="Fastighet"
+              value={form.fastighet}
+              onChange={(e) => set("fastighet", e.target.value)}
+              disabled={isPending}
+              fullWidth
+            >
+              {fastigheter.map((f) => (
+                <MenuItem key={f} value={f}>{f}</MenuItem>
+              ))}
+            </TextField>
+          )}
 
           <TextField
             label="Lägenhetsnummer"
@@ -206,102 +221,124 @@ export default function RentalObjectFormDialog({
             fullWidth
           />
 
-          <TextField
-            label="Typ"
-            value={form.typ}
-            onChange={(e) => set("typ", e.target.value)}
-            disabled={isPending}
-            fullWidth
-          />
-
-          <Box sx={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 2 }}>
+          {shows("typ") && (
             <TextField
-              label="Area (m²)"
-              value={form.area}
-              onChange={(e) => set("area", e.target.value)}
+              label="Typ"
+              value={form.typ}
+              onChange={(e) => set("typ", e.target.value)}
+              disabled={isPending}
+              fullWidth
+            />
+          )}
+
+          {(shows("area") || shows("areaInkKorr")) && (
+            <Box sx={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 2 }}>
+              {shows("area") && (
+                <TextField
+                  label="Area (m²)"
+                  value={form.area}
+                  onChange={(e) => set("area", e.target.value)}
+                  disabled={isPending}
+                  slotProps={{ input: { inputMode: "decimal" } }}
+                />
+              )}
+              {shows("areaInkKorr") && (
+                <TextField
+                  label="Area ink korr"
+                  value={form.areaInkKorr}
+                  onChange={(e) => set("areaInkKorr", e.target.value)}
+                  disabled={isPending}
+                  slotProps={{ input: { inputMode: "decimal" } }}
+                />
+              )}
+            </Box>
+          )}
+
+          {shows("malbildshyra") && (
+            <TextField
+              label={`Målbildshyra (${currency}/år)`}
+              value={form.malbildshyra}
+              onChange={(e) => set("malbildshyra", e.target.value)}
               disabled={isPending}
               slotProps={{ input: { inputMode: "decimal" } }}
+              fullWidth
             />
+          )}
+
+          {(shows("renoveringsbehov") || shows("hyresrabatt")) && (
+            <Box sx={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 2 }}>
+              {shows("renoveringsbehov") && (
+                <TextField
+                  select
+                  label="Renoveringsbehov"
+                  value={form.renoveringsbehov}
+                  onChange={(e) => set("renoveringsbehov", e.target.value)}
+                  disabled={isPending}
+                >
+                  <MenuItem value="">—</MenuItem>
+                  <MenuItem value="1">1 — OK (0 %)</MenuItem>
+                  <MenuItem value="2">2 — Litet (−2 %)</MenuItem>
+                  <MenuItem value="3">3 — Medel (−4 %)</MenuItem>
+                  <MenuItem value="4">4 — Stort (−8 %)</MenuItem>
+                </TextField>
+              )}
+
+              {shows("hyresrabatt") && (
+                <TextField
+                  label={`Hyresrabatt (${currency}/år)`}
+                  value={form.hyresrabatt}
+                  onChange={(e) => set("hyresrabatt", e.target.value)}
+                  disabled={isPending}
+                  slotProps={{ input: { inputMode: "decimal" } }}
+                  helperText="Auto från renov."
+                />
+              )}
+            </Box>
+          )}
+
+          {shows("hyresred") && (
             <TextField
-              label="Area ink korr"
-              value={form.areaInkKorr}
-              onChange={(e) => set("areaInkKorr", e.target.value)}
+              label={`Hyresreduktion (${currency}/år)`}
+              value={form.hyresred}
+              onChange={(e) => set("hyresred", e.target.value)}
               disabled={isPending}
               slotProps={{ input: { inputMode: "decimal" } }}
+              fullWidth
             />
-          </Box>
+          )}
 
-          <TextField
-            label="Målbildshyra (kr/år)"
-            value={form.malbildshyra}
-            onChange={(e) => set("malbildshyra", e.target.value)}
-            disabled={isPending}
-            slotProps={{ input: { inputMode: "decimal" } }}
-            fullWidth
-          />
-
-          <Box sx={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 2 }}>
+          {shows("individuellArshyra") && (
             <TextField
-              select
-              label="Renoveringsbehov"
-              value={form.renoveringsbehov}
-              onChange={(e) => set("renoveringsbehov", e.target.value)}
+              label={`Individuell årshyra (${currency}/år)`}
+              value={form.individuellArshyra}
+              onChange={(e) => set("individuellArshyra", e.target.value)}
               disabled={isPending}
+              slotProps={{ input: { inputMode: "decimal" } }}
+              fullWidth
+              helperText="Auto från målbild − rabatt − red."
+            />
+          )}
+
+          {shows("manadshyra") && (
+            <Box
+              sx={{
+                px: 2,
+                py: 1.5,
+                borderRadius: 1,
+                bgcolor: "action.hover",
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+              }}
             >
-              <MenuItem value="">—</MenuItem>
-              <MenuItem value="1">1 — OK (0 %)</MenuItem>
-              <MenuItem value="2">2 — Litet (−2 %)</MenuItem>
-              <MenuItem value="3">3 — Medel (−4 %)</MenuItem>
-              <MenuItem value="4">4 — Stort (−8 %)</MenuItem>
-            </TextField>
-
-            <TextField
-              label="Hyresrabatt (kr/år)"
-              value={form.hyresrabatt}
-              onChange={(e) => set("hyresrabatt", e.target.value)}
-              disabled={isPending}
-              slotProps={{ input: { inputMode: "decimal" } }}
-              helperText="Auto från renov."
-            />
-          </Box>
-
-          <TextField
-            label="Hyresreduktion (kr/år)"
-            value={form.hyresred}
-            onChange={(e) => set("hyresred", e.target.value)}
-            disabled={isPending}
-            slotProps={{ input: { inputMode: "decimal" } }}
-            fullWidth
-          />
-
-          <TextField
-            label="Individuell årshyra (kr/år)"
-            value={form.individuellArshyra}
-            onChange={(e) => set("individuellArshyra", e.target.value)}
-            disabled={isPending}
-            slotProps={{ input: { inputMode: "decimal" } }}
-            fullWidth
-            helperText="Auto från målbild − rabatt − red."
-          />
-
-          <Box
-            sx={{
-              px: 2,
-              py: 1.5,
-              borderRadius: 1,
-              bgcolor: "action.hover",
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-            }}
-          >
-            <Typography variant="body2" color="text.secondary">
-              Månadshyra (beräknad)
-            </Typography>
-            <Typography variant="body1" sx={{ fontWeight: 600 }}>
-              {manadshyraDisplay} kr
-            </Typography>
-          </Box>
+              <Typography variant="body2" color="text.secondary">
+                Månadshyra (beräknad)
+              </Typography>
+              <Typography variant="body1" sx={{ fontWeight: 600 }}>
+                {manadshyraDisplay} {currency}
+              </Typography>
+            </Box>
+          )}
 
           {customFieldDefs.map(({ key, label }) => (
             <TextField

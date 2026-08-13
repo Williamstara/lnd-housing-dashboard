@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useState, useTransition, type ChangeEvent, type SyntheticEvent } from "react";
+import { Fragment, useMemo, useState, useTransition, type ChangeEvent, type SyntheticEvent } from "react";
 import AddIcon from "@mui/icons-material/Add";
 import DeleteIcon from "@mui/icons-material/Delete";
 import EditIcon from "@mui/icons-material/Edit";
@@ -45,16 +45,10 @@ import {
 import type { AppUser } from "@/lib/app-users";
 import type { Subtask, Todo, TodoPriority } from "@/lib/todos";
 import ColumnVisibilityMenu from "@/components/ColumnVisibilityMenu";
+import type { TableColumnConfig } from "@/lib/table-columns";
 import { useColumnVisibility } from "@/lib/use-column-visibility";
 
 type ColumnKey = "titel" | "prioritet" | "klarDatum" | "tilldelad";
-
-const columns: Array<{ key: ColumnKey; label: string }> = [
-  { key: "titel", label: "Uppgift" },
-  { key: "prioritet", label: "Prioritet" },
-  { key: "klarDatum", label: "Klart senast" },
-  { key: "tilldelad", label: "Tilldelad" },
-];
 
 const PRIORITY_LABELS: Record<TodoPriority, string> = {
   longterm: "Långsiktig",
@@ -78,6 +72,7 @@ const PRIORITY_COLORS: Record<
 type Props = {
   todos: Todo[];
   users: AppUser[];
+  columnSettings: TableColumnConfig[];
 };
 
 type PendingDelete =
@@ -251,7 +246,7 @@ function TaskFormDialog({
   );
 }
 
-export default function TodoList({ todos, users }: Props) {
+export default function TodoList({ todos, users, columnSettings }: Props) {
   const [addOpen, setAddOpen] = useState(false);
   const [addSubtaskFor, setAddSubtaskFor] = useState<string | null>(null);
   const [editingTodo, setEditingTodo] = useState<Todo | null>(null);
@@ -262,7 +257,8 @@ export default function TodoList({ todos, users }: Props) {
   const [rowsPerPage, setRowsPerPage] = useState(10);
   const [isPending, startTransition] = useTransition();
   const { isVisible, toggle } = useColumnVisibility("todo");
-  const visibleColumnDefs = columns.filter((c) => isVisible(c.key));
+  const nationColumns = useMemo(() => columnSettings.filter((c) => c.visible), [columnSettings]);
+  const visibleColumnDefs = nationColumns.filter((c) => isVisible(c.key));
 
   function toggleDone(todo: Todo) {
     startTransition(async () => {
@@ -331,7 +327,7 @@ export default function TodoList({ todos, users }: Props) {
           <TableHead>
             <TableRow>
               <TableCell padding="checkbox">
-                <ColumnVisibilityMenu columns={columns} isVisible={isVisible} onToggle={toggle} />
+                <ColumnVisibilityMenu columns={nationColumns} isVisible={isVisible} onToggle={toggle} />
               </TableCell>
               <TableCell padding="checkbox" />
               <TableCell padding="checkbox" />
@@ -373,12 +369,12 @@ export default function TodoList({ todos, users }: Props) {
                         <TableCell
                           key={column.key}
                           sx={
-                            column.key === "titel" && todo.klar
+                            (column.key as ColumnKey) === "titel" && todo.klar
                               ? { textDecoration: "line-through" }
                               : undefined
                           }
                         >
-                          {renderCellValue(todo, column.key)}
+                          {renderCellValue(todo, column.key as ColumnKey)}
                         </TableCell>
                       ))}
                       <TableCell align="right" onClick={(event) => event.stopPropagation()}>
@@ -505,7 +501,7 @@ export default function TodoList({ todos, users }: Props) {
 
       <Box sx={{ display: { xs: "block", sm: "none" } }}>
         <Stack direction="row" sx={{ justifyContent: "flex-end", mb: 1 }}>
-          <ColumnVisibilityMenu columns={columns} isVisible={isVisible} onToggle={toggle} />
+          <ColumnVisibilityMenu columns={nationColumns} isVisible={isVisible} onToggle={toggle} />
         </Stack>
         {todos.length === 0 ? (
           <Typography variant="body2" color="text.secondary" sx={{ textAlign: "center", py: 4 }}>
@@ -559,11 +555,11 @@ export default function TodoList({ todos, users }: Props) {
                           </Typography>
                           <Box
                             sx={{
-                              textDecoration: column.key === "titel" && todo.klar ? "line-through" : undefined,
+                              textDecoration: (column.key as ColumnKey) === "titel" && todo.klar ? "line-through" : undefined,
                               overflowWrap: "break-word",
                             }}
                           >
-                            {renderCellValue(todo, column.key)}
+                            {renderCellValue(todo, column.key as ColumnKey)}
                           </Box>
                         </Box>
                       ))}

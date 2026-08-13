@@ -1,17 +1,24 @@
 import Container from "@mui/material/Container";
-import { auth0 } from "@/lib/auth0";
+import { auth0, getCachedSession } from "@/lib/auth0";
 import { getLedigaLagenheter } from "@/lib/apartments";
 import { getFastigheter } from "@/lib/fastigheter";
 import { getMissedRentRows, syncMissedRent } from "@/lib/missed-rent";
-import { requireNationsIdOrRedirect } from "@/lib/nations";
+import { requireActiveNationsIdOrRedirect } from "@/lib/active-nation";
 import { getNationSettings } from "@/lib/nation-settings";
-import { DEFAULT_APARTMENT_COLUMNS, DEFAULT_APARTMENT_IMPORT, resolveColumns, resolveImportMapping } from "@/lib/table-columns";
+import {
+  DEFAULT_APARTMENT_COLUMNS,
+  DEFAULT_APARTMENT_IMPORT,
+  getCurrency,
+  getLocale,
+  resolveColumns,
+  resolveImportMapping,
+} from "@/lib/table-columns";
 import ApartmentsTable from "@/components/ApartmentsTable";
 
 const LedigaLagenheterPage = auth0.withPageAuthRequired(
   async function LedigaLagenheterPage() {
-    const session = await auth0.getSession();
-    const nationsId = requireNationsIdOrRedirect(session?.user);
+    const session = await getCachedSession();
+    const nationsId = await requireActiveNationsIdOrRedirect(session?.user);
     await syncMissedRent(nationsId);
     const [apartments, fastighetRecords, missedRent, nationSettings] = await Promise.all([
       getLedigaLagenheter(nationsId),
@@ -38,6 +45,9 @@ const LedigaLagenheterPage = auth0.withPageAuthRequired(
           importMapping={importMapping}
           missedRentApartmentIds={missedRentApartmentIds}
           columnSettings={columnSettings}
+          enabledFeatures={nationSettings?.enabledFeatures}
+          currency={getCurrency(nationSettings)}
+          locale={getLocale(nationSettings)}
         />
       </Container>
     );

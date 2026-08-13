@@ -70,6 +70,14 @@ type Props = {
   apartment: Apartment | null;
   fastigheter: string[];
   customFieldDefs?: Array<{ key: string; label: string }>;
+  // Fields hidden from a nation's list view (components/AdminPage.tsx's
+  // column config) are hidden here too, not just in the table — matches
+  // docs/SAAS-READINESS-ROADMAP.md Tier 4.1. Absent/undefined means "show
+  // everything", same default as the list view's own resolveColumns.
+  visibleKeys?: Set<string>;
+  // docs/SAAS-READINESS-ROADMAP.md Tier 6.1 — defaults to "kr" (LND's
+  // existing hardcoded suffix) when not passed.
+  currency?: string;
   onClose: () => void;
   onSubmit: (input: ApartmentInput) => Promise<void>;
   onLookupSpecs: (lagenhetsnummer: string) => Promise<ApartmentSpecs | null>;
@@ -80,11 +88,13 @@ export default function ApartmentFormDialog({
   apartment,
   fastigheter,
   customFieldDefs = [],
+  visibleKeys,
+  currency = "kr",
   onClose,
   onSubmit,
   onLookupSpecs,
 }: Props) {
-  const fields: Array<{
+  const allFields: Array<{
     key: keyof FormValues;
     label: string;
     type?: string;
@@ -95,12 +105,13 @@ export default function ApartmentFormDialog({
     { key: "objekttyp", label: "Objekttyp" },
     { key: "antalRum", label: "Antal rum", type: "number" },
     { key: "ledigFrom", label: "Ledig fr.o.m.", type: "date" },
-    { key: "arshyra", label: "Årshyra (kr)", type: "number" },
-    { key: "hyresrabatt", label: "Hyresrabatt (kr)", type: "number" },
-    { key: "hyresreduktion", label: "Hyresreduktion (kr)", type: "number" },
-    { key: "arshyraMedRed", label: "Årshyra med red. (kr)", type: "number" },
-    { key: "manadshyra", label: "Månadshyra (kr)", type: "number" },
+    { key: "arshyra", label: `Årshyra (${currency})`, type: "number" },
+    { key: "hyresrabatt", label: `Hyresrabatt (${currency})`, type: "number" },
+    { key: "hyresreduktion", label: `Hyresreduktion (${currency})`, type: "number" },
+    { key: "arshyraMedRed", label: `Årshyra med red. (${currency})`, type: "number" },
+    { key: "manadshyra", label: `Månadshyra (${currency})`, type: "number" },
   ];
+  const fields = visibleKeys ? allFields.filter((f) => visibleKeys.has(f.key)) : allFields;
   const [form, setForm] = useState<FormValues>(() => toFormValues(apartment));
   const [customValues, setCustomValues] = useState<Record<string, string>>(
     () => apartment?.custom ?? {}
@@ -161,7 +172,13 @@ export default function ApartmentFormDialog({
   }
 
   function handleSubmit() {
-    if (Object.values(form).some((value) => value.trim() === "")) {
+    // Only the currently-shown fields need a value — a field a nation has
+    // hidden from this form defaults to 0 (see toFormValues/emptyForm and
+    // the numeric-field ApartmentInput conversion below; Number("") is 0),
+    // matching what the field would already be for a nation that never
+    // tracked it before this admin config existed.
+    const requiredKeys: Array<keyof FormValues> = ["lagenhetsnummer", ...fields.map((f) => f.key)];
+    if (requiredKeys.some((key) => form[key].trim() === "")) {
       setError("Alla fält måste fyllas i.");
       return;
     }

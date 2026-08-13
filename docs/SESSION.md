@@ -5,130 +5,175 @@ milestone changes; durable reasoning belongs in `docs/DECISIONS.md`.
 
 ## Current milestone
 
-**Complete.** Migrated the app's database from MongoDB to Supabase
-(Postgres), on branch `mongodb-to-supabase-ref`. Auth0 stayed the identity/
-roles/tenant system of record throughout — this was not a switch to
-Supabase Auth. Full design (schema/RLS/phasing) is preserved in
-`docs/DECISIONS.md`; the original planning document lived at
-`~/.claude/plans/serene-pondering-bengio.md` on the machine this session ran
-on (local to that machine, not part of the repo).
+**Complete (implementation + static verification).** Full implementation of
+`docs/SAAS-READINESS-ROADMAP.md`'s "configuration infrastructure" scope,
+following a plan-mode session that re-audited the roadmap with `graphify`
+and then discussed scope directly with the user (see
+`docs/DECISIONS.md`'s "SaaS-readiness roadmap: build configuration
+infrastructure now, defer the two biggest architectural bets" entry for the
+full reasoning). This is a separate, later milestone from the previous
+Auth0/Supabase performance-audit session (summarized below it in this same
+file since they landed close together and share validation state).
 
 ## User problem being solved
 
-The app was pre-production with one real tenant (`LND`). MongoDB had no
-schema enforcement and no DB-level tenant-isolation guarantee (every query
-was manually filtered by `nationsID` in application code — a forgotten
-filter would have been a silent cross-tenant leak, not an error). Postgres
-adds real foreign keys/constraints and Row Level Security as a fail-closed
-tenant-isolation backstop.
+Several real Swedish student nations are now interested in this app, beyond
+`LND`. The user's explicit goal: as little as possible hardcoded between
+nations, configured in the admin dashboard instead, with actual per-nation
+workflow differences worked out through conversation with each nation
+rather than guessed at in code. Two roadmap items (Tier 1.1 property
+hierarchy, Tier 3.1 workflow state machine) were explicitly *not* built
+this session for exactly that reason — see the DECISIONS.md entry above.
 
-## Implemented scope
+## Implemented scope (6 batches, all complete)
 
-All four phases complete:
-
-- **Phase 0 (Supabase project setup)**: schema, RLS, and Storage
-  buckets/policies applied via versioned migrations in
-  `supabase/migrations/` (four files — schema, RLS, storage, grants — see
-  `docs/DECISIONS.md` for why a separate grants migration was needed). Auth0
-  registered as a Supabase Third-Party Auth issuer.
-- **Phase 1 (data migration)**: all real `LND` data moved from MongoDB to
-  Postgres via a throwaway script (written, run, verified, then deleted per
-  `AGENTS.md` convention — nothing left in the working tree from it). Row
-  counts and field-level spot-checks confirmed correct, including all 291
-  floor-plan files round-tripping through Supabase Storage.
-- **Phase 2 (proof of concept)**: `lib/supabase-server.ts` built,
-  `lib/fastigheter.ts` converted first and verified live. Found and fixed
-  two non-obvious blockers along the way (both documented in
-  `docs/DECISIONS.md`): missing default `GRANT`s on SQL-migration-created
-  tables, and Auth0's ID token needing an explicit `role: "authenticated"`
-  custom claim for Supabase's Third-Party Auth to map requests to the
-  `authenticated` Postgres role instead of silently falling back to `anon`.
-- **Phase 3 (convert remaining files)**: every other `lib/*.ts` file
-  converted one at a time, each verified live in the browser before moving
-  to the next — `tenants.ts`, `andrahandsgaster.ts`, `apartments.ts`,
-  `rentalobjects.ts`, `missed-rent.ts` (hit and fixed a real cross-database
-  ID-type mismatch on `/lediga-lagenheter` — see `docs/DECISIONS.md`),
-  `besiktningar.ts`, `todos.ts` (normalized `subtasks` into a
-  `todo_subtasks` child table with a completion-sync trigger replacing the
-  old manual re-check), `gmail-tokens.ts`, `nation-settings.ts` (also
-  simplified `listAllNationIds()` — `nations` is now a real registry table,
-  not inferred by scanning every collection), `mail-templates.ts`/
-  `floor-plans.ts`/`uppsagningar.ts` (Storage-backed blobs), and
-  `recipient-groups.ts`.
-- **Phase 4 (cutover)**: `mongodb` and the unused `@supabase/ssr` dependency
-  removed; `lib/mongodb.ts` deleted; `MONGODB_URI`/`MONGODB_DB` removed from
-  `.env.local`; `AGENTS.md` and `docs/ARCHITECTURE.md` rewritten to describe
-  the Postgres/Supabase architecture. Full `npx next build` succeeds (needed
-  a larger Node heap on this machine — `NODE_OPTIONS=--max-old-space-size=8192
-  npx next build` — the default limit isn't enough for this build's
-  type-checking phase; unrelated to the migration itself).
+1. **Roadmap re-audit + doc updates.** Graphify-assisted sweep found two
+   gaps: Tier 6.2's localization scope was undercounted ~7x (40 sites/18
+   files, not "6+"), and a new Tier 3.4 (duplicated Excel cell-parsing
+   helpers, already known in `docs/ARCHITECTURE.md` but never carried into
+   the roadmap). Both added to `docs/SAAS-READINESS-ROADMAP.md`.
+2. **Batch 1 — Role-guard cleanup + per-nation permission model** (Tier 2.1,
+   all 3 steps). New `nation_role_permissions` table + RLS
+   (`supabase/migrations/20260813140000_nation_role_permissions.sql`,
+   applied). `lib/roles.ts` gained `PERMISSIONS`/`DEFAULT_PERMISSION_ROLES`/
+   `hasPermission`; new `lib/permissions.ts`'s `requirePermission()`
+   replaces the ~10 independently hand-written `requireXRole()` functions
+   across `app/*/actions.ts`. New "Behörigheter" tab in `/admin`. A nation
+   with no saved rows behaves exactly like `LND` does today (verified via
+   the fallback logic).
+3. **Batch 2 — Multi-nation support for the operator** (Tier 1.2).
+   `lib/nations.ts`'s `getNationsId`/new `getAvailableNations` handle an
+   array-shaped nationsID claim (backward-compatible — every user today has
+   a string claim, unaffected). New `lib/active-nation.ts` (server-only,
+   kept separate from `lib/nations.ts` specifically so `next/headers` never
+   reaches `NavBar.tsx`'s client bundle) — cookie-backed active-nation
+   resolution, always re-validated against the user's real claim. Nation
+   switcher in `NavBar.tsx` (invisible until a real array claim exists — no
+   Auth0 Action change has been made yet, that's external to this repo).
+   Swept all 11 `page.tsx` files, every `actions.ts` guard, `lib/permissions.ts`,
+   and all 9 `app/api/**/route.ts` handlers onto the active-nation-aware
+   path.
+4. **Batch 3 — Feature flags** (Tier 3.2 + 5.2's flag half + 7.1).
+   `enabled_features` column on `nations`
+   (`supabase/migrations/20260813150000_nation_features.sql`, applied).
+   `FEATURES`/`isFeatureEnabled` in `lib/table-columns.ts`. Gates `/epost`+
+   `/mallar` nav entries, the laundry-account buttons
+   (`TenantsTable`/`AndrahandsgasterTable`), and the key-handover toggles
+   (`ApartmentsTable`). New "Funktioner" tab in `/admin`.
+5. **Batch 4 — Admin config coverage** (Tier 4.1 + 4.2). `TableKey` extended
+   to `tenants`/`andrahandsgaster`/`arkiv`/`uppsagning`/`todo`, each with a
+   `DEFAULT_*_COLUMNS` array and a `ColumnConfigEditor` instance (new
+   `allowCustomFields` prop, off for these 5 since none of their row types
+   has a `custom` bag). `ApartmentFormDialog`/`RentalObjectFormDialog` now
+   respect the same column config (hidden fields disappear from the
+   add/edit form too). **`TenantFormDialog`/`AndrahandsgastFormDialog`
+   deliberately left unwired** — their server-side sanitizers blanket-require
+   every field non-blank, so client-side field-hiding alone would make
+   every save with a hidden field silently fail; needs the server check
+   fixed too, tracked in `docs/TODO.md`.
+6. **Batch 5 — Currency & locale** (Tier 6.1 + 6.2, scoped). `currency`/
+   `locale` columns on `nations`
+   (`supabase/migrations/20260813160000_nation_currency_locale.sql`,
+   applied). `getCurrency`/`getLocale`/`formatCurrency`/
+   `formatCurrencyWithUnit` in `lib/table-columns.ts`. Wired through the
+   roadmap's literal named examples (`StatistikOverview.tsx`,
+   `ApartmentFormDialog.tsx`, `RentalObjectFormDialog.tsx`) plus their host
+   tables and `MissedRentTable.tsx`. **Deliberately not threaded** through
+   ~6 more bare-formatter files or the 26 Swedish-locale search/sort sites
+   — every nation in discussion is Swedish/SEK, so near-zero near-term
+   value for real mechanical cost; documented in the roadmap for later.
+7. **Batch 6 — Excel cell-parser consolidation** (Tier 3.4, scoped
+   narrower than originally written). Only `cellStr` was actually
+   byte-identical across all 4 importer dialogs — now in
+   `lib/table-columns.ts`. `cellNum`/`cellDate`/besiktningar's
+   `parseNumber`/`formatDateCell` turned out to have different signatures
+   and, for besiktningar, real importer-specific logic (merged-cell
+   inheritance, YYMMDD fallback) — left local rather than force a
+   premature shared abstraction. Verified this distinction by reading each
+   file, not by assuming from matching function names.
 
 ## Validation status
 
-- `npx tsc --noEmit`: clean throughout every phase.
+- `npx tsc --noEmit`: clean after every batch.
 - `npm run lint`: unchanged baseline (7 `react-hooks/set-state-in-effect`
-  errors + 1 unused-arg warning) throughout.
-- `npx next build`: clean (with the heap-size flag above).
-- Every route in the app has been verified live in a real authenticated
-  browser session against real `LND` data on Postgres: `/fastigheter`,
-  `/hyresgastlista` (both tabs), `/lediga-lagenheter`, `/redo-for-kontrakt`,
-  `/databas`, `/statistik`, `/besiktningar`, `/todo` (including the
-  subtask-completion trigger), `/admin` (both tabs), `/profil`,
-  `/planritningar`, `/mallar`, `/uppsagning`.
+  errors + 1 unused-arg warning) after every batch — verified explicitly
+  each time, not assumed.
+- All 3 new migrations applied to the live Supabase project and confirmed
+  via `supabase migration list` / a fresh `db push`.
+- Dev server (already running across sessions, `/tmp/lnd-dev-server.log`)
+  hot-reloaded every change; every route touched this session returns the
+  expected `307` (redirect to login, unauthenticated) with no new server
+  errors. One unrelated `/planritningar` 500 (`JWT expired`) appeared from
+  a stale browser session's expired token — not caused by, or related to,
+  any change this session; `/planritningar` was never touched.
+- **Not done**: a live authenticated pass (real login, exercising the new
+  admin tabs, a real Excel import to confirm the batched-write fallback
+  behavior). See `docs/TODO.md`'s "Next" section — this needs the user
+  present since it touches real `LND` data and can't be exercised via curl.
 
 ## Acceptance criteria
 
-- [x] Phase 0: schema, RLS, Storage buckets live on the real project.
-- [x] Phase 1: all Mongo data migrated and verified.
-- [x] Phase 2: one collection (`fastigheter`) converted and verified live.
-- [x] Phase 3: every remaining `lib/*.ts` file converted, each verified live.
-- [x] Phase 4: MongoDB fully removed; docs updated.
-
-## Exact next step
-
-None outstanding for this migration. Remaining items are pre-existing,
-unrelated work already tracked in `docs/TODO.md` (the responsive-UX QA
-pass, `RentalObject.typ` data-quality cleanup, apartments Excel-import
-mapping) — worth a quick sanity pass on the Postgres-backed app since they
-predate this migration, but nothing about them is migration-specific.
-
-## Follow-on work this session (after the migration itself)
-
-Once the migration was verified complete, the user asked for a
-SaaS-readiness audit — what's still hardcoded/too coupled to nation `LND`'s
-specific workflow, beyond what the migration touched — plus a full security
-audit, both as durable planning artifacts for a future session (not
-implemented now):
-
-- **`docs/SAAS-READINESS-ROADMAP.md`** (new file) — a 7-tier roadmap built
-  from two parallel codebase audits (UI/components layer, `lib/*.ts` +
-  Server Actions layer) plus the six items already known from migration
-  planning. Covers everything from schema-level assumptions (the
-  `fastighet`/`lagenhetsnummer` property hierarchy, single-`nationsID`-
-  per-user) down to minor polish (hardcoded key-handover UI). See the file
-  itself for the full breakdown and suggested implementation sequence.
-- **Security audit**, appended as the roadmap file's final section: a
-  3-phase identify → independent-false-positive-filter → confidence-gate
-  process (via the `security-review` skill) over the full migration diff.
-  Zero findings survived the confidence bar — two candidates (a Storage
-  path-filename concern, raw Postgres errors reaching the browser) were
-  investigated and ruled out as not concretely exploitable, though the
-  second is kept as a non-urgent hardening recommendation.
-- `docs/TODO.md` now points to the roadmap file; both are also saved to
-  memory (`project-customization-roadmap`) for cross-session recall.
+- [x] Roadmap re-audited with graphify; 2 new findings added.
+- [x] Batch 1 — permission model, zero behavior change for `LND` by default.
+- [x] Batch 2 — multi-nation support, zero behavior change for single-nation
+      users (everyone today).
+- [x] Batch 3 — feature flags, zero behavior change when unset (everything
+      enabled by default).
+- [x] Batch 4 — 5 more tables get admin column config; 2 of 4 form dialogs
+      respect it (2 correctly deferred, documented why).
+- [x] Batch 5 — currency/locale infrastructure + roadmap's named examples
+      wired (rest deliberately scoped out, documented why).
+- [x] Batch 6 — Excel parser consolidation (scoped to what was genuinely
+      duplicated).
+- [x] `npx tsc --noEmit` and `npm run lint` clean against the baseline,
+      verified after every single batch, not just at the end.
+- [ ] Live authenticated verification (see "Validation status" above).
 
 ## Out-of-milestone notes
 
-- **A MongoDB connection string with an embedded password was accidentally
-  printed into agent tool output twice during this session** (once from an
-  unsafe `source .env.local` in a shell command, once from an unquoted
-  `grep` before `.env.local` was edited to remove the Mongo lines). The
-  corresponding Atlas database user should be rotated or deleted — flagged
-  to the user both times it happened; recorded here and in `AGENTS.md` so
-  it isn't lost. Given MongoDB is now fully decommissioned for this app,
-  deleting the Atlas database user (rather than rotating its password) is
-  the simpler cleanup.
-- A dev server was left running in the background during this session on
-  the machine this ran on (`npm run dev`, logging to
-  `/tmp/lnd-dev-server.log`) for live verification. Check whether it's
-  still needed/running before starting a fresh one.
+- Mid-session, a chained `git stash && npm run lint && git stash pop`
+  command timed out during the `lint` step, leaving the entire session's
+  work (Batches 1-3 at that point) sitting in the stash instead of the
+  working tree. Caught immediately, `git stash pop` run separately,
+  verified restored correctly via `tsc`/lint/dev-server checks before
+  continuing. Avoid chaining `git stash` with slow commands in future
+  sessions — stash and pop as separate, quick operations.
+- Carried over from the earlier performance-audit milestone, still
+  unresolved: MongoDB Atlas database user (password printed to tool output
+  during the original Mongo→Supabase migration) should be rotated/deleted
+  if that hasn't happened yet; a dev server has been running in the
+  background across multiple sessions now — check whether it's still
+  needed.
+
+---
+
+# Previous milestone (same day, earlier session): Auth0/Supabase performance audit
+
+**Complete.** Performance audit of Auth0/Supabase call patterns, requested
+after the Mongo→Supabase migration to check for unnecessary calls to either
+service before real traffic exists to expose them. Investigated using
+`graphify` plus direct source reads; cross-referenced against the SaaS
+roadmap, but every roadmap item investigated there turned out to be a
+correctness/maintainability concern rather than a performance driver — this
+milestone implemented four independently-found issues instead:
+
+1. **`auth0.getSession()` deduped per request** via new `getCachedSession`
+   (`lib/auth0.ts`, React `cache()`-wrapped) — cut a single page load's
+   redundant session-cookie decrypts from ~7 to ~2. See
+   `docs/DECISIONS.md`'s corresponding entry.
+2. **Bulk-write batching** for the 2 of 5 bulk importers that actually
+   needed it (`bulkUpsertApartments`, `bulkUpsertBesiktningar`) — chunked
+   into batches of 50 with per-row fallback on chunk failure. The other 3
+   were already correctly batched; an initial grep-based assumption that
+   all 5 needed fixing was caught and corrected before any code was
+   touched.
+3. **`importApartmentsFromExcelAction`** no longer re-fetches the fastighet
+   list once per row.
+4. **Realtime-client construction overhead** — investigated, not fixed (no
+   clean way to disable it in the installed `@supabase/supabase-js`
+   version); documented rather than worked around.
+
+Validation: `tsc`/lint clean, batching logic verified with an isolated
+non-network throwaway script (deleted after), dev server confirmed
+compiling. Live authenticated end-to-end verification was not done in that
+session either — folded into this session's "Next step" above.

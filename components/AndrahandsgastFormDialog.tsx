@@ -30,6 +30,12 @@ type Props = {
   onSubmit: (input: AndrahandsgastInput) => Promise<void>;
 };
 
+// Deliberately NOT wired to admin column visibility — same reason as
+// TenantFormDialog.tsx: app/hyresgastlista/actions.ts's
+// sanitizeAndrahandsgastInput blanket-requires every field non-blank
+// server-side, so hiding one here without also making that check
+// nation-settings-aware would make submissions with the hidden field
+// silently fail validation.
 export default function AndrahandsgastFormDialog({
   open,
   andrahandsgast,

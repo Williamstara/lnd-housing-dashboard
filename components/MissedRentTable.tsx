@@ -43,12 +43,14 @@ import { exportRowsToXlsx } from "@/lib/export-xlsx";
 import type { MissedRentRow } from "@/lib/missed-rent";
 import type { RentalObject } from "@/lib/rentalobjects";
 import { ROLES, hasRole } from "@/lib/roles";
+import { formatCurrency, getCurrency, type NationSettings } from "@/lib/table-columns";
 import { useColumnVisibility } from "@/lib/use-column-visibility";
 
 type Props = {
   rows: MissedRentRow[];
   availableApartments: Apartment[];
   rentalObjects: RentalObject[];
+  nationSettings?: NationSettings | null;
 };
 
 type AddSource = "apartment" | "databas";
@@ -102,7 +104,6 @@ const columnValue: Record<ColumnKey, (r: MissedRentRow) => string | number> = {
   ansvarig: (r) => r.ansvarig,
 };
 
-const currency = new Intl.NumberFormat("sv-SE", { maximumFractionDigits: 0 });
 
 const CURRENCY_KEYS = new Set<ColumnKey>([
   "arshyra",
@@ -136,7 +137,7 @@ type EditForm = {
   ansvarig: string;
 };
 
-export default function MissedRentTable({ rows, availableApartments, rentalObjects }: Props) {
+export default function MissedRentTable({ rows, availableApartments, rentalObjects, nationSettings }: Props) {
   const { user } = useUser();
   const isHusforman = hasRole(user, ROLES.HUSFORMAN);
 
@@ -218,7 +219,7 @@ export default function MissedRentTable({ rows, availableApartments, rentalObjec
   function renderCellValue(row: MissedRentRow, key: ColumnKey): ReactNode {
     if (key === "faktisktInflyttDatum") return row.faktisktInflyttDatum ?? "Pågående";
     if (CURRENCY_KEYS.has(key)) {
-      const formatted = currency.format(columnValue[key](row) as number);
+      const formatted = formatCurrency(columnValue[key](row) as number, nationSettings);
       return key === "totalMissat" ? <strong>{formatted}</strong> : formatted;
     }
     return columnValue[key](row);
@@ -573,7 +574,7 @@ export default function MissedRentTable({ rows, availableApartments, rentalObjec
               fullWidth
             />
             <TextField
-              label="Övriga missade kostnader (kr)"
+              label={`Övriga missade kostnader (${getCurrency(nationSettings)})`}
               type="number"
               value={editForm.ovrigaMissadeKostnader}
               onChange={(e) =>

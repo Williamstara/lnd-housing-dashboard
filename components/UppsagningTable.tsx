@@ -26,11 +26,13 @@ import type { Tenant } from "@/lib/tenants";
 import ColumnVisibilityMenu from "@/components/ColumnVisibilityMenu";
 import ConfirmUppsagningDialog from "@/components/ConfirmUppsagningDialog";
 import { ROLES, hasRole } from "@/lib/roles";
+import type { TableColumnConfig } from "@/lib/table-columns";
 import { useColumnVisibility } from "@/lib/use-column-visibility";
 
 type Props = {
   uppsagningar: Uppsagning[];
   tenants: Tenant[];
+  columnSettings: TableColumnConfig[];
 };
 
 type ColumnKey =
@@ -42,14 +44,6 @@ type ColumnKey =
 
 type Order = "asc" | "desc";
 
-const columns: Array<{ key: ColumnKey; label: string }> = [
-  { key: "lagenhetsnummer", label: "Lägenhetsnummer" },
-  { key: "fastighet", label: "Fastighet" },
-  { key: "hyresgastNamn", label: "Hyresgäst" },
-  { key: "bekraftelsedatum", label: "Uppsägning bekräftad" },
-  { key: "flyttdatum", label: "Flyttdatum" },
-];
-
 function matchesSearch(u: Uppsagning, query: string): boolean {
   if (!query) return true;
   return [u.lagenhetsnummer, u.fastighet, u.hyresgastNamn]
@@ -58,7 +52,7 @@ function matchesSearch(u: Uppsagning, query: string): boolean {
     .includes(query);
 }
 
-export default function UppsagningTable({ uppsagningar, tenants }: Props) {
+export default function UppsagningTable({ uppsagningar, tenants, columnSettings }: Props) {
   const { user } = useUser();
   const isEkonomi = hasRole(user, ROLES.EKONOMI);
 
@@ -69,8 +63,12 @@ export default function UppsagningTable({ uppsagningar, tenants }: Props) {
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(10);
   const { isVisible, toggle } = useColumnVisibility("uppsagning");
-  const visibleColumnDefs = columns.filter((c) => isVisible(c.key));
-  const toggleableColumns = [...columns, { key: "dokument", label: "Dokument" }];
+  const nationColumns = useMemo(() => columnSettings.filter((c) => c.visible), [columnSettings]);
+  const visibleColumnDefs = nationColumns.filter((c) => isVisible(c.key));
+  // "dokument" is a document-download button, not a real Uppsagning field —
+  // a per-user-only toggle appended just for the visibility menu, never
+  // part of the admin-configurable column list.
+  const toggleableColumns = [...nationColumns, { key: "dokument", label: "Dokument", visible: true, isCustom: false }];
   const showDokument = isVisible("dokument");
 
   const visible = useMemo(() => {
@@ -100,8 +98,8 @@ export default function UppsagningTable({ uppsagningar, tenants }: Props) {
   function handleExport() {
     exportRowsToXlsx(
       `uppsagning-${new Date().toISOString().slice(0, 10)}.xlsx`,
-      [...columns.map((c) => c.label), "Bekräftad av"],
-      visible.map((u) => [...columns.map((c) => u[c.key]), u.bekraftadAv])
+      [...nationColumns.map((c) => c.label), "Bekräftad av"],
+      visible.map((u) => [...nationColumns.map((c) => u[c.key as ColumnKey]), u.bekraftadAv])
     );
   }
 
@@ -156,7 +154,7 @@ export default function UppsagningTable({ uppsagningar, tenants }: Props) {
                   <TableSortLabel
                     active={orderBy === column.key}
                     direction={orderBy === column.key ? order : "asc"}
-                    onClick={() => handleSort(column.key)}
+                    onClick={() => handleSort(column.key as ColumnKey)}
                   >
                     {column.label}
                   </TableSortLabel>
@@ -180,7 +178,7 @@ export default function UppsagningTable({ uppsagningar, tenants }: Props) {
                   <TableCell padding="checkbox" />
                   {visibleColumnDefs.map((column) => (
                     <TableCell key={column.key}>
-                      {column.key === "bekraftelsedatum" ? (
+                      {(column.key as ColumnKey) === "bekraftelsedatum" ? (
                         <>
                           {u.bekraftelsedatum}
                           {u.bekraftadAv && (
@@ -190,7 +188,7 @@ export default function UppsagningTable({ uppsagningar, tenants }: Props) {
                           )}
                         </>
                       ) : (
-                        u[column.key]
+                        u[column.key as ColumnKey]
                       )}
                     </TableCell>
                   ))}
@@ -236,7 +234,7 @@ export default function UppsagningTable({ uppsagningar, tenants }: Props) {
                           {column.label}
                         </Typography>
                         <Box sx={{ overflowWrap: "break-word" }}>
-                          {column.key === "bekraftelsedatum" ? (
+                          {(column.key as ColumnKey) === "bekraftelsedatum" ? (
                             <>
                               {u.bekraftelsedatum}
                               {u.bekraftadAv && (
@@ -246,7 +244,7 @@ export default function UppsagningTable({ uppsagningar, tenants }: Props) {
                               )}
                             </>
                           ) : (
-                            u[column.key]
+                            u[column.key as ColumnKey]
                           )}
                         </Box>
                       </Box>

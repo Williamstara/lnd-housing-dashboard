@@ -22,23 +22,41 @@ import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
 import {
   createNationAction,
+  getNationRolePermissionsAction,
   getNationSettingsAction,
+  saveEnabledFeaturesAction,
   saveFastighetAliasesAction,
   saveImportMappingAction,
+  saveNationRolePermissionsAction,
   saveRentalobjectTabGroupsAction,
   saveRentalobjectsMultiTabAction,
   saveTableColumnsAction,
 } from "@/app/admin/actions";
 import {
+  DEFAULT_PERMISSION_ROLES,
+  PERMISSIONS,
+  PERMISSION_LABELS,
+  ROLES,
+  type PermissionKey,
+} from "@/lib/roles";
+import type { NationRolePermissions } from "@/lib/nation-settings";
+import {
+  DEFAULT_ANDRAHANDSGAST_COLUMNS,
   DEFAULT_ANDRAHANDSGAST_IMPORT,
   DEFAULT_APARTMENT_COLUMNS,
   DEFAULT_APARTMENT_IMPORT,
+  DEFAULT_ARKIV_COLUMNS,
   DEFAULT_BESIKTNING_IMPORT,
   DEFAULT_FASTIGHET_ALIASES,
   DEFAULT_RENTALOBJECT_COLUMNS,
   DEFAULT_RENTALOBJECT_SINGLE_IMPORT,
   DEFAULT_RENTALOBJECT_TAB_GROUPS,
+  DEFAULT_TENANT_COLUMNS,
   DEFAULT_TENANT_IMPORT,
+  DEFAULT_TODO_COLUMNS,
+  DEFAULT_UPPSAGNING_COLUMNS,
+  FEATURES,
+  FEATURE_LABELS,
   columnIndexToLetter,
   columnLetterToIndex,
   resolveColumns,
@@ -46,6 +64,7 @@ import {
   resolveImportMapping,
   resolveTabGroups,
   type FastighetAlias,
+  type FeatureKey,
   type ImportFieldConfig,
   type ImportKey,
   type NationSettings,
@@ -76,12 +95,18 @@ function ColumnConfigEditor({
   title,
   helperText,
   initialColumns,
+  allowCustomFields = true,
 }: {
   nationsId: string;
   table: TableKey;
   title: string;
   helperText: string;
   initialColumns: TableColumnConfig[];
+  // Off for tables whose row type has no `custom` bag to store a new
+  // field's value in (everything except apartments/rentalobjects, so far)
+  // — visibility/order/label of existing columns stays configurable either
+  // way, only "add a brand-new field" is hidden.
+  allowCustomFields?: boolean;
 }) {
   const [columns, setColumns] = useState<TableColumnConfig[]>(initialColumns);
   const [newLabel, setNewLabel] = useState("");
@@ -185,20 +210,22 @@ function ColumnConfigEditor({
         ))}
       </Stack>
 
-      <Stack direction="row" spacing={1} sx={{ mt: 2, alignItems: "center" }}>
-        <TextField
-          size="small"
-          label="Nytt anpassat fält"
-          value={newLabel}
-          onChange={(event) => setNewLabel(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === "Enter") addCustomField();
-          }}
-        />
-        <Button size="small" startIcon={<AddIcon />} onClick={addCustomField}>
-          Lägg till fält
-        </Button>
-      </Stack>
+      {allowCustomFields && (
+        <Stack direction="row" spacing={1} sx={{ mt: 2, alignItems: "center" }}>
+          <TextField
+            size="small"
+            label="Nytt anpassat fält"
+            value={newLabel}
+            onChange={(event) => setNewLabel(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") addCustomField();
+            }}
+          />
+          <Button size="small" startIcon={<AddIcon />} onClick={addCustomField}>
+            Lägg till fält
+          </Button>
+        </Stack>
+      )}
 
       <Stack direction="row" spacing={2} sx={{ mt: 3, alignItems: "center" }}>
         <Button variant="contained" disabled={isPending} onClick={handleSave}>
@@ -622,6 +649,173 @@ function DatabasImportSection({
   );
 }
 
+// Every configurable role except admin — admin is a cross-nation superuser
+// (lib/roles.ts's hasRole bypass), always has every permission regardless
+// of what's checked here, so it's never shown as a configurable option.
+const CONFIGURABLE_ROLES: { value: string; label: string }[] = [
+  { value: ROLES.EKONOMI, label: "Ekonomi" },
+  { value: ROLES.HUSVD, label: "Husvd" },
+  { value: ROLES.HUSFORMAN, label: "Husförman" },
+  { value: ROLES.VAKTMASTARE, label: "Vaktmästare" },
+];
+
+const PERMISSION_KEYS = Object.values(PERMISSIONS);
+
+function PermissionsEditor({
+  nationsId,
+  initialPermissions,
+}: {
+  nationsId: string;
+  initialPermissions: NationRolePermissions;
+}) {
+  // A key with no saved rows falls back to DEFAULT_PERMISSION_ROLES — same
+  // behavior lib/roles.ts's hasPermission uses at runtime — so the editor
+  // shows today's actual access, not a blank slate, for a nation that's
+  // never touched this screen.
+  const [mapping, setMapping] = useState<NationRolePermissions>(() => {
+    const initial: NationRolePermissions = {};
+    for (const key of PERMISSION_KEYS) {
+      initial[key] = initialPermissions[key] ?? DEFAULT_PERMISSION_ROLES[key];
+    }
+    return initial;
+  });
+  const [saved, setSaved] = useState(false);
+  const [isPending, startTransition] = useTransition();
+
+  function toggle(key: PermissionKey, role: string) {
+    setMapping((prev) => {
+      const current = prev[key] ?? [];
+      const next = current.includes(role) ? current.filter((r) => r !== role) : [...current, role];
+      return { ...prev, [key]: next };
+    });
+    setSaved(false);
+  }
+
+  function handleSave() {
+    startTransition(async () => {
+      await saveNationRolePermissionsAction(nationsId, mapping);
+      setSaved(true);
+    });
+  }
+
+  return (
+    <Box sx={{ mb: 3 }}>
+      <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 1 }}>
+        Behörigheter
+      </Typography>
+      <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+        Vilka roller som får utföra respektive åtgärd för den här nationen. Admin har alltid
+        åtkomst till allt, oavsett vad som är markerat här.
+      </Typography>
+      <Stack spacing={1.5}>
+        {PERMISSION_KEYS.map((key) => (
+          <Box key={key} sx={{ py: 0.75, borderBottom: "1px solid", borderColor: "divider" }}>
+            <Typography variant="body2" sx={{ fontWeight: 500, mb: 0.5 }}>
+              {PERMISSION_LABELS[key]}
+            </Typography>
+            <Stack direction="row" spacing={2} sx={{ flexWrap: "wrap" }}>
+              {CONFIGURABLE_ROLES.map((role) => (
+                <FormControlLabel
+                  key={role.value}
+                  control={
+                    <Checkbox
+                      size="small"
+                      checked={(mapping[key] ?? []).includes(role.value)}
+                      onChange={() => toggle(key, role.value)}
+                    />
+                  }
+                  label={role.label}
+                />
+              ))}
+            </Stack>
+          </Box>
+        ))}
+      </Stack>
+      <Stack direction="row" spacing={2} sx={{ mt: 2, alignItems: "center" }}>
+        <Button size="small" variant="contained" disabled={isPending} onClick={handleSave}>
+          Spara
+        </Button>
+        {saved && !isPending && (
+          <Typography variant="body2" color="success.main">
+            Sparat.
+          </Typography>
+        )}
+      </Stack>
+    </Box>
+  );
+}
+
+const FEATURE_KEYS = Object.values(FEATURES);
+
+// Undefined enabledFeatures (a nation that's never touched this screen)
+// means "everything on" (isFeatureEnabled's default) — shown here as every
+// checkbox checked, not blank, so the editor reflects actual behavior.
+function FeatureFlagsEditor({
+  nationsId,
+  initialEnabledFeatures,
+}: {
+  nationsId: string;
+  initialEnabledFeatures: string[] | undefined;
+}) {
+  const [enabled, setEnabled] = useState<Set<FeatureKey>>(() => {
+    if (initialEnabledFeatures === undefined) return new Set(FEATURE_KEYS);
+    // Filters out any stale key from a since-removed feature, so it can't
+    // get silently re-saved forever.
+    const known = new Set<string>(FEATURE_KEYS);
+    return new Set(initialEnabledFeatures.filter((f): f is FeatureKey => known.has(f)));
+  });
+  const [saved, setSaved] = useState(false);
+  const [isPending, startTransition] = useTransition();
+
+  function toggle(key: FeatureKey) {
+    setEnabled((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+    setSaved(false);
+  }
+
+  function handleSave() {
+    startTransition(async () => {
+      await saveEnabledFeaturesAction(nationsId, Array.from(enabled));
+      setSaved(true);
+    });
+  }
+
+  return (
+    <Box sx={{ mb: 3 }}>
+      <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 1 }}>
+        Funktioner
+      </Typography>
+      <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+        Vilka valfria funktioner som är påslagna för den här nationen. Avstängda funktioner
+        döljs i menyn/gränssnittet, men ingen data tas bort — slå på igen när som helst.
+      </Typography>
+      <Stack spacing={0.5}>
+        {FEATURE_KEYS.map((key) => (
+          <FormControlLabel
+            key={key}
+            control={<Checkbox checked={enabled.has(key)} onChange={() => toggle(key)} />}
+            label={FEATURE_LABELS[key]}
+          />
+        ))}
+      </Stack>
+      <Stack direction="row" spacing={2} sx={{ mt: 2, alignItems: "center" }}>
+        <Button size="small" variant="contained" disabled={isPending} onClick={handleSave}>
+          Spara
+        </Button>
+        {saved && !isPending && (
+          <Typography variant="body2" color="success.main">
+            Sparat.
+          </Typography>
+        )}
+      </Stack>
+    </Box>
+  );
+}
+
 type Props = { initialNationIds: string[] };
 
 export default function AdminPage({ initialNationIds }: Props) {
@@ -629,6 +823,7 @@ export default function AdminPage({ initialNationIds }: Props) {
   const [selectedNation, setSelectedNation] = useState<string | null>(null);
   const [newNationId, setNewNationId] = useState("");
   const [settings, setSettings] = useState<NationSettings | null>(null);
+  const [permissions, setPermissions] = useState<NationRolePermissions | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState(0);
@@ -637,13 +832,17 @@ export default function AdminPage({ initialNationIds }: Props) {
   useEffect(() => {
     if (!selectedNation) {
       setSettings(null);
+      setPermissions(null);
       return;
     }
     let cancelled = false;
     setLoading(true);
-    getNationSettingsAction(selectedNation)
-      .then((result) => {
-        if (!cancelled) setSettings(result);
+    Promise.all([getNationSettingsAction(selectedNation), getNationRolePermissionsAction(selectedNation)])
+      .then(([settingsResult, permissionsResult]) => {
+        if (!cancelled) {
+          setSettings(settingsResult);
+          setPermissions(permissionsResult);
+        }
       })
       .catch(() => {
         if (!cancelled) setError("Kunde inte hämta inställningar för nationen.");
@@ -719,6 +918,8 @@ export default function AdminPage({ initialNationIds }: Props) {
           <Tabs value={tab} onChange={(_event, value) => setTab(value)} sx={{ mb: 3 }}>
             <Tab label="Kolumner" />
             <Tab label="Import-mappningar" />
+            <Tab label="Behörigheter" />
+            <Tab label="Funktioner" />
           </Tabs>
 
           {tab === 0 && (
@@ -741,6 +942,54 @@ export default function AdminPage({ initialNationIds }: Props) {
                   DEFAULT_RENTALOBJECT_COLUMNS,
                   settings?.tables.rentalobjects
                 )}
+              />
+              <ColumnConfigEditor
+                key={`tenants-${selectedNation}`}
+                nationsId={selectedNation}
+                table="tenants"
+                title="Hyresgästlista"
+                helperText="Vilka kolumner som visas för hyresgäster."
+                initialColumns={resolveColumns(DEFAULT_TENANT_COLUMNS, settings?.tables.tenants)}
+                allowCustomFields={false}
+              />
+              <ColumnConfigEditor
+                key={`andrahandsgaster-${selectedNation}`}
+                nationsId={selectedNation}
+                table="andrahandsgaster"
+                title="Andrahandsgäster / inneboende"
+                helperText="Samma sak för andrahandsgäster och inneboende."
+                initialColumns={resolveColumns(
+                  DEFAULT_ANDRAHANDSGAST_COLUMNS,
+                  settings?.tables.andrahandsgaster
+                )}
+                allowCustomFields={false}
+              />
+              <ColumnConfigEditor
+                key={`arkiv-${selectedNation}`}
+                nationsId={selectedNation}
+                table="arkiv"
+                title="Arkiv"
+                helperText="Vilka kolumner som visas för avslutade och signerade kontrakt."
+                initialColumns={resolveColumns(DEFAULT_ARKIV_COLUMNS, settings?.tables.arkiv)}
+                allowCustomFields={false}
+              />
+              <ColumnConfigEditor
+                key={`uppsagning-${selectedNation}`}
+                nationsId={selectedNation}
+                table="uppsagning"
+                title="Uppsägning"
+                helperText="Vilka kolumner som visas för uppsägningar."
+                initialColumns={resolveColumns(DEFAULT_UPPSAGNING_COLUMNS, settings?.tables.uppsagning)}
+                allowCustomFields={false}
+              />
+              <ColumnConfigEditor
+                key={`todo-${selectedNation}`}
+                nationsId={selectedNation}
+                table="todo"
+                title="Todo-lista"
+                helperText="Vilka kolumner som visas i todo-listan."
+                initialColumns={resolveColumns(DEFAULT_TODO_COLUMNS, settings?.tables.todo)}
+                allowCustomFields={false}
               />
             </Stack>
           )}
@@ -811,6 +1060,26 @@ export default function AdminPage({ initialNationIds }: Props) {
                   DEFAULT_RENTALOBJECT_TAB_GROUPS,
                   settings?.rentalobjectsTabGroups
                 )}
+              />
+            </Paper>
+          )}
+
+          {tab === 2 && (
+            <Paper variant="outlined" sx={{ p: 3 }}>
+              <PermissionsEditor
+                key={`permissions-${selectedNation}`}
+                nationsId={selectedNation}
+                initialPermissions={permissions ?? {}}
+              />
+            </Paper>
+          )}
+
+          {tab === 3 && (
+            <Paper variant="outlined" sx={{ p: 3 }}>
+              <FeatureFlagsEditor
+                key={`features-${selectedNation}`}
+                nationsId={selectedNation}
+                initialEnabledFeatures={settings?.enabledFeatures}
               />
             </Paper>
           )}

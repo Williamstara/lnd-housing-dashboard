@@ -12,8 +12,11 @@ import { alpha } from "@mui/material/styles";
 import Link from "next/link";
 import { NAV_GROUPS, navLinks } from "@/lib/nav-links";
 import { ROLES, hasRole, isRestrictedToTodo } from "@/lib/roles";
+import { isFeatureEnabled } from "@/lib/table-columns";
 
-export default function NavGrid() {
+type NavGridProps = { enabledFeatures?: string[] };
+
+export default function NavGrid({ enabledFeatures }: NavGridProps) {
   const { user } = useUser();
   const isAdmin = hasRole(user, ROLES.ADMIN);
   const restrictedToTodo = isRestrictedToTodo(user);
@@ -25,7 +28,8 @@ export default function NavGrid() {
           (link) =>
             link.group === group.key &&
             (!link.adminOnly || isAdmin) &&
-            (!restrictedToTodo || link.href === "/todo")
+            (!restrictedToTodo || link.href === "/todo") &&
+            isFeatureEnabled(enabledFeatures, link.featureKey)
         );
         if (links.length === 0) return null;
         return (

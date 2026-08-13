@@ -1,5 +1,5 @@
 import "server-only";
-import { createSupabaseServerClient } from "@/lib/supabase-server";
+import { chunkArray, createSupabaseServerClient } from "@/lib/supabase-server";
 
 export type ApartmentStatus =
   | "ledig"
@@ -279,8 +279,8 @@ export async function bulkUpsertApartments(
     (existing as { id: string; lagenhetsnummer: string }[]).map((r) => [r.lagenhetsnummer, r.id])
   );
 
-  let inserted = 0;
-  let updated = 0;
+  const toInsert: Record<string, unknown>[] = [];
+  const toUpdate: Record<string, unknown>[] = [];
   for (const input of inputs) {
     const { hyresgastNamn, personnummer, epost, telefonnummer, kontonummer, ...specs } = input;
     const interest: Record<string, string> = {};
@@ -292,14 +292,9 @@ export async function bulkUpsertApartments(
 
     const existingId = existingByLagenhetsnummer.get(input.lagenhetsnummer);
     if (existingId) {
-      const { error } = await supabase
-        .from("apartments")
-        .update({ ...specsToRow(specs), ...interest })
-        .eq("id", existingId);
-      if (error) throw error;
-      updated++;
+      toUpdate.push({ id: existingId, ...specsToRow(specs), ...interest });
     } else {
-      const { error } = await supabase.from("apartments").insert({
+      toInsert.push({
         nations_id: nationsId,
         ...specsToRow(specs),
         ...interest,
@@ -308,11 +303,32 @@ export async function bulkUpsertApartments(
         nyckel_inlamnad: false,
         nyckel_hamtad: false,
       });
-      if (error) throw error;
-      inserted++;
     }
   }
-  return { inserted, updated };
+
+  // Batched per chunk for speed; on a chunk failure, fall back to writing
+  // that chunk's rows one at a time (same behavior as before this change —
+  // throws on the first bad row) so a single bad row's blast radius is
+  // limited to its own chunk instead of the whole import, without silently
+  // skipping rows that were never actually validated as safe to skip.
+  for (const rows of chunkArray(toInsert)) {
+    const { error } = await supabase.from("apartments").insert(rows);
+    if (!error) continue;
+    for (const row of rows) {
+      const { error: rowError } = await supabase.from("apartments").insert(row);
+      if (rowError) throw rowError;
+    }
+  }
+  for (const rows of chunkArray(toUpdate)) {
+    const { error } = await supabase.from("apartments").upsert(rows, { onConflict: "id" });
+    if (!error) continue;
+    for (const row of rows) {
+      const { id, ...rest } = row;
+      const { error: rowError } = await supabase.from("apartments").update(rest).eq("id", id as string);
+      if (rowError) throw rowError;
+    }
+  }
+  return { inserted: toInsert.length, updated: toUpdate.length };
 }
 
 export async function createApartment(nationsId: string, input: ApartmentInput): Promise<Apartment> {

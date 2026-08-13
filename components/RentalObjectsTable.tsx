@@ -58,6 +58,8 @@ type Props = {
   importSingleFields: ImportFieldConfig[];
   importTabGroups: RentalObjectTabGroup[];
   importMultiTab: boolean;
+  currency?: string;
+  locale?: string;
 };
 
 // Built-in numeric fields — null renders as "—", and the currency subset
@@ -116,8 +118,6 @@ function matchesSearch(o: RentalObject, q: string): boolean {
     .includes(q);
 }
 
-const currency = new Intl.NumberFormat("sv-SE", { maximumFractionDigits: 0 });
-
 export default function RentalObjectsTable({
   objects,
   fastigheter,
@@ -126,7 +126,10 @@ export default function RentalObjectsTable({
   importSingleFields,
   importTabGroups,
   importMultiTab,
+  currency = "kr",
+  locale = "sv-SE",
 }: Props) {
+  const numberFormat = useMemo(() => new Intl.NumberFormat(locale, { maximumFractionDigits: 0 }), [locale]);
   const [search, setSearch] = useState("");
   const [orderBy, setOrderBy] = useState("lagenhetsnummer");
   const [order, setOrder] = useState<"asc" | "desc">("asc");
@@ -147,6 +150,7 @@ export default function RentalObjectsTable({
     () => columnSettings.filter((c) => c.isCustom).map((c) => ({ key: c.key, label: c.label })),
     [columnSettings]
   );
+  const formVisibleKeys = useMemo(() => new Set(nationColumns.map((c) => c.key)), [nationColumns]);
 
   const visible = useMemo(() => {
     const q = search.trim().toLocaleLowerCase("sv");
@@ -205,7 +209,7 @@ export default function RentalObjectsTable({
     if (!col.isCustom && NUMERIC_KEYS.has(col.key)) {
       const raw = rawNumericValue[col.key]!(o);
       if (raw == null) return "—";
-      return CURRENCY_KEYS.has(col.key) ? currency.format(raw) : raw;
+      return CURRENCY_KEYS.has(col.key) ? numberFormat.format(raw) : raw;
     }
     if (!col.isCustom && col.key === "typ") {
       return o.typ || "—";
@@ -406,6 +410,9 @@ export default function RentalObjectsTable({
         object={editingObject}
         fastigheter={fastigheter}
         customFieldDefs={customFieldDefs}
+        visibleKeys={formVisibleKeys}
+        currency={currency}
+        locale={locale}
         onClose={() => setFormOpen(false)}
         onSubmit={handleFormSubmit}
       />

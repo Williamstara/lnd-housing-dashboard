@@ -1,9 +1,9 @@
 import { google } from "googleapis";
-import { auth0 } from "@/lib/auth0";
+import { getCachedSession } from "@/lib/auth0";
 import { getGmailToken, upsertGmailToken } from "@/lib/gmail-tokens";
 
 async function requireAuth() {
-  const session = await auth0.getSession();
+  const session = await getCachedSession();
   if (!session?.user) return Response.json({ error: "Unauthorized" }, { status: 401 });
   return { userId: session.user.sub as string };
 }

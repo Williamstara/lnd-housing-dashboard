@@ -148,10 +148,17 @@ the exact file/line list at the time of the last handoff.
   tables created via SQL migration don't get default grants the way
   dashboard-created tables do; see `docs/DECISIONS.md`).
 - Server Actions live in `app/<route>/actions.ts`, marked `"use server"`.
-  Pattern: resolve/require the caller's `nationsId` (and role, if
-  restricted) first via `lib/nations.ts`/`lib/roles.ts` helpers, sanitize
-  input, call the matching `lib/*.ts` function, then `revalidatePath(...)`
-  every page the change affects.
+  Pattern: resolve/require the caller's active `nationsId` first via
+  `lib/active-nation.ts`'s `requireActiveNationsId` (not `lib/nations.ts`'s
+  plain `requireNationsId` directly — the active-nation layer additionally
+  resolves which nation a multi-nation user is currently working in); for
+  an action restricted to specific roles, use `lib/permissions.ts`'s
+  `requirePermission(permissionKey, errorMessage)` rather than a
+  hand-written per-file role check (see `lib/roles.ts`'s `PERMISSIONS` for
+  the existing permission keys before adding a new one — most role-gated
+  actions already have one). Then sanitize input, call the matching
+  `lib/*.ts` function, and `revalidatePath(...)` every page the change
+  affects.
 - Client components receive server-fetched data as props from their
   route's `page.tsx` (a Server Component using `Promise.all` to fetch in
   parallel) — do not fetch data inside a `"use client"` component's own
@@ -193,18 +200,34 @@ the exact file/line list at the time of the last handoff.
 ## Architectural constraints
 
 - **Multi-tenant by `nationsID`.** A logged-in user's `nationsID` comes from
-  a custom Auth0 ID-token claim (`NATIONS_ID_CLAIM` in `lib/nations.ts`).
-  `proxy.ts` blocks any authenticated user without that claim from reaching
-  app pages (redirects to `/nationsid-saknas`), except `/api/**`, `/auth/**`,
-  `/nationsid-saknas`, and `/admin` (an admin's own account may have no
-  nationsID, since they manage every nation). Never bypass this scoping in
-  new code. Enforced twice: explicitly in every `lib/*.ts` query (app-layer
+  a custom Auth0 ID-token claim (`NATIONS_ID_CLAIM` in `lib/nations.ts`),
+  either a single string (every user today) or an array (an operator
+  account belonging to more than one nation — no Auth0 Action currently
+  emits this, so no real session has it yet). `proxy.ts` blocks any
+  authenticated user without that claim from reaching app pages (redirects
+  to `/nationsid-saknas`), except `/api/**`, `/auth/**`, `/nationsid-saknas`,
+  and `/admin` (an admin's own account may have no nationsID, since they
+  manage every nation). Never bypass this scoping in new code. In app
+  code, resolve nationsId via `lib/active-nation.ts`'s
+  `requireActiveNationsId`/`requireActiveNationsIdOrRedirect` (which
+  resolves a multi-nation user's *active* nation from a validated cookie),
+  not `lib/nations.ts`'s plain `requireNationsId`/`requireNationsIdOrRedirect`
+  directly. Enforced twice: explicitly in every `lib/*.ts` query (app-layer
   convention above) and independently by Postgres Row Level Security
   policies keyed on the same claim, forwarded to Supabase via the Auth0 ID
   token (`lib/supabase-server.ts`) — see "Supabase / Postgres" below.
 - **Role-based access** via a custom Auth0 claim (`ROLES_CLAIM` in
   `lib/roles.ts`). `admin` is a superuser role that satisfies every other
-  role check (`hasRole`). `vaktmastare` is the one role that **restricts**
+  role check (`hasRole`) and is never routed through the permission model
+  below (a nation should never be able to grant itself cross-tenant
+  superuser access). Beyond that coarse role check, *which* role can
+  perform a given gated action is per-nation-configurable: `lib/roles.ts`'s
+  `PERMISSIONS` enumerates the fixed set of gated actions, each nation can
+  save its own role mapping in the `nation_role_permissions` table
+  (editable via `/admin`'s "Behörigheter" tab), and
+  `lib/permissions.ts`'s `requirePermission` is the shared guard — use it
+  for any new role-gated Server Action rather than a hand-written check.
+  `vaktmastare` is the one role that **restricts**
   rather than grants — a user whose only role is `vaktmastare` is redirected
   to `/todo` and confined there (`isRestrictedToTodo`, enforced in
   `proxy.ts`).

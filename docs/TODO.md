@@ -5,12 +5,19 @@ state and the exact next step.
 
 ## Next
 
+- **Live-verify this session's SaaS-readiness config work** (see
+  `docs/HANDOFF.md`) — a real authenticated pass through the new admin
+  tabs (Behörigheter, Funktioner, the 5 new Kolumner entries), the nation
+  switcher (can't be exercised until a real user has an array-shaped
+  nationsID claim), and a real Excel import to confirm the batched-write
+  behavior in `bulkUpsertApartments`/`bulkUpsertBesiktningar` still isolates
+  a single bad row correctly.
 - **Visually verify the responsive UX remake.** `/statistik` at desktop
   width is now verified authenticated in a real browser (all 8 chart cards
   render, no console/hydration errors). Still outstanding: tablet (768 px)
   and phone (390 px) layouts across the rest of the app, keyboard operation,
   and loading/empty/error/success states — `resize_window` did not change
-  the captured viewport in the last session's environment, so mobile
+  the captured viewport in an earlier session's environment, so mobile
   couldn't be screenshotted there.
   **Acceptance criteria:** no horizontal page overflow; phone data is shown
   as cards with matching pagination; the desktop sidebar and mobile drawer
@@ -18,7 +25,7 @@ state and the exact next step.
   clip content and exposes labels through tooltips; meaningful findings from
   the web-design-guidelines audit are fixed.
 - **Clean up inconsistent `RentalObject.typ` values for nation `LND`.**
-  The new "Bostäder per typ" statistik chart surfaced real data-quality
+  The "Bostäder per typ" statistik chart surfaced real data-quality
   issues: `"Dubblett"` and `"dubblett"` are counted as separate categories,
   and some rows have bare `"1"`/`"2"` values with no clear meaning. This is
   a source-data fix (via `/databas`), not a code fix.
@@ -32,34 +39,54 @@ state and the exact next step.
 
 ## Later
 
-- **See `docs/SAAS-READINESS-ROADMAP.md`** for a larger, tiered roadmap of
-  what's hardcoded/too coupled to nation `LND`'s specific workflow, written
-  after the Mongo→Supabase migration — not urgent (one customer today), but
-  worth consulting before onboarding a second organization with a
-  materially different workflow. Ends with a security-audit section (2026-08-13,
-  zero confirmed vulnerabilities, one hardening recommendation).
 - **Fix stale building-name lookup tables** in `lib/laundry-account.ts` and
   `lib/rentalobjects.ts`. Prefer the existing `fastigheter.prefixes` data
-  over another hardcoded map. (Also tracked as item 3.3 in
+  over another hardcoded map. Also tracked as item 3.3 in
   `docs/SAAS-READINESS-ROADMAP.md` — do this regardless of SaaS plans, it's
-  a live correctness bug for `LND` today.)
+  a live correctness bug for `LND` today. Not touched this session
+  (explicitly out of scope — a correctness fix, not configuration
+  infrastructure).
 - **Add `GMAIL_CLIENT_ID` and `GMAIL_CLIENT_SECRET` to
   `.env.local.example`.** They are read by the Gmail OAuth routes but absent
   from the example.
 - **Clean up the pre-existing lint baseline:** 7
   `react-hooks/set-state-in-effect` errors and the unused `_idToken` warning
-  in `lib/auth0.ts`.
-- **Consolidate duplicated Excel cell parsers only when a real bug requires
-  it.** Five importers still own small local string/number helpers; there is
-  no current correctness failure from that duplication.
+  in `lib/auth0.ts`. Unchanged throughout this session — verified still
+  exactly 7 errors + 1 warning after every batch.
+- **Thread `formatCurrency`/`getLocale` through the remaining ~6 files**
+  with bare `currency.format(x)` calls, and the 26
+  `toLocaleLowerCase("sv")`/`localeCompare(..., "sv", ...)` search/sort
+  sites — deliberately deferred this session (see
+  `docs/SAAS-READINESS-ROADMAP.md` Tier 6.1/6.2's "Done" notes): every
+  nation currently in discussion is Swedish-language and SEK-using, so this
+  has real mechanical cost for no near-term behavior difference. Revisit if
+  a genuinely non-Swedish nation is onboarded.
+- **Wire `TenantFormDialog.tsx`/`AndrahandsgastFormDialog.tsx` to admin
+  column visibility** (Tier 4.1's remaining scope) — blocked on first making
+  `app/hyresgastlista/actions.ts`'s `sanitizeInput`/
+  `sanitizeAndrahandsgastInput` nation-settings-aware, since both currently
+  blanket-require every field non-blank server-side. Do the server-side
+  relaxation and the client-side field-hiding together, not separately —
+  see the code comments in both form dialogs and
+  `docs/SAAS-READINESS-ROADMAP.md`'s Tier 4.1 "Done" note for why.
 
 ## Blocked
 
 - Rendered UX completion is blocked on an available authenticated browser
-  session. Build and static validation are otherwise clean.
+  session.
 
 ## Completed recently
 
+- **Full SaaS-readiness configuration-infrastructure implementation**
+  (2026-08-13) — see `docs/SESSION.md` for the complete breakdown: per-nation
+  permission model, multi-nation operator support, feature flags, admin
+  column config extended to 5 more tables + 2 form dialogs, currency/locale
+  settings (scoped), Excel cell-parser consolidation (scoped). Tier 1.1,
+  3.1, and 5.1 of `docs/SAAS-READINESS-ROADMAP.md` remain deliberately
+  deferred pending a real second nation's onboarding conversation.
+- **Auth0/Supabase performance audit and fixes** (2026-08-13, earlier
+  session) — `getCachedSession()` request-level caching, batched bulk-import
+  writes, apartments-importer per-row fastighet re-fetch fix.
 - Application-wide responsive layout, left navigation, mobile cards, shared
   10-item pagination, responsive Excel previews, standardized MUI dialogs and
   search inputs, explicit resident/second-hand type, and expanded statistics.

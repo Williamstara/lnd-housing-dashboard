@@ -9,10 +9,10 @@ import {
   type AndrahandsgastInput,
   type BulkUpsertAndrahandsgastResult,
 } from "@/lib/andrahandsgaster";
-import { auth0 } from "@/lib/auth0";
+import { getCachedSession } from "@/lib/auth0";
 import { getFastighetNamn } from "@/lib/fastigheter";
 import { createLaundryAccount } from "@/lib/laundry-account";
-import { requireNationsId } from "@/lib/nations";
+import { requireActiveNationsId } from "@/lib/active-nation";
 import {
   bulkUpsertTenants,
   createTenant,
@@ -23,11 +23,11 @@ import {
 } from "@/lib/tenants";
 
 async function requireUser(): Promise<string> {
-  const session = await auth0.getSession();
+  const session = await getCachedSession();
   if (!session?.user) {
     throw new Error("Unauthorized");
   }
-  return requireNationsId(session.user);
+  return await requireActiveNationsId(session.user);
 }
 
 async function sanitizeInput(nationsId: string, input: TenantInput): Promise<TenantInput> {

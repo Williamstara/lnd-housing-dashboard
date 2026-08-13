@@ -58,7 +58,7 @@ import type {
   ApartmentStatus,
   TenantAssignmentInput,
 } from "@/lib/apartments";
-import type { ImportFieldConfig, TableColumnConfig } from "@/lib/table-columns";
+import { FEATURES, isFeatureEnabled, type ImportFieldConfig, type TableColumnConfig } from "@/lib/table-columns";
 import ApartmentFormDialog from "@/components/ApartmentFormDialog";
 import ApartmentInterestDialog from "@/components/ApartmentInterestDialog";
 import ColumnVisibilityMenu from "@/components/ColumnVisibilityMenu";
@@ -75,9 +75,10 @@ type Props = {
   importMapping: ImportFieldConfig[];
   missedRentApartmentIds: string[];
   columnSettings: TableColumnConfig[];
+  enabledFeatures?: string[];
+  currency?: string;
+  locale?: string;
 };
-
-const currency = new Intl.NumberFormat("sv-SE", { maximumFractionDigits: 0 });
 
 const STATUS_LABELS: Record<ApartmentStatus, string> = {
   ledig: "Ledig",
@@ -159,7 +160,12 @@ export default function ApartmentsTable({
   importMapping,
   missedRentApartmentIds,
   columnSettings,
+  enabledFeatures,
+  currency = "kr",
+  locale = "sv-SE",
 }: Props) {
+  const keyHandoverEnabled = isFeatureEnabled(enabledFeatures, FEATURES.KEY_HANDOVER);
+  const numberFormat = useMemo(() => new Intl.NumberFormat(locale, { maximumFractionDigits: 0 }), [locale]);
   const { user } = useUser();
   const isHusforman = hasRole(user, ROLES.HUSFORMAN);
   const missedRentIds = useMemo(() => new Set(missedRentApartmentIds), [missedRentApartmentIds]);
@@ -170,6 +176,10 @@ export default function ApartmentsTable({
     () => columnSettings.filter((c) => c.isCustom).map((c) => ({ key: c.key, label: c.label })),
     [columnSettings]
   );
+  // nationColumns (not the per-user-narrowed visibleColumns) — the form
+  // should respect the nation's own configured field set, independent of
+  // which columns *this user* currently has the list view showing.
+  const formVisibleKeys = useMemo(() => new Set(nationColumns.map((c) => c.key)), [nationColumns]);
 
   const [formOpen, setFormOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
@@ -348,7 +358,7 @@ export default function ApartmentsTable({
     }
     const value = getColumnValue(apartment, col);
     if (!col.isCustom && CURRENCY_KEYS.has(col.key)) {
-      return currency.format(Number(value));
+      return numberFormat.format(Number(value));
     }
     return value;
   }
@@ -499,44 +509,48 @@ export default function ApartmentsTable({
                           </IconButton>
                         </Tooltip>
                       )}
-                      <Tooltip
-                        title={
-                          apartment.nyckelInlamnad
-                            ? "Nyckel inlämnad (klicka för att ångra)"
-                            : "Markera nyckel inlämnad"
-                        }
-                      >
-                        <IconButton
-                          aria-label="Nyckel inlämnad"
-                          size="small"
-                          color={apartment.nyckelInlamnad ? "success" : "default"}
-                          disabled={isTogglingNyckel}
-                          onClick={() => toggleNyckelInlamnad(apartment)}
-                        >
-                          <KeyIcon fontSize="small" />
-                        </IconButton>
-                      </Tooltip>
-                      <Tooltip
-                        title={
-                          !apartment.nyckelInlamnad
-                            ? "Nyckeln måste lämnas in innan den kan hämtas"
-                            : apartment.nyckelHamtad
-                              ? "Nyckel hämtad (klicka för att ångra)"
-                              : "Markera nyckel hämtad"
-                        }
-                      >
-                        <span>
-                          <IconButton
-                            aria-label="Nyckel hämtad"
-                            size="small"
-                            color={apartment.nyckelHamtad ? "success" : "default"}
-                            disabled={isTogglingNyckel || !apartment.nyckelInlamnad}
-                            onClick={() => toggleNyckelHamtad(apartment)}
+                      {keyHandoverEnabled && (
+                        <>
+                          <Tooltip
+                            title={
+                              apartment.nyckelInlamnad
+                                ? "Nyckel inlämnad (klicka för att ångra)"
+                                : "Markera nyckel inlämnad"
+                            }
                           >
-                            <AssignmentTurnedInIcon fontSize="small" />
-                          </IconButton>
-                        </span>
-                      </Tooltip>
+                            <IconButton
+                              aria-label="Nyckel inlämnad"
+                              size="small"
+                              color={apartment.nyckelInlamnad ? "success" : "default"}
+                              disabled={isTogglingNyckel}
+                              onClick={() => toggleNyckelInlamnad(apartment)}
+                            >
+                              <KeyIcon fontSize="small" />
+                            </IconButton>
+                          </Tooltip>
+                          <Tooltip
+                            title={
+                              !apartment.nyckelInlamnad
+                                ? "Nyckeln måste lämnas in innan den kan hämtas"
+                                : apartment.nyckelHamtad
+                                  ? "Nyckel hämtad (klicka för att ångra)"
+                                  : "Markera nyckel hämtad"
+                            }
+                          >
+                            <span>
+                              <IconButton
+                                aria-label="Nyckel hämtad"
+                                size="small"
+                                color={apartment.nyckelHamtad ? "success" : "default"}
+                                disabled={isTogglingNyckel || !apartment.nyckelInlamnad}
+                                onClick={() => toggleNyckelHamtad(apartment)}
+                              >
+                                <AssignmentTurnedInIcon fontSize="small" />
+                              </IconButton>
+                            </span>
+                          </Tooltip>
+                        </>
+                      )}
                       <Tooltip title={apartment.hidden ? "Visa" : "Dölj"}>
                         <IconButton
                           aria-label={apartment.hidden ? "Visa" : "Dölj"}
@@ -609,44 +623,48 @@ export default function ApartmentsTable({
                         </IconButton>
                       </Tooltip>
                     )}
-                    <Tooltip
-                      title={
-                        apartment.nyckelInlamnad
-                          ? "Nyckel inlämnad (klicka för att ångra)"
-                          : "Markera nyckel inlämnad"
-                      }
-                    >
-                      <IconButton
-                        aria-label="Nyckel inlämnad"
-                        size="small"
-                        color={apartment.nyckelInlamnad ? "success" : "default"}
-                        disabled={isTogglingNyckel}
-                        onClick={() => toggleNyckelInlamnad(apartment)}
-                      >
-                        <KeyIcon fontSize="small" />
-                      </IconButton>
-                    </Tooltip>
-                    <Tooltip
-                      title={
-                        !apartment.nyckelInlamnad
-                          ? "Nyckeln måste lämnas in innan den kan hämtas"
-                          : apartment.nyckelHamtad
-                            ? "Nyckel hämtad (klicka för att ångra)"
-                            : "Markera nyckel hämtad"
-                      }
-                    >
-                      <span>
-                        <IconButton
-                          aria-label="Nyckel hämtad"
-                          size="small"
-                          color={apartment.nyckelHamtad ? "success" : "default"}
-                          disabled={isTogglingNyckel || !apartment.nyckelInlamnad}
-                          onClick={() => toggleNyckelHamtad(apartment)}
+                    {keyHandoverEnabled && (
+                      <>
+                        <Tooltip
+                          title={
+                            apartment.nyckelInlamnad
+                              ? "Nyckel inlämnad (klicka för att ångra)"
+                              : "Markera nyckel inlämnad"
+                          }
                         >
-                          <AssignmentTurnedInIcon fontSize="small" />
-                        </IconButton>
-                      </span>
-                    </Tooltip>
+                          <IconButton
+                            aria-label="Nyckel inlämnad"
+                            size="small"
+                            color={apartment.nyckelInlamnad ? "success" : "default"}
+                            disabled={isTogglingNyckel}
+                            onClick={() => toggleNyckelInlamnad(apartment)}
+                          >
+                            <KeyIcon fontSize="small" />
+                          </IconButton>
+                        </Tooltip>
+                        <Tooltip
+                          title={
+                            !apartment.nyckelInlamnad
+                              ? "Nyckeln måste lämnas in innan den kan hämtas"
+                              : apartment.nyckelHamtad
+                                ? "Nyckel hämtad (klicka för att ångra)"
+                                : "Markera nyckel hämtad"
+                          }
+                        >
+                          <span>
+                            <IconButton
+                              aria-label="Nyckel hämtad"
+                              size="small"
+                              color={apartment.nyckelHamtad ? "success" : "default"}
+                              disabled={isTogglingNyckel || !apartment.nyckelInlamnad}
+                              onClick={() => toggleNyckelHamtad(apartment)}
+                            >
+                              <AssignmentTurnedInIcon fontSize="small" />
+                            </IconButton>
+                          </span>
+                        </Tooltip>
+                      </>
+                    )}
                     <Tooltip title={apartment.hidden ? "Visa" : "Dölj"}>
                       <IconButton
                         aria-label={apartment.hidden ? "Visa" : "Dölj"}
@@ -720,6 +738,8 @@ export default function ApartmentsTable({
         apartment={editingApartment}
         fastigheter={fastigheter}
         customFieldDefs={customFieldDefs}
+        visibleKeys={formVisibleKeys}
+        currency={currency}
         onClose={() => setFormOpen(false)}
         onSubmit={handleFormSubmit}
         onLookupSpecs={lookupApartmentSpecsAction}

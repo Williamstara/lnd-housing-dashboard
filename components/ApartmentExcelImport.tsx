@@ -18,6 +18,7 @@ import { importApartmentsFromExcelAction } from "@/app/lediga-lagenheter/actions
 import type { ApartmentImportInput } from "@/lib/apartments";
 import ResponsivePreview from "@/components/ResponsivePreview";
 import {
+  cellStr,
   describeMapping,
   excelDateCellToISO,
   mappingToLookup,
@@ -26,11 +27,6 @@ import {
 } from "@/lib/table-columns";
 
 type FastighetPrefixes = { namn: string; prefixes: string[] };
-
-function cellStr(row: unknown[], index: number): string {
-  const val = (row as Record<number, unknown>)[index];
-  return val == null ? "" : String(val).trim();
-}
 
 function cellNum(row: unknown[], index: number): number {
   const val = (row as Record<number, unknown>)[index];

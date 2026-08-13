@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { Auth0Client, filterDefaultIdTokenClaims } from "@auth0/nextjs-auth0/server";
 import { NATIONS_ID_CLAIM } from "./nations";
 import { ROLES_CLAIM } from "./roles";
@@ -20,3 +21,12 @@ export const auth0 = new Auth0Client({
     };
   },
 });
+
+// A single page request/Server Action commonly needs the session in several
+// places (page-level nationsID check, each lib/*.ts call's Supabase
+// accessToken callback, ...). auth0.getSession() re-decrypts the session
+// cookie on every call with no caching of its own; wrapping it in React's
+// cache() dedupes those calls to one per request, since cache() scopes by
+// request in Next.js Server Components/Actions. Use this instead of calling
+// auth0.getSession() directly anywhere in app code.
+export const getCachedSession = cache(() => auth0.getSession());

@@ -1,5 +1,5 @@
 import "server-only";
-import { createSupabaseServerClient } from "@/lib/supabase-server";
+import { chunkArray, createSupabaseServerClient } from "@/lib/supabase-server";
 
 export type BesiktningStatus = "aktiv" | "arkiverad";
 
@@ -294,19 +294,14 @@ export async function bulkUpsertBesiktningar(
     ])
   );
 
-  let inserted = 0;
-  let updated = 0;
+  const toInsert: Record<string, unknown>[] = [];
+  const toUpdate: Record<string, unknown>[] = [];
   for (const input of inputs) {
     const existingId = existingByKey.get(`${input.lagenhetsnummer}|${input.besiktningsdatum}`);
     if (existingId) {
-      const { error } = await supabase
-        .from("besiktningar")
-        .update(editInputToRow(input))
-        .eq("id", existingId);
-      if (error) throw error;
-      updated++;
+      toUpdate.push({ id: existingId, ...editInputToRow(input) });
     } else {
-      const { error } = await supabase.from("besiktningar").insert({
+      toInsert.push({
         nations_id: nationsId,
         lagenhetsnummer: input.lagenhetsnummer,
         ...editInputToRow(input),
@@ -316,11 +311,31 @@ export async function bulkUpsertBesiktningar(
         betalning_gjord_av: null,
         status: "aktiv",
       });
-      if (error) throw error;
-      inserted++;
     }
   }
-  return { inserted, updated };
+
+  // Batched per chunk for speed; on a chunk failure, fall back to writing
+  // that chunk's rows one at a time (same behavior as before this change —
+  // throws on the first bad row), limiting a bad row's blast radius to its
+  // own chunk instead of the whole import.
+  for (const rows of chunkArray(toInsert)) {
+    const { error } = await supabase.from("besiktningar").insert(rows);
+    if (!error) continue;
+    for (const row of rows) {
+      const { error: rowError } = await supabase.from("besiktningar").insert(row);
+      if (rowError) throw rowError;
+    }
+  }
+  for (const rows of chunkArray(toUpdate)) {
+    const { error } = await supabase.from("besiktningar").upsert(rows, { onConflict: "id" });
+    if (!error) continue;
+    for (const row of rows) {
+      const { id, ...rest } = row;
+      const { error: rowError } = await supabase.from("besiktningar").update(rest).eq("id", id as string);
+      if (rowError) throw rowError;
+    }
+  }
+  return { inserted: toInsert.length, updated: toUpdate.length };
 }
 
 export async function deleteBesiktning(nationsId: string, id: string): Promise<void> {

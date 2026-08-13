@@ -3,7 +3,14 @@
 // column editor) can use it directly. lib/nation-settings.ts holds the
 // Mongo-touching CRUD and re-exports these types.
 
-export type TableKey = "apartments" | "rentalobjects";
+export type TableKey =
+  | "apartments"
+  | "rentalobjects"
+  | "tenants"
+  | "andrahandsgaster"
+  | "arkiv"
+  | "uppsagning"
+  | "todo";
 
 export type TableColumnConfig = {
   key: string;
@@ -55,7 +62,75 @@ export type NationSettings = {
   rentalobjectsMultiTab?: boolean;
   rentalobjectsTabGroups?: RentalObjectTabGroup[];
   fastighetAliases?: FastighetAlias[];
+  // undefined = every feature enabled (today's behavior for every nation) —
+  // see isFeatureEnabled below.
+  enabledFeatures?: string[];
+  // docs/SAAS-READINESS-ROADMAP.md Tier 6.1 — undefined = "kr", LND's
+  // existing hardcoded suffix (see formatCurrency below).
+  currency?: string;
+  // Tier 6.2 — undefined = "sv-SE", used for currency/date Intl formatting
+  // (formatCurrency/formatDate below). Deliberately NOT threaded through
+  // this codebase's ~26 toLocaleLowerCase("sv")/localeCompare("sv", ...)
+  // search-filter and sort-comparator call sites across every *Table.tsx —
+  // every nation currently in discussion is a Swedish-language
+  // organization, so hardcoded Swedish string collation is correct for all
+  // of them today. Revisit only if a genuinely non-Swedish-language nation
+  // is onboarded; until then that sweep has real mechanical cost (12+
+  // files) for no actual behavior difference.
+  locale?: string;
 };
+
+// Opt-out feature flags for integrations/workflow steps that don't apply to
+// every nation (docs/SAAS-READINESS-ROADMAP.md Tier 3.2 + 5.2's flag half +
+// 7.1) — gates nav entry points and UI, not the underlying data/columns
+// (those stay in place either way, so turning a feature back on never loses
+// anything).
+export const FEATURES = {
+  GMAIL_EPOST: "gmail_epost",
+  LAUNDRY_ACCOUNTS: "laundry_accounts",
+  KEY_HANDOVER: "key_handover",
+} as const;
+
+export type FeatureKey = (typeof FEATURES)[keyof typeof FEATURES];
+
+export const FEATURE_LABELS: Record<FeatureKey, string> = {
+  [FEATURES.GMAIL_EPOST]: "E-post (Gmail-utskick, mallar)",
+  [FEATURES.LAUNDRY_ACCOUNTS]: "Tvättstugekonton",
+  [FEATURES.KEY_HANDOVER]: "Nyckelhantering (inlämnad/hämtad)",
+};
+
+// Takes the raw array (not the whole NationSettings) so call sites that
+// only ever have the array on hand — NavBar, which receives just
+// enabledFeatures as a prop rather than full settings — don't need a fake
+// NationSettings wrapper just to call this.
+export function isFeatureEnabled(
+  enabledFeatures: string[] | null | undefined,
+  feature: FeatureKey | null | undefined
+): boolean {
+  if (!feature) return true;
+  return enabledFeatures === undefined || enabledFeatures === null || enabledFeatures.includes(feature);
+}
+
+export function getLocale(settings: NationSettings | null | undefined): string {
+  return settings?.locale ?? "sv-SE";
+}
+
+export function getCurrency(settings: NationSettings | null | undefined): string {
+  return settings?.currency ?? "kr";
+}
+
+// Matches the exact current output of every existing
+// `new Intl.NumberFormat("sv-SE", { maximumFractionDigits: 0 }).format(x)`
+// call site (bare formatted number, no unit suffix) — a nation-aware
+// drop-in replacement, not a behavior change for LND today.
+export function formatCurrency(value: number, settings?: NationSettings | null): string {
+  return new Intl.NumberFormat(getLocale(settings), { maximumFractionDigits: 0 }).format(value);
+}
+
+// For call sites that also want the unit suffix (e.g. "1 234 kr").
+export function formatCurrencyWithUnit(value: number, settings?: NationSettings | null): string {
+  return `${formatCurrency(value, settings)} ${getCurrency(settings)}`;
+}
 
 // Today's exact hardcoded column set for each table — what a nation with no
 // saved settings gets, so nothing changes for anyone until an admin edits it.
@@ -86,6 +161,69 @@ export const DEFAULT_RENTALOBJECT_COLUMNS: TableColumnConfig[] = [
   { key: "hyresred", label: "Hyresred", visible: true, isCustom: false },
   { key: "individuellArshyra", label: "Individuell år", visible: true, isCustom: false },
   { key: "manadshyra", label: "Månadshyra", visible: true, isCustom: false },
+];
+
+// docs/SAAS-READINESS-ROADMAP.md Tier 4.2 — these five follow the identical
+// *Table.tsx list-rendering shape as apartments/rentalobjects above, just
+// not wired to admin column config until now. None of these row types have
+// a `custom: Record<string, string>` bag the way Apartment does, so their
+// ColumnConfigEditor instances (components/AdminPage.tsx) pass
+// allowCustomFields={false} — visibility/order/label are configurable,
+// adding a brand-new custom field is not (there'd be nowhere to store its
+// value).
+export const DEFAULT_TENANT_COLUMNS: TableColumnConfig[] = [
+  { key: "lagenhetsnummer", label: "Lägenhetsnummer", visible: true, isCustom: false },
+  { key: "fastighet", label: "Fastighet", visible: true, isCustom: false },
+  { key: "namn", label: "Namn", visible: true, isCustom: false },
+  { key: "personnummer", label: "Personnummer", visible: true, isCustom: false },
+  { key: "mejladress", label: "Mejladress", visible: true, isCustom: false },
+  { key: "telefonnummer", label: "Telefonnummer", visible: true, isCustom: false },
+];
+
+export const DEFAULT_ANDRAHANDSGAST_COLUMNS: TableColumnConfig[] = [
+  { key: "typ", label: "Boendeform", visible: true, isCustom: false },
+  { key: "lagenhetsnummer", label: "Lägenhetsnummer", visible: true, isCustom: false },
+  { key: "fastighet", label: "Fastighet", visible: true, isCustom: false },
+  { key: "namn", label: "Namn", visible: true, isCustom: false },
+  { key: "personnummer", label: "Personnummer", visible: true, isCustom: false },
+  { key: "mejladress", label: "Mejladress", visible: true, isCustom: false },
+  { key: "telefonnummer", label: "Telefonnummer", visible: true, isCustom: false },
+];
+
+export const DEFAULT_ARKIV_COLUMNS: TableColumnConfig[] = [
+  { key: "lagenhetsnummer", label: "Lägenhetsnummer", visible: true, isCustom: false },
+  { key: "fastighet", label: "Fastighet", visible: true, isCustom: false },
+  { key: "storlek", label: "Storlek", visible: true, isCustom: false },
+  { key: "objekttyp", label: "Objekttyp", visible: true, isCustom: false },
+  { key: "antalRum", label: "Antal rum", visible: true, isCustom: false },
+  { key: "ledigFrom", label: "Ledig fr.o.m.", visible: true, isCustom: false },
+  { key: "arshyra", label: "Årshyra", visible: true, isCustom: false },
+  { key: "hyresrabatt", label: "Hyresrabatt", visible: true, isCustom: false },
+  { key: "hyresreduktion", label: "Hyresreduktion", visible: true, isCustom: false },
+  { key: "arshyraMedRed", label: "Årshyra med red.", visible: true, isCustom: false },
+  { key: "manadshyra", label: "Månadshyra", visible: true, isCustom: false },
+  { key: "hyresgastNamn", label: "Hyresgäst namn", visible: true, isCustom: false },
+  { key: "personnummer", label: "Personnummer", visible: true, isCustom: false },
+  { key: "epost", label: "E-post", visible: true, isCustom: false },
+  { key: "telefonnummer", label: "Telefonnummer", visible: true, isCustom: false },
+  { key: "kontonummer", label: "Kontonummer", visible: true, isCustom: false },
+  { key: "kontraktSkickatDatum", label: "Kontrakt skickat", visible: true, isCustom: false },
+  { key: "kontraktSigneratDatum", label: "Kontrakt signerat", visible: true, isCustom: false },
+];
+
+export const DEFAULT_UPPSAGNING_COLUMNS: TableColumnConfig[] = [
+  { key: "lagenhetsnummer", label: "Lägenhetsnummer", visible: true, isCustom: false },
+  { key: "fastighet", label: "Fastighet", visible: true, isCustom: false },
+  { key: "hyresgastNamn", label: "Hyresgäst", visible: true, isCustom: false },
+  { key: "bekraftelsedatum", label: "Uppsägning bekräftad", visible: true, isCustom: false },
+  { key: "flyttdatum", label: "Flyttdatum", visible: true, isCustom: false },
+];
+
+export const DEFAULT_TODO_COLUMNS: TableColumnConfig[] = [
+  { key: "titel", label: "Uppgift", visible: true, isCustom: false },
+  { key: "prioritet", label: "Prioritet", visible: true, isCustom: false },
+  { key: "klarDatum", label: "Klart senast", visible: true, isCustom: false },
+  { key: "tilldelad", label: "Tilldelad", visible: true, isCustom: false },
 ];
 
 // A saved table's column list is always a full replacement (order,
@@ -190,6 +328,23 @@ export function excelDateCellToISO(value: Date): string {
   const m = String(value.getMonth() + 1).padStart(2, "0");
   const d = String(value.getDate()).padStart(2, "0");
   return `${y}-${m}-${d}`;
+}
+
+// docs/SAAS-READINESS-ROADMAP.md Tier 3.4 — was independently duplicated,
+// byte-for-byte identical, in all 4 Excel-import dialogs
+// (ExcelImportDialog.tsx, AndrahandsgastExcelImportDialog.tsx,
+// BesiktningarExcelImportDialog.tsx, ApartmentExcelImport.tsx). Each
+// importer's other cell helpers (cellNum/parseNumber, cellDate/
+// formatDateCell) turned out NOT to be duplicates of each other on closer
+// reading — besiktningar's date handling in particular has real,
+// importer-specific logic (merged-cell inheritance, a YYMMDD-as-plain-number
+// fallback) that a generic shared function would either lose or have to
+// special-case — so only this one, genuinely-identical helper was
+// consolidated; the others stay local to the importer that needs their
+// specific behavior.
+export function cellStr(row: unknown[], index: number): string {
+  const val = (row as Record<number, unknown>)[index];
+  return val == null ? "" : String(val).trim();
 }
 
 // Which fastighet a lägenhetsnummer belongs to, by longest matching

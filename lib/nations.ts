@@ -19,7 +19,25 @@ export const NATIONS_ID_CLAIM = "https://lnd-housing-dashboard/nationsID";
 
 export function getNationsId(user: User | null | undefined): string | null {
   const value = user?.[NATIONS_ID_CLAIM];
-  return typeof value === "string" && value ? value : null;
+  if (typeof value === "string" && value) return value;
+  if (Array.isArray(value) && typeof value[0] === "string" && value[0]) return value[0];
+  return null;
+}
+
+// A user with more than one nation (the Action sets nationsID as an array
+// instead of a string — for an operator managing multiple real customers,
+// not the common case) gets every one of them here; a single-nation user
+// (everyone today) gets a one-element array. lib/active-nation.ts uses this
+// to resolve which one is currently "active" for a multi-nation user;
+// getNationsId above stays a plain, synchronous, client-safe read (first
+// available nation) for every call site that doesn't need switching.
+export function getAvailableNations(user: User | null | undefined): string[] {
+  const value = user?.[NATIONS_ID_CLAIM];
+  if (typeof value === "string" && value) return [value];
+  if (Array.isArray(value)) {
+    return value.filter((v): v is string => typeof v === "string" && v.length > 0);
+  }
+  return [];
 }
 
 // Throws rather than silently scoping to nothing/everything — a user without

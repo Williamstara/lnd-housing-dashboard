@@ -1,14 +1,16 @@
 import Alert from "@mui/material/Alert";
 import Container from "@mui/material/Container";
-import { auth0 } from "@/lib/auth0";
+import { auth0, getCachedSession } from "@/lib/auth0";
 import { getFastighetNamn } from "@/lib/fastigheter";
-import { requireNationsIdOrRedirect } from "@/lib/nations";
+import { requireActiveNationsIdOrRedirect } from "@/lib/active-nation";
 import { getNationSettings } from "@/lib/nation-settings";
 import {
   DEFAULT_FASTIGHET_ALIASES,
   DEFAULT_RENTALOBJECT_COLUMNS,
   DEFAULT_RENTALOBJECT_SINGLE_IMPORT,
   DEFAULT_RENTALOBJECT_TAB_GROUPS,
+  getCurrency,
+  getLocale,
   resolveColumns,
   resolveFastighetAliases,
   resolveImportMapping,
@@ -30,8 +32,8 @@ async function loadObjects(nationsId: string): Promise<{ objects: RentalObject[]
 
 const DatabасPage = auth0.withPageAuthRequired(
   async function DatabасPage() {
-    const session = await auth0.getSession();
-    const nationsId = requireNationsIdOrRedirect(session?.user);
+    const session = await getCachedSession();
+    const nationsId = await requireActiveNationsIdOrRedirect(session?.user);
     const [{ objects, error }, fastigheter, nationSettings] = await Promise.all([
       loadObjects(nationsId),
       getFastighetNamn(nationsId),
@@ -67,6 +69,8 @@ const DatabасPage = auth0.withPageAuthRequired(
           importSingleFields={importSingleFields}
           importTabGroups={importTabGroups}
           importMultiTab={importMultiTab}
+          currency={getCurrency(nationSettings)}
+          locale={getLocale(nationSettings)}
         />
       </Container>
     );

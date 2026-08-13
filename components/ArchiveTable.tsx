@@ -24,10 +24,12 @@ import { addToHyresgastlistaAction } from "@/app/arkiv/actions";
 import type { Apartment } from "@/lib/apartments";
 import ColumnVisibilityMenu from "@/components/ColumnVisibilityMenu";
 import { exportRowsToXlsx } from "@/lib/export-xlsx";
+import type { TableColumnConfig } from "@/lib/table-columns";
 import { useColumnVisibility } from "@/lib/use-column-visibility";
 
 type Props = {
   apartments: Apartment[];
+  columnSettings: TableColumnConfig[];
 };
 
 const currency = new Intl.NumberFormat("sv-SE", { maximumFractionDigits: 0 });
@@ -53,27 +55,6 @@ type ColumnKey =
   | "kontraktSigneratDatum";
 
 type Order = "asc" | "desc";
-
-const columns: Array<{ key: ColumnKey; label: string; align?: "right" }> = [
-  { key: "lagenhetsnummer", label: "Lägenhetsnummer" },
-  { key: "fastighet", label: "Fastighet" },
-  { key: "storlek", label: "Storlek" },
-  { key: "objekttyp", label: "Objekttyp" },
-  { key: "antalRum", label: "Antal rum", align: "right" },
-  { key: "ledigFrom", label: "Ledig fr.o.m." },
-  { key: "arshyra", label: "Årshyra", align: "right" },
-  { key: "hyresrabatt", label: "Hyresrabatt", align: "right" },
-  { key: "hyresreduktion", label: "Hyresreduktion", align: "right" },
-  { key: "arshyraMedRed", label: "Årshyra med red.", align: "right" },
-  { key: "manadshyra", label: "Månadshyra", align: "right" },
-  { key: "hyresgastNamn", label: "Hyresgäst namn" },
-  { key: "personnummer", label: "Personnummer" },
-  { key: "epost", label: "E-post" },
-  { key: "telefonnummer", label: "Telefonnummer" },
-  { key: "kontonummer", label: "Kontonummer" },
-  { key: "kontraktSkickatDatum", label: "Kontrakt skickat" },
-  { key: "kontraktSigneratDatum", label: "Kontrakt signerat" },
-];
 
 const columnValue: Record<ColumnKey, (a: Apartment) => string | number> = {
   lagenhetsnummer: (a) => a.lagenhetsnummer,
@@ -104,6 +85,12 @@ const CURRENCY_KEYS = new Set<ColumnKey>([
   "manadshyra",
 ]);
 
+// Kept independent of the admin-configurable column list (label/order/
+// visibility) since alignment is a display property of the field itself,
+// not something a nation should need to configure — matches
+// ApartmentsTable.tsx's identical RIGHT_ALIGN_KEYS/CURRENCY_KEYS split.
+const RIGHT_ALIGN_KEYS = new Set<ColumnKey>([...CURRENCY_KEYS, "antalRum"]);
+
 function compareValues(a: string | number, b: string | number): number {
   if (typeof a === "number" && typeof b === "number") return a - b;
   return String(a).localeCompare(String(b), "sv", { sensitivity: "base" });
@@ -129,7 +116,7 @@ function matchesSearch(apartment: Apartment, query: string): boolean {
   return haystack.includes(query);
 }
 
-export default function ArchiveTable({ apartments }: Props) {
+export default function ArchiveTable({ apartments, columnSettings }: Props) {
   const [search, setSearch] = useState("");
   const [orderBy, setOrderBy] = useState<ColumnKey>("kontraktSigneratDatum");
   const [order, setOrder] = useState<Order>("desc");
@@ -138,7 +125,8 @@ export default function ArchiveTable({ apartments }: Props) {
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(10);
   const { isVisible, toggle } = useColumnVisibility("arkiv");
-  const visibleColumnDefs = columns.filter((c) => isVisible(c.key));
+  const nationColumns = useMemo(() => columnSettings.filter((c) => c.visible), [columnSettings]);
+  const visibleColumnDefs = nationColumns.filter((c) => isVisible(c.key));
 
   const visibleApartments = useMemo(() => {
     const query = search.trim().toLocaleLowerCase("sv");
@@ -205,9 +193,9 @@ export default function ArchiveTable({ apartments }: Props) {
   function handleExport() {
     exportRowsToXlsx(
       `arkiv-${new Date().toISOString().slice(0, 10)}.xlsx`,
-      [...columns.map((c) => c.label), "Kontrakt skickat av", "Kontrakt signerat av"],
+      [...nationColumns.map((c) => c.label), "Kontrakt skickat av", "Kontrakt signerat av"],
       visibleApartments.map((apartment) => [
-        ...columns.map((c) => columnValue[c.key](apartment)),
+        ...nationColumns.map((c) => columnValue[c.key as ColumnKey](apartment)),
         apartment.kontraktSkickatAv ?? "",
         apartment.kontraktSigneratAv ?? "",
       ])
@@ -259,18 +247,18 @@ export default function ArchiveTable({ apartments }: Props) {
           <TableHead>
             <TableRow>
               <TableCell padding="checkbox">
-                <ColumnVisibilityMenu columns={columns} isVisible={isVisible} onToggle={toggle} />
+                <ColumnVisibilityMenu columns={nationColumns} isVisible={isVisible} onToggle={toggle} />
               </TableCell>
               {visibleColumnDefs.map((column) => (
                 <TableCell
                   key={column.key}
-                  align={column.align}
+                  align={RIGHT_ALIGN_KEYS.has(column.key as ColumnKey) ? "right" : undefined}
                   sortDirection={orderBy === column.key ? order : false}
                 >
                   <TableSortLabel
                     active={orderBy === column.key}
                     direction={orderBy === column.key ? order : "asc"}
-                    onClick={() => handleSort(column.key)}
+                    onClick={() => handleSort(column.key as ColumnKey)}
                   >
                     {column.label}
                   </TableSortLabel>
@@ -293,8 +281,8 @@ export default function ArchiveTable({ apartments }: Props) {
                 <TableRow key={apartment.id}>
                   <TableCell padding="checkbox" />
                   {visibleColumnDefs.map((column) => (
-                    <TableCell key={column.key} align={column.align}>
-                      {renderCellValue(apartment, column.key)}
+                    <TableCell key={column.key} align={RIGHT_ALIGN_KEYS.has(column.key as ColumnKey) ? "right" : undefined}>
+                      {renderCellValue(apartment, column.key as ColumnKey)}
                     </TableCell>
                   ))}
                   <TableCell align="right">
@@ -325,7 +313,7 @@ export default function ArchiveTable({ apartments }: Props) {
 
       <Box sx={{ display: { xs: "block", sm: "none" } }}>
         <Stack direction="row" sx={{ justifyContent: "flex-end", mb: 1 }}>
-          <ColumnVisibilityMenu columns={columns} isVisible={isVisible} onToggle={toggle} />
+          <ColumnVisibilityMenu columns={nationColumns} isVisible={isVisible} onToggle={toggle} />
         </Stack>
         {visibleApartments.length === 0 ? (
           <Typography variant="body2" color="text.secondary" sx={{ textAlign: "center", py: 4 }}>
@@ -360,7 +348,7 @@ export default function ArchiveTable({ apartments }: Props) {
                         <Typography variant="caption" color="text.secondary" sx={{ display: "block" }}>
                           {column.label}
                         </Typography>
-                        <Box sx={{ overflowWrap: "break-word" }}>{renderCellValue(apartment, column.key)}</Box>
+                        <Box sx={{ overflowWrap: "break-word" }}>{renderCellValue(apartment, column.key as ColumnKey)}</Box>
                       </Box>
                     ))}
                   </Box>

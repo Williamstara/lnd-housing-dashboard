@@ -17,41 +17,15 @@ import {
   type BulkActionResult,
   type BulkUpsertResult,
 } from "@/lib/besiktningar";
-import { auth0 } from "@/lib/auth0";
-import { requireNationsId } from "@/lib/nations";
-import { ARCHIVE_ROLES, ROLES, getUserDisplayName, hasAnyRole, hasRole } from "@/lib/roles";
+import { getCachedSession } from "@/lib/auth0";
+import { requireActiveNationsId } from "@/lib/active-nation";
+import { requirePermission } from "@/lib/permissions";
+import { PERMISSIONS } from "@/lib/roles";
 
 async function requireUser(): Promise<string> {
-  const session = await auth0.getSession();
+  const session = await getCachedSession();
   if (!session?.user) throw new Error("Unauthorized");
-  return requireNationsId(session.user);
-}
-
-async function requireHusvdOrEkonomiRole(): Promise<{ nationsId: string; userName: string }> {
-  const session = await auth0.getSession();
-  if (!session?.user || !(hasRole(session.user, ROLES.HUSVD) || hasRole(session.user, ROLES.EKONOMI))) {
-    throw new Error("Endast användare med rollen husvd eller ekonomi har åtkomst.");
-  }
-  return { nationsId: requireNationsId(session.user), userName: getUserDisplayName(session.user) };
-}
-
-async function requireArchiveRole(): Promise<string> {
-  const session = await auth0.getSession();
-  if (!session?.user || !hasAnyRole(session.user, ARCHIVE_ROLES)) {
-    throw new Error("Endast användare med rollen ekonomi, husvd eller admin har åtkomst.");
-  }
-  return requireNationsId(session.user);
-}
-
-// Archiving besiktningar is husvd/admin only — ekonomi lost this right
-// (unlike deleteBesiktningAction above and every other "archive" feature in
-// the app, which still use the broader requireArchiveRole/ARCHIVE_ROLES).
-async function requireHusvdRole(): Promise<string> {
-  const session = await auth0.getSession();
-  if (!session?.user || !hasRole(session.user, ROLES.HUSVD)) {
-    throw new Error("Endast användare med rollen husvd eller admin har åtkomst.");
-  }
-  return requireNationsId(session.user);
+  return await requireActiveNationsId(session.user);
 }
 
 function revalidateBesiktningarPages() {
@@ -75,19 +49,28 @@ export async function createBesiktningAction(input: BesiktningImportInput) {
 
 // Only husvd/ekonomi may progress a besiktning's payment status.
 export async function markKlarForBetalningAction(id: string) {
-  const { nationsId, userName } = await requireHusvdOrEkonomiRole();
+  const { nationsId, userName } = await requirePermission(
+    PERMISSIONS.BESIKTNINGAR_MARK_PAYMENT,
+    "Endast användare med rollen husvd eller ekonomi har åtkomst."
+  );
   await markKlarForBetalning(nationsId, id, userName);
   revalidateBesiktningarPages();
 }
 
 export async function markBetalningGjordAction(id: string) {
-  const { nationsId, userName } = await requireHusvdOrEkonomiRole();
+  const { nationsId, userName } = await requirePermission(
+    PERMISSIONS.BESIKTNINGAR_MARK_PAYMENT,
+    "Endast användare med rollen husvd eller ekonomi har åtkomst."
+  );
   await markBetalningGjord(nationsId, id, userName);
   revalidateBesiktningarPages();
 }
 
 export async function markKlarForBetalningBulkAction(ids: string[]): Promise<BulkActionResult> {
-  const { nationsId, userName } = await requireHusvdOrEkonomiRole();
+  const { nationsId, userName } = await requirePermission(
+    PERMISSIONS.BESIKTNINGAR_MARK_PAYMENT,
+    "Endast användare med rollen husvd eller ekonomi har åtkomst."
+  );
   if (ids.length === 0) return { updated: 0, skipped: 0 };
   const result = await markKlarForBetalningBulk(nationsId, ids, userName);
   revalidateBesiktningarPages();
@@ -95,7 +78,10 @@ export async function markKlarForBetalningBulkAction(ids: string[]): Promise<Bul
 }
 
 export async function markBetalningGjordBulkAction(ids: string[]): Promise<BulkActionResult> {
-  const { nationsId, userName } = await requireHusvdOrEkonomiRole();
+  const { nationsId, userName } = await requirePermission(
+    PERMISSIONS.BESIKTNINGAR_MARK_PAYMENT,
+    "Endast användare med rollen husvd eller ekonomi har åtkomst."
+  );
   if (ids.length === 0) return { updated: 0, skipped: 0 };
   const result = await markBetalningGjordBulk(nationsId, ids, userName);
   revalidateBesiktningarPages();
@@ -103,13 +89,19 @@ export async function markBetalningGjordBulkAction(ids: string[]): Promise<BulkA
 }
 
 export async function archiveBesiktningAction(id: string) {
-  const nationsId = await requireHusvdRole();
+  const { nationsId } = await requirePermission(
+    PERMISSIONS.BESIKTNINGAR_ARCHIVE,
+    "Endast användare med rollen husvd eller admin har åtkomst."
+  );
   await archiveBesiktning(nationsId, id);
   revalidateBesiktningarPages();
 }
 
 export async function archiveBesiktningarBulkAction(ids: string[]): Promise<BulkActionResult> {
-  const nationsId = await requireHusvdRole();
+  const { nationsId } = await requirePermission(
+    PERMISSIONS.BESIKTNINGAR_ARCHIVE,
+    "Endast användare med rollen husvd eller admin har åtkomst."
+  );
   if (ids.length === 0) return { updated: 0, skipped: 0 };
   const result = await archiveBesiktningarBulk(nationsId, ids);
   revalidateBesiktningarPages();
@@ -117,7 +109,10 @@ export async function archiveBesiktningarBulkAction(ids: string[]): Promise<Bulk
 }
 
 export async function deleteBesiktningAction(id: string) {
-  const nationsId = await requireArchiveRole();
+  const { nationsId } = await requirePermission(
+    PERMISSIONS.BESIKTNINGAR_DELETE,
+    "Endast användare med rollen ekonomi, husvd eller admin har åtkomst."
+  );
   await deleteBesiktning(nationsId, id);
   revalidateBesiktningarPages();
 }

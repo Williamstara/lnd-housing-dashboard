@@ -2,14 +2,16 @@ import Box from "@mui/material/Box";
 import Container from "@mui/material/Container";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
-import { auth0 } from "@/lib/auth0";
-import { getNationsId } from "@/lib/nations";
+import { auth0, getCachedSession } from "@/lib/auth0";
+import { getActiveNationsId } from "@/lib/active-nation";
+import { getNationSettings } from "@/lib/nation-settings";
 import NavGrid from "@/app/_components/nav-grid";
 
 const Home = auth0.withPageAuthRequired(
   async function Home() {
-    const session = await auth0.getSession();
-    const nationsId = getNationsId(session?.user);
+    const session = await getCachedSession();
+    const nationsId = await getActiveNationsId(session?.user);
+    const settings = nationsId ? await getNationSettings(nationsId) : null;
 
     return (
       <Box sx={{ flex: 1, bgcolor: "background.default" }}>
@@ -23,7 +25,7 @@ const Home = auth0.withPageAuthRequired(
               Hej {session?.user.name}. Välj ett arbetsområde nedan eller använd menyn till vänster.
             </Typography>
           </Stack>
-          <NavGrid />
+          <NavGrid enabledFeatures={settings?.enabledFeatures} />
         </Container>
       </Box>
     );

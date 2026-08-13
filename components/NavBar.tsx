@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useTransition } from "react";
 import { useUser } from "@auth0/nextjs-auth0";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import HolidayVillageIcon from "@mui/icons-material/HolidayVillage";
 import ChevronLeftIcon from "@mui/icons-material/ChevronLeft";
 import ChevronRightIcon from "@mui/icons-material/ChevronRight";
@@ -21,15 +21,19 @@ import ListItemButton from "@mui/material/ListItemButton";
 import ListItemIcon from "@mui/material/ListItemIcon";
 import ListItemText from "@mui/material/ListItemText";
 import ListSubheader from "@mui/material/ListSubheader";
+import MenuItem from "@mui/material/MenuItem";
+import Select from "@mui/material/Select";
 import Stack from "@mui/material/Stack";
 import Toolbar from "@mui/material/Toolbar";
 import Tooltip from "@mui/material/Tooltip";
 import Typography from "@mui/material/Typography";
 import { alpha } from "@mui/material/styles";
 import Link from "next/link";
+import { setActiveNationAction } from "@/app/actions";
 import { NAV_GROUPS, navLinks } from "@/lib/nav-links";
-import { getNationsId } from "@/lib/nations";
+import { getAvailableNations, getNationsId } from "@/lib/nations";
 import { ROLES, hasRole, isRestrictedToTodo } from "@/lib/roles";
+import { isFeatureEnabled } from "@/lib/table-columns";
 
 export const NAV_WIDTH = 272;
 export const NAV_COLLAPSED_WIDTH = 72;
@@ -40,6 +44,7 @@ type NavigationProps = {
   pathname: string;
   collapsed?: boolean;
   onNavigate?: () => void;
+  enabledFeatures?: string[];
 };
 
 function Brand({ nationsId, compact = false }: { nationsId?: string; compact?: boolean }) {
@@ -76,7 +81,14 @@ function Brand({ nationsId, compact = false }: { nationsId?: string; compact?: b
   );
 }
 
-function Navigation({ isAdmin, restrictedToTodo, pathname, collapsed = false, onNavigate }: NavigationProps) {
+function Navigation({
+  isAdmin,
+  restrictedToTodo,
+  pathname,
+  collapsed = false,
+  onNavigate,
+  enabledFeatures,
+}: NavigationProps) {
   return (
     <Box sx={{ flex: 1, overflowY: "auto", py: 1 }}>
       {NAV_GROUPS.map((group) => {
@@ -84,7 +96,8 @@ function Navigation({ isAdmin, restrictedToTodo, pathname, collapsed = false, on
           (link) =>
             link.group === group.key &&
             (!link.adminOnly || isAdmin) &&
-            (!restrictedToTodo || link.href === "/todo")
+            (!restrictedToTodo || link.href === "/todo") &&
+            isFeatureEnabled(enabledFeatures, link.featureKey)
         );
         if (links.length === 0) return null;
         return (
@@ -156,12 +169,64 @@ function Navigation({ isAdmin, restrictedToTodo, pathname, collapsed = false, on
   );
 }
 
-export default function NavBar() {
+// Only ever rendered when the caller has more than one available nation
+// (Auth0 nationsID claim as an array — docs/SAAS-READINESS-ROADMAP.md Tier
+// 1.2) — every user today has exactly one, so this stays invisible until
+// that external Auth0 Action change is made for a specific operator account.
+function NationSwitcher({
+  nationsId,
+  availableNations,
+  compact,
+}: {
+  nationsId: string;
+  availableNations: string[];
+  compact: boolean;
+}) {
+  const router = useRouter();
+  const [isPending, startTransition] = useTransition();
+
+  function handleChange(next: string) {
+    if (next === nationsId) return;
+    startTransition(async () => {
+      await setActiveNationAction(next);
+      router.refresh();
+    });
+  }
+
+  if (compact) return null;
+
+  return (
+    <Select
+      size="small"
+      value={nationsId}
+      disabled={isPending}
+      onChange={(event) => handleChange(event.target.value)}
+      aria-label="Aktiv nation"
+      sx={{
+        color: "inherit",
+        ".MuiOutlinedInput-notchedOutline": { borderColor: alpha("#fff", 0.24) },
+        "&:hover .MuiOutlinedInput-notchedOutline": { borderColor: alpha("#fff", 0.4) },
+        ".MuiSvgIcon-root": { color: "inherit" },
+      }}
+    >
+      {availableNations.map((id) => (
+        <MenuItem key={id} value={id}>
+          {id}
+        </MenuItem>
+      ))}
+    </Select>
+  );
+}
+
+type NavBarProps = { enabledFeatures?: string[] };
+
+export default function NavBar({ enabledFeatures }: NavBarProps) {
   const { user, isLoading } = useUser();
   const pathname = usePathname();
   const isAdmin = hasRole(user, ROLES.ADMIN);
   const restrictedToTodo = isRestrictedToTodo(user);
   const nationsId = getNationsId(user);
+  const availableNations = getAvailableNations(user);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
 
@@ -190,12 +255,18 @@ export default function NavBar() {
         <Navigation
           isAdmin={isAdmin}
           restrictedToTodo={restrictedToTodo}
+          enabledFeatures={enabledFeatures}
           pathname={pathname}
           collapsed={compact}
           onNavigate={onNavigate}
         />
       ) : (
         <Box sx={{ flex: 1 }} />
+      )}
+      {user && nationsId && availableNations.length > 1 && !compact && (
+        <Box sx={{ px: 2.5, pb: 1.5 }}>
+          <NationSwitcher nationsId={nationsId} availableNations={availableNations} compact={compact} />
+        </Box>
       )}
       <Divider sx={{ borderColor: alpha("#fff", 0.1) }} />
       <Box sx={{ p: compact ? 1.25 : 2 }}>

@@ -1,6 +1,6 @@
 import "server-only";
 import { createClient } from "@supabase/supabase-js";
-import { auth0 } from "@/lib/auth0";
+import { getCachedSession } from "@/lib/auth0";
 
 // Auth0 stays the identity/roles/tenant system of record — Supabase is
 // registered as a Third-Party Auth issuer for Auth0, so the Auth0 ID token
@@ -41,9 +41,21 @@ export function createSupabaseServerClient() {
     process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!,
     {
       accessToken: async () => {
-        const session = await auth0.getSession();
+        const session = await getCachedSession();
         return session?.tokenSet.idToken ?? null;
       },
     }
   );
+}
+
+// Shared chunk size for bulk-import writes (bulkUpsert* in lib/apartments.ts,
+// besiktningar.ts, andrahandsgaster.ts, tenants.ts, rentalobjects.ts): batch
+// N rows per insert/upsert call instead of one round trip per row, so a
+// clean N-row import costs ceil(N/50) requests instead of N.
+export const BULK_WRITE_CHUNK_SIZE = 50;
+
+export function chunkArray<T>(items: T[], size: number = BULK_WRITE_CHUNK_SIZE): T[][] {
+  const chunks: T[][] = [];
+  for (let i = 0; i < items.length; i += size) chunks.push(items.slice(i, i + size));
+  return chunks;
 }
