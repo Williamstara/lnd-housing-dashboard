@@ -8,6 +8,46 @@ maintained.
 
 ---
 
+## Public landing page at `/`: NavBar moved out of the always-on root layout
+
+- **Date**: 2026-08-14
+- **Status**: accepted
+- **Context**: Post-Clerk-migration, `/` called `auth.protect()` and
+  redirected every signed-out visitor straight to `/sign-in`. The user
+  objected that this still looked like "a skeleton page of the app" — because
+  `app/layout.tsx` unconditionally rendered `NavBar` (the full dashboard
+  sidebar shell) around every route, including `/sign-in`, `/sign-up`, and
+  `/nationsid-saknas`. The user asked for a real landing page that explains
+  the app, has a login button, and takes a signed-in user to the same
+  overview page as before.
+- **Decision**: Rather than restructuring routes into a `(dashboard)` route
+  group (which would have meant moving all ~15 protected page folders and
+  introducing a new URL for the dashboard home), `app/layout.tsx` now renders
+  `NavBar` conditionally on `getCurrentUserId()` (`lib/active-nation.ts`).
+  `app/page.tsx` dropped its `auth.protect()` call and now branches itself:
+  signed-out renders a new `app/_components/landing-page.tsx` (marketing
+  copy + feature highlights sourced from `lib/nav-links.tsx` + a "Logga in"
+  button linking to `/sign-in`); signed-in renders the exact same dashboard
+  overview content as before, unchanged. `/` keeps the same URL for both
+  audiences — no route moved.
+- **Reason**: Every other protected page already required sign-in to be
+  reached at all, so gating `NavBar` on auth state alone (not per-route) is
+  equivalent to gating it per-route, with far less churn. This also
+  incidentally fixed `/sign-in`/`/sign-up` themselves rendering inside the
+  dashboard skeleton, for free.
+- **Consequences**: `LandingPage` is a Client Component (`"use client"`) —
+  not because it needs interactivity, but because passing `component={Link}`
+  into MUI's `Button` from a Server Component fails ("Functions cannot be
+  passed directly to Client Components") the same way it would have for
+  `NavGrid`, which is already `"use client"` for this reason. Any new
+  Server-Component page that wants `<Button component={Link}>` needs the
+  same treatment. If a genuinely route-scoped layout split becomes necessary
+  later (e.g. a second public route that also needs no NavBar), revisit the
+  route-group approach instead of adding more auth-state conditionals to the
+  root layout.
+
+---
+
 ## `TenantFormDialog.tsx`/`AndrahandsgastFormDialog.tsx` intentionally not wired to admin column visibility
 
 - **Date**: 2026-08-13
@@ -44,6 +84,104 @@ maintained.
 - **Files**: `components/TenantFormDialog.tsx`,
   `components/AndrahandsgastFormDialog.tsx`,
   `app/hyresgastlista/actions.ts` (the blocker, not itself modified).
+
+---
+
+## Auth0 → Clerk migration
+
+- **Date**: 2026-08-14
+- **Status**: accepted, implemented
+- **Context**: User-initiated migration off Auth0, primarily for future
+  per-MAU pricing at scale (Clerk's overage rate is roughly a third of
+  Auth0's past the free tier) and because this app's per-`nationsID`
+  multi-tenant model maps naturally onto Clerk Organizations. Not a
+  reaction to any current Auth0 problem — this repo's own
+  `project_mongodb_to_supabase_migration` decision (see that migration's
+  memory/decision) had explicitly chosen to keep Auth0 as recently as
+  2026-08-13; this supersedes that call.
+- **Decision, with the non-obvious parts**:
+  1. **Nations map 1:1 to Clerk Organizations**, matched by each
+     Organization's `public_metadata.nationsId` (not a Postgres foreign
+     key — Clerk Organization IDs are opaque and unrelated to the
+     `nations.nations_id` primary key). `lib/app-users.ts`'s
+     `findOrCreateNationOrg` is the only place this lookup happens; called
+     from `lib/nation-settings.ts`'s `createNation` so a nation always has
+     both a Postgres row and a matching Organization.
+  2. **Roles stay a per-user grant** (`user.publicMetadata.roles`, an
+     array), **not** Clerk's Organization custom-roles feature. Two
+     reasons: (a) this app's role assignment was already per-user, not
+     per-nation-membership, so custom org roles would be a mismatch; (b)
+     Clerk's custom org roles require a paid "B2B Authentication" add-on
+     past two free defaults (`org:admin`/`org:member`), which per-user
+     `publicMetadata` avoids entirely.
+  3. **Both `nations_id` and `roles` are exposed as plain top-level Clerk
+     session-token claims** (`session.claims` in Clerk's instance config —
+     `clerk config patch`, not version-controlled in this repo, same
+     caveat the old Auth0 Action had), sourced via
+     `{{org.public_metadata.nationsId}}` / `{{user.public_metadata.roles}}`
+     shortcodes. This mirrors Auth0's custom-claim pattern exactly (same
+     shape the app already read from `session.user`), which is what let
+     `lib/roles.ts`'s pure functions stay unchanged in spirit — just
+     re-pointed at a plain array instead of an Auth0 `User` object.
+  4. **Corrected mid-migration**: initially built the Supabase↔Clerk
+     bridge using a named Clerk JWT Template (`getToken({template:
+     'supabase'})`), following a recipe bundled in Clerk's own CLI skill
+     docs. Supabase's actual current Clerk integration uses Clerk's
+     *default* session token instead, customized via `session.claims` (see
+     #3) — the JWT-template approach is the older, discouraged pattern.
+     Caught by cross-checking Supabase's own integration docs before
+     shipping it; the wrong template was deleted, `session.claims` used
+     instead. Verified via a real decoded token before and after.
+  5. **`proxy.ts` does not call `auth.protect()`.** Clerk deprecated
+     middleware-based route protection (`createRouteMatcher` +
+     `auth.protect()` in middleware) after 2025 disclosures that requests
+     can skip middleware entirely (and Server Actions are invoked by ID,
+     not path, so path-matching never protected them anyway) — see
+     https://clerk.com/docs/guides/development/upgrading/upgrade-guides/migrate-from-create-route-matcher.
+     Every protected `page.tsx` now calls `await auth.protect()` itself as
+     its first line; `proxy.ts` keeps `clerkMiddleware()` running (required
+     for session syncing) but only for UX/business-rule redirects
+     (nationsID-missing, vaktmästare-restricted) that are independently
+     re-enforced at the resource level too, not the actual security
+     boundary. Two Client-Component pages (`/mallar`, `/planritningar`)
+     that can't call `auth.protect()` (server-only) use
+     `components/RequireSignedIn.tsx` instead — Clerk's documented
+     client-side equivalent; their real protection was always the
+     underlying API routes' own auth checks regardless.
+  6. **The hand-rolled multi-nation active-nation switcher was deleted, not
+     ported.** `lib/active-nation.ts`'s old cookie-based
+     "which of my N nations is active" logic (`lib/nations.ts`,
+     `setActiveNation`, `NavBar.tsx`'s `NationSwitcher`) existed for a
+     multi-nation operator account that had never actually existed — no
+     Auth0 Action was ever changed to emit an array-shaped claim. Clerk's
+     Organization membership + native active-organization state replaces
+     this outright; rebuild via `<OrganizationSwitcher />` if a real
+     multi-nation account is ever needed, rather than re-deriving the old
+     cookie approach.
+  7. **`gmail_tokens`/`todos.tilldelad_till` re-keying**: checked real data
+     rather than assumed. `gmail_tokens` had zero rows for the real user —
+     nothing to migrate. `todos.tilldelad_till` had 3 rows pointing at two
+     old Auth0 IDs that both resolve to `husforman@lundsnation.se` (not the
+     migrated Clerk user) — left as-is (user's explicit call): no data
+     loss, reassign via the normal Todo UI once that person has a real
+     Clerk account in `LND`.
+- **Consequences**: `@auth0/nextjs-auth0` is fully uninstalled; `lib/auth0.ts`
+  deleted. `AUTH0_*`/`AUTH0_M2M_*` env vars are no longer read by any code
+  (harmless if still present in `.env.local`). `LAUNDRY_AUTH0_*` and
+  `lib/laundry-account.ts` are untouched — a separate, unrelated Auth0
+  tenant. A pre-existing, unrelated bug was found and fixed along the way:
+  `service_role` is missing `SELECT` grants on `gmail_tokens` and `todos`
+  (same "SQL-migration-created tables don't get default grants" class of
+  gap already documented elsewhere in this file) — not yet fixed, tracked
+  in `docs/TODO.md`.
+- **Files**: `proxy.ts`, `app/layout.tsx`, all 15 protected `page.tsx`
+  files, `lib/active-nation.ts` (rewritten), `lib/roles.ts` (rewritten to
+  pure array-based checks), `lib/app-users.ts` (rewritten against Clerk's
+  Backend SDK), `lib/nation-settings.ts`'s `createNation`,
+  `lib/supabase-server.ts`, `components/NavBar.tsx`,
+  `components/RequireSignedIn.tsx` (new),
+  `supabase/migrations/20260814020000_clerk_claims.sql`. `lib/nations.ts`
+  and `lib/auth0.ts` deleted.
 
 ---
 

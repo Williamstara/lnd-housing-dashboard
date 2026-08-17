@@ -1,6 +1,6 @@
 "use client";
 
-import { useUser } from "@auth0/nextjs-auth0";
+import { useAuth } from "@clerk/nextjs";
 import { useMemo, useState, useTransition, type ReactNode } from "react";
 import dynamic from "next/dynamic";
 import AddIcon from "@mui/icons-material/Add";
@@ -63,7 +63,7 @@ import ApartmentFormDialog from "@/components/ApartmentFormDialog";
 import ApartmentInterestDialog from "@/components/ApartmentInterestDialog";
 import ColumnVisibilityMenu from "@/components/ColumnVisibilityMenu";
 import { exportRowsToXlsx } from "@/lib/export-xlsx";
-import { ROLES, hasRole } from "@/lib/roles";
+import { ROLES, hasRole, normalizeRoles } from "@/lib/roles";
 import { useColumnVisibility } from "@/lib/use-column-visibility";
 
 const ApartmentExcelImport = dynamic(() => import("@/components/ApartmentExcelImport"), { ssr: false });
@@ -166,8 +166,9 @@ export default function ApartmentsTable({
 }: Props) {
   const keyHandoverEnabled = isFeatureEnabled(enabledFeatures, FEATURES.KEY_HANDOVER);
   const numberFormat = useMemo(() => new Intl.NumberFormat(locale, { maximumFractionDigits: 0 }), [locale]);
-  const { user } = useUser();
-  const isHusforman = hasRole(user, ROLES.HUSFORMAN);
+  const { sessionClaims } = useAuth();
+  const roles = normalizeRoles(sessionClaims?.roles);
+  const isHusforman = hasRole(roles, ROLES.HUSFORMAN);
   const missedRentIds = useMemo(() => new Set(missedRentApartmentIds), [missedRentApartmentIds]);
   const nationColumns = useMemo(() => columnSettings.filter((c) => c.visible), [columnSettings]);
   const { isVisible, toggle } = useColumnVisibility("apartments");

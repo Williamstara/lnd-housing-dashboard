@@ -1,7 +1,6 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { getCachedSession } from "@/lib/auth0";
 import {
   bulkUpsertRentalObjects,
   createRentalObject,
@@ -12,12 +11,12 @@ import {
 } from "@/lib/rentalobjects";
 import { syncApartmentPricingFromRentalObject } from "@/lib/apartments";
 import { getFastighetNamn } from "@/lib/fastigheter";
-import { requireActiveNationsId } from "@/lib/active-nation";
+import { getCurrentUserId, requireActiveNationsId } from "@/lib/active-nation";
 
 async function requireUser(): Promise<string> {
-  const session = await getCachedSession();
-  if (!session?.user) throw new Error("Unauthorized");
-  return await requireActiveNationsId(session.user);
+  const userId = await getCurrentUserId();
+  if (!userId) throw new Error("Unauthorized");
+  return await requireActiveNationsId();
 }
 
 async function validate(nationsId: string, input: RentalObjectInput): Promise<RentalObjectInput> {

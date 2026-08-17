@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useTransition } from "react";
-import { useUser } from "@auth0/nextjs-auth0";
-import { usePathname, useRouter } from "next/navigation";
+import { useState } from "react";
+import { useAuth, useClerk, useUser } from "@clerk/nextjs";
+import { usePathname } from "next/navigation";
 import HolidayVillageIcon from "@mui/icons-material/HolidayVillage";
 import ChevronLeftIcon from "@mui/icons-material/ChevronLeft";
 import ChevronRightIcon from "@mui/icons-material/ChevronRight";
@@ -21,18 +21,14 @@ import ListItemButton from "@mui/material/ListItemButton";
 import ListItemIcon from "@mui/material/ListItemIcon";
 import ListItemText from "@mui/material/ListItemText";
 import ListSubheader from "@mui/material/ListSubheader";
-import MenuItem from "@mui/material/MenuItem";
-import Select from "@mui/material/Select";
 import Stack from "@mui/material/Stack";
 import Toolbar from "@mui/material/Toolbar";
 import Tooltip from "@mui/material/Tooltip";
 import Typography from "@mui/material/Typography";
 import { alpha } from "@mui/material/styles";
 import Link from "next/link";
-import { setActiveNationAction } from "@/app/actions";
 import { NAV_GROUPS, navLinks } from "@/lib/nav-links";
-import { getAvailableNations, getNationsId } from "@/lib/nations";
-import { ROLES, hasRole, isRestrictedToTodo } from "@/lib/roles";
+import { ROLES, hasRole, isRestrictedToTodo, normalizeRoles } from "@/lib/roles";
 import { isFeatureEnabled } from "@/lib/table-columns";
 
 export const NAV_WIDTH = 272;
@@ -169,66 +165,31 @@ function Navigation({
   );
 }
 
-// Only ever rendered when the caller has more than one available nation
-// (Auth0 nationsID claim as an array — docs/SAAS-READINESS-ROADMAP.md Tier
-// 1.2) — every user today has exactly one, so this stays invisible until
-// that external Auth0 Action change is made for a specific operator account.
-function NationSwitcher({
-  nationsId,
-  availableNations,
-  compact,
-}: {
-  nationsId: string;
-  availableNations: string[];
-  compact: boolean;
-}) {
-  const router = useRouter();
-  const [isPending, startTransition] = useTransition();
-
-  function handleChange(next: string) {
-    if (next === nationsId) return;
-    startTransition(async () => {
-      await setActiveNationAction(next);
-      router.refresh();
-    });
-  }
-
-  if (compact) return null;
-
-  return (
-    <Select
-      size="small"
-      value={nationsId}
-      disabled={isPending}
-      onChange={(event) => handleChange(event.target.value)}
-      aria-label="Aktiv nation"
-      sx={{
-        color: "inherit",
-        ".MuiOutlinedInput-notchedOutline": { borderColor: alpha("#fff", 0.24) },
-        "&:hover .MuiOutlinedInput-notchedOutline": { borderColor: alpha("#fff", 0.4) },
-        ".MuiSvgIcon-root": { color: "inherit" },
-      }}
-    >
-      {availableNations.map((id) => (
-        <MenuItem key={id} value={id}>
-          {id}
-        </MenuItem>
-      ))}
-    </Select>
-  );
-}
-
 type NavBarProps = { enabledFeatures?: string[] };
 
 export default function NavBar({ enabledFeatures }: NavBarProps) {
-  const { user, isLoading } = useUser();
+  const { user, isLoaded } = useUser();
+  const { sessionClaims } = useAuth();
+  const { signOut } = useClerk();
+  const roles = normalizeRoles(sessionClaims?.roles);
   const pathname = usePathname();
-  const isAdmin = hasRole(user, ROLES.ADMIN);
-  const restrictedToTodo = isRestrictedToTodo(user);
-  const nationsId = getNationsId(user);
-  const availableNations = getAvailableNations(user);
+  const isAdmin = hasRole(roles, ROLES.ADMIN);
+  const restrictedToTodo = isRestrictedToTodo(roles);
+  const nationsId = typeof sessionClaims?.nations_id === "string" ? sessionClaims.nations_id : null;
   const [mobileOpen, setMobileOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
+
+  // signOut()'s redirectUrl option navigates via Next's client-side router,
+  // not a full page load -- the server-side auth.protect() check that
+  // would redirect to /sign-in only runs on a fresh server render, so a
+  // soft navigation can land back on a stale, still-authenticated-looking
+  // cached shell of "/" instead. A hard navigation in the completion
+  // callback guarantees a real server hit.
+  function handleSignOut() {
+    signOut(() => {
+      window.location.href = "/";
+    });
+  }
 
   const content = (onNavigate?: () => void, compact = false) => (
     <Stack sx={{ height: "100%" }}>
@@ -263,14 +224,9 @@ export default function NavBar({ enabledFeatures }: NavBarProps) {
       ) : (
         <Box sx={{ flex: 1 }} />
       )}
-      {user && nationsId && availableNations.length > 1 && !compact && (
-        <Box sx={{ px: 2.5, pb: 1.5 }}>
-          <NationSwitcher nationsId={nationsId} availableNations={availableNations} compact={compact} />
-        </Box>
-      )}
       <Divider sx={{ borderColor: alpha("#fff", 0.1) }} />
       <Box sx={{ p: compact ? 1.25 : 2 }}>
-        {isLoading ? (
+        {!isLoaded ? (
           <CircularProgress size={20} color="inherit" />
         ) : user ? (
           <Stack spacing={1.5} sx={{ alignItems: compact ? "center" : "stretch" }}>
@@ -282,10 +238,10 @@ export default function NavBar({ enabledFeatures }: NavBarProps) {
               aria-label={compact ? "Visa profil" : undefined}
               sx={{ alignItems: "center", justifyContent: compact ? "center" : "flex-start", gap: 1.25, color: "inherit", textDecoration: "none" }}
             >
-              <Avatar src={user.picture} alt="" sx={{ width: 34, height: 34 }} />
+              <Avatar src={user.imageUrl} alt="" sx={{ width: 34, height: 34 }} />
               <Box sx={{ minWidth: 0, display: compact ? "none" : "block" }}>
                 <Typography variant="body2" noWrap sx={{ fontWeight: 600 }}>
-                  {user.name}
+                  {user.fullName}
                 </Typography>
                 <Typography variant="caption" sx={{ color: alpha("#fff", 0.58) }}>
                   Visa profil
@@ -294,18 +250,18 @@ export default function NavBar({ enabledFeatures }: NavBarProps) {
             </Stack>
             {compact ? (
               <Tooltip title="Logga ut" placement="right">
-                <IconButton component="a" href="/auth/logout" aria-label="Logga ut" color="inherit">
+                <IconButton onClick={() => handleSignOut()} aria-label="Logga ut" color="inherit">
                   <LogoutIcon />
                 </IconButton>
               </Tooltip>
             ) : (
-              <Button component="a" href="/auth/logout" color="inherit" variant="outlined" fullWidth>
+              <Button onClick={() => handleSignOut()} color="inherit" variant="outlined" fullWidth>
                 Logga ut
               </Button>
             )}
           </Stack>
         ) : (
-          <Button component="a" href="/auth/login" color="inherit" variant="outlined" fullWidth>
+          <Button component={Link} href="/sign-in" color="inherit" variant="outlined" fullWidth>
             Logga in
           </Button>
         )}

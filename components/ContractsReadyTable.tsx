@@ -1,6 +1,6 @@
 "use client";
 
-import { useUser } from "@auth0/nextjs-auth0";
+import { useAuth } from "@clerk/nextjs";
 import { useMemo, useState, useTransition, type ChangeEvent, type ReactNode } from "react";
 import DeleteIcon from "@mui/icons-material/Delete";
 import FileDownloadIcon from "@mui/icons-material/FileDownload";
@@ -37,7 +37,7 @@ import {
 import type { Apartment } from "@/lib/apartments";
 import ColumnVisibilityMenu from "@/components/ColumnVisibilityMenu";
 import { exportRowsToXlsx } from "@/lib/export-xlsx";
-import { ARCHIVE_ROLES, ROLES, hasAnyRole, hasRole } from "@/lib/roles";
+import { ARCHIVE_ROLES, ROLES, hasAnyRole, hasRole, normalizeRoles } from "@/lib/roles";
 import { useColumnVisibility } from "@/lib/use-column-visibility";
 
 type Props = {
@@ -147,10 +147,11 @@ function matchesSearch(apartment: Apartment, query: string): boolean {
 }
 
 export default function ContractsReadyTable({ apartments }: Props) {
-  const { user } = useUser();
-  const isEkonomi = hasRole(user, ROLES.EKONOMI);
-  const isHusforman = hasRole(user, ROLES.HUSFORMAN);
-  const canArchive = hasAnyRole(user, ARCHIVE_ROLES);
+  const { sessionClaims } = useAuth();
+  const roles = normalizeRoles(sessionClaims?.roles);
+  const isEkonomi = hasRole(roles, ROLES.EKONOMI);
+  const isHusforman = hasRole(roles, ROLES.HUSFORMAN);
+  const canArchive = hasAnyRole(roles, ARCHIVE_ROLES);
 
   const [isPending, startTransition] = useTransition();
   const [search, setSearch] = useState("");

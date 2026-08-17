@@ -1,15 +1,12 @@
-import { redirect } from "next/navigation";
 import Container from "@mui/material/Container";
 import Typography from "@mui/material/Typography";
-import { getCachedSession } from "@/lib/auth0";
+import { auth } from "@clerk/nextjs/server";
 import { getGmailToken } from "@/lib/gmail-tokens";
 import ProfileGmailSection from "@/components/email/ProfileGmailSection";
 
 export default async function ProfilPage() {
-  const session = await getCachedSession();
-  if (!session?.user) redirect("/auth/login");
+  const { userId } = await auth.protect();
 
-  const userId = session.user.sub as string;
   const token = await getGmailToken(userId);
 
   const gmailConnected = !!token;

@@ -30,6 +30,7 @@ import TablePagination from "@mui/material/TablePagination";
 import TableRow from "@mui/material/TableRow";
 import Typography from "@mui/material/Typography";
 import TemplateEditorDialog from "@/components/email/TemplateEditorDialog";
+import RequireSignedIn from "@/components/RequireSignedIn";
 
 interface MailTemplate {
   id: string;
@@ -89,6 +90,7 @@ export default function MallarPage() {
   }
 
   return (
+    <RequireSignedIn>
     <Container maxWidth={false} sx={{ py: { xs: 3, md: 4 } }}>
       <Stack direction="row" sx={{ justifyContent: "space-between", alignItems: "center", mb: 3, gap: 2 }}>
         <Typography variant="h4" component="h1">E-postmallar</Typography>
@@ -224,5 +226,6 @@ export default function MallarPage() {
         onSaved={load}
       />
     </Container>
+    </RequireSignedIn>
   );
 }

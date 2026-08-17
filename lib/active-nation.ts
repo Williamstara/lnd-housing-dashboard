@@ -1,82 +1,86 @@
 import "server-only";
 import { cache } from "react";
-import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
-import type { User } from "@auth0/nextjs-auth0/types";
-import { getAvailableNations } from "@/lib/nations";
+import { auth, currentUser } from "@clerk/nextjs/server";
+import { normalizeRoles } from "@/lib/roles";
 
-// docs/SAAS-READINESS-ROADMAP.md Tier 1.2 — lets an operator's Auth0
-// account belong to more than one nation (nationsID claim as an array,
-// external Auth0 Action change — see lib/nations.ts) and pick which one
-// they're currently working in, instead of assignNationsId's today-only
-// "move between nations" model. Separate file from lib/nations.ts (not
-// "server-only") specifically so cookies()/next/headers never end up in a
-// bundle NavBar.tsx (a client component) pulls in.
+// Clerk migration: nationsId now comes from Clerk's session token (a
+// nations_id claim added to the default session token via the org's
+// public_metadata -- see docs/DECISIONS.md), not Auth0's custom claim.
+// Clerk's own active-organization mechanism replaces the cookie-based
+// active-nation switching this file used to do by hand for multi-nation
+// operator accounts -- no real account has ever had more than one nation
+// (see NavBar.tsx's removed NationSwitcher), so that plumbing is gone
+// rather than ported; rebuild via Clerk's <OrganizationSwitcher /> if a
+// real multi-nation operator account is ever needed.
 //
-// A single-nation user — everyone today, until the Auth0 Action is changed
-// to emit an array — never touches the cookie at all (short-circuited
-// below), so this is a zero-behavior-change addition for the current app.
-const ACTIVE_NATION_COOKIE = "active-nations-id";
-
-// Never trusts the cookie blindly: only honored if it's actually one of the
-// user's real available nations (from their Auth0 claim), so a tampered or
-// stale cookie can't grant scope to a nation the user's claim doesn't
-// include — same "never trust nationsId from the client" posture as every
-// Server Action in this app.
+// This file has grown into "server-side reads of Clerk's session claims"
+// generally (getSessionRoles below too), not just nationsId -- kept in one
+// file rather than split, since both are the same auth() call.
 //
-// Wrapped in React's cache() — same rationale as lib/auth0.ts's
-// getCachedSession: a single request now calls this from layout.tsx,
-// page.tsx, and every lib/*.ts call's requirePermission, so without
-// caching this would reintroduce the exact N-redundant-calls-per-request
-// pattern that getCachedSession was added to fix. Keyed on the `user`
-// object reference, which is stable within one request because it always
-// comes from the same getCachedSession() call.
-export const getActiveNationsId = cache(
-  async (user: User | null | undefined): Promise<string | null> => {
-    const available = getAvailableNations(user);
-    if (available.length === 0) return null;
-    if (available.length === 1) return available[0];
-    const cookieStore = await cookies();
-    const active = cookieStore.get(ACTIVE_NATION_COOKIE)?.value;
-    return active && available.includes(active) ? active : available[0];
-  }
-);
+// Wrapped in React's cache() for the same reason lib/auth0.ts's
+// getCachedSession was -- a single request commonly calls this from
+// layout.tsx, a page.tsx, and every lib/permissions.ts requirePermission
+// call, so this dedupes those to one auth() call per request.
+export const getActiveNationsId = cache(async (): Promise<string | null> => {
+  const { sessionClaims } = await auth();
+  const value = sessionClaims?.nations_id;
+  return typeof value === "string" && value ? value : null;
+});
 
-// Server Action counterpart to lib/nations.ts's requireNationsId — throws
-// instead of returning null, for use inside "use server" actions.
-export async function requireActiveNationsId(user: User | null | undefined): Promise<string> {
-  const nationsId = await getActiveNationsId(user);
+// Server-side counterpart to the client's useAuth().sessionClaims?.roles
+// read (see NavBar.tsx) -- same claim, same normalizeRoles() extraction,
+// just via auth() instead of the client hook. Cached per request for the
+// same reason as getActiveNationsId above.
+export const getSessionRoles = cache(async (): Promise<string[]> => {
+  const { sessionClaims } = await auth();
+  return normalizeRoles(sessionClaims?.roles);
+});
+
+// The "is anyone signed in at all" check every actions.ts/route.ts file's
+// own requireUser()-style guard needs -- replaces reading Auth0's
+// session?.user truthiness. Cached per request for the same reason as
+// getActiveNationsId above.
+export const getCurrentUserId = cache(async (): Promise<string | null> => {
+  const { userId } = await auth();
+  return userId ?? null;
+});
+
+// Clerk migration counterpart to lib/roles.ts's old Auth0-based
+// getUserDisplayName -- for audit trails ("who pressed this button").
+// currentUser() is a heavier call than auth() (fetches the full user
+// record, not just token claims), so this is its own cached function
+// rather than folded into getCurrentUserId above.
+export const getCurrentUserDisplayName = cache(async (): Promise<string> => {
+  const user = await currentUser();
+  if (!user) return "Okänd användare";
+  const name = [user.firstName, user.lastName].filter(Boolean).join(" ").trim();
+  if (name) return name;
+  const email = user.primaryEmailAddress?.emailAddress ?? user.emailAddresses[0]?.emailAddress;
+  if (email) return email;
+  return user.id;
+});
+
+// For use inside "use server" Server Actions and Route Handlers -- throws
+// rather than redirecting, since those need an in-place error, not a
+// navigation.
+export async function requireActiveNationsId(): Promise<string> {
+  const nationsId = await getActiveNationsId();
   if (!nationsId) {
     throw new Error("Ditt konto saknar en nationsID. Kontakta administratören.");
   }
   return nationsId;
 }
 
-// Page-level counterpart — redirects instead of throwing, same shape as
-// lib/nations.ts's requireNationsIdOrRedirect.
-export async function requireActiveNationsIdOrRedirect(user: User | null | undefined): Promise<string> {
-  const nationsId = await getActiveNationsId(user);
+// Page-level counterpart -- proxy.ts already blocks any authenticated
+// request without a nationsID before it reaches a page, so this is
+// defense-in-depth: if it's ever hit anyway, redirect to a clean
+// explanation page instead of throwing (which would render Next's generic
+// error screen).
+export async function requireActiveNationsIdOrRedirect(): Promise<string> {
+  const nationsId = await getActiveNationsId();
   if (!nationsId) {
     redirect("/nationsid-saknas");
   }
   return nationsId;
-}
-
-// Called by the nation switcher (NavBar) via a thin Server Action wrapper.
-// Validates the requested nation is actually one of the user's own before
-// setting the cookie — never trusts client input for which nation to
-// switch into, even though it's just a UI convenience cookie, not itself an
-// authorization boundary (every read of nationsId is still re-derived from
-// this same validated path, never from client-supplied state directly).
-export async function setActiveNation(user: User | null | undefined, nationsId: string): Promise<void> {
-  const available = getAvailableNations(user);
-  if (!available.includes(nationsId)) {
-    throw new Error("Otillåten nation.");
-  }
-  const cookieStore = await cookies();
-  cookieStore.set(ACTIVE_NATION_COOKIE, nationsId, {
-    path: "/",
-    sameSite: "lax",
-    maxAge: 60 * 60 * 24 * 365,
-  });
 }

@@ -17,15 +17,14 @@ import {
   type BulkActionResult,
   type BulkUpsertResult,
 } from "@/lib/besiktningar";
-import { getCachedSession } from "@/lib/auth0";
-import { requireActiveNationsId } from "@/lib/active-nation";
+import { getCurrentUserId, requireActiveNationsId } from "@/lib/active-nation";
 import { requirePermission } from "@/lib/permissions";
 import { PERMISSIONS } from "@/lib/roles";
 
 async function requireUser(): Promise<string> {
-  const session = await getCachedSession();
-  if (!session?.user) throw new Error("Unauthorized");
-  return await requireActiveNationsId(session.user);
+  const userId = await getCurrentUserId();
+  if (!userId) throw new Error("Unauthorized");
+  return await requireActiveNationsId();
 }
 
 function revalidateBesiktningarPages() {

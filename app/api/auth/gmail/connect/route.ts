@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import crypto from "crypto";
-import { getCachedSession } from "@/lib/auth0";
+import { getCurrentUserId } from "@/lib/active-nation";
 
 export async function GET() {
-  const session = await getCachedSession();
-  if (!session?.user) return Response.json({ error: "Unauthorized" }, { status: 401 });
+  const userId = await getCurrentUserId();
+  if (!userId) return Response.json({ error: "Unauthorized" }, { status: 401 });
 
   const state = crypto.randomBytes(16).toString("hex");
   const cookieStore = await cookies();

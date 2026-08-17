@@ -27,35 +27,43 @@ this file describes *what exists*, not *how to write more of it*.
 
 ## Entry points
 
-- `app/layout.tsx` — root layout. Loads the Auth0 session
-  (`getCachedSession()`, `lib/auth0.ts` — a React `cache()`-wrapped
-  `auth0.getSession()`, so the many other calls to it elsewhere in one
-  request's render tree dedupe to one actual cookie decrypt), resolves the
-  active nation (`getActiveNationsId`, `lib/active-nation.ts`) and its
-  settings to know which nav entries/feature flags to show, wraps the app
-  in MUI's `AppRouterCacheProvider` + `ThemeProvider` (`lib/theme.ts`) +
-  `CssBaseline`, then Auth0's `Auth0Provider` (client-side session
-  context), then renders `NavBar` (`components/NavBar.tsx`, passed
+- `app/layout.tsx` — root layout. Resolves the active nation
+  (`getActiveNationsId`, `lib/active-nation.ts`, reading Clerk's
+  `nations_id` session claim) and its settings to know which nav
+  entries/feature flags to show, wraps the app in Clerk's `ClerkProvider`,
+  MUI's `AppRouterCacheProvider` + `ThemeProvider` (`lib/theme.ts`) +
+  `CssBaseline`, then renders `NavBar` (`components/NavBar.tsx`, passed
   `enabledFeatures`) and `{children}`.
 - `proxy.ts` (repository root) — Next.js 16's replacement for
   `middleware.ts`. Runs on every request matched by its `config.matcher`
   (everything except `_next/static`, `_next/image`, `favicon2.ico`, and
-  common image extensions). Responsibilities, in order:
-  1. `auth0.middleware(request)` — mounts `/auth/login`, `/auth/logout`,
-     `/auth/callback`, `/auth/profile`, `/auth/access-token`,
-     `/auth/backchannel-logout`, and keeps the session cookie fresh.
-  2. Skips the checks below for `/api/**`, `/auth/**`, `/nationsid-saknas`,
-     and `/admin` (see code comment for why each is excluded).
-  3. Redirects a logged-in user with no `nationsID` claim to
-     `/nationsid-saknas`.
-  4. Redirects a logged-in user whose *only* role is `vaktmastare` to
+  common image extensions). Wrapped in `clerkMiddleware()` (required for
+  Clerk's session syncing) but deliberately does **not** call
+  `auth.protect()` — Clerk deprecated middleware-based route protection in
+  favor of resource-based checks (see `docs/DECISIONS.md`'s "Auth0 → Clerk
+  migration" entry); each protected page calls `auth.protect()` itself.
+  What's left in `proxy.ts` is UX/business-rule routing only, both
+  independently re-enforced at the resource level too (defense in depth,
+  not the security boundary):
+  1. Redirects a signed-in user with no `nations_id` claim to
+     `/nationsid-saknas` — skipped for `/api/**`, `/admin`, `/sign-in`,
+     `/sign-up`, `/nationsid-saknas` (see code comment for why each is
+     excluded), and for anyone not signed in at all (their own
+     `auth.protect()` call in the page they land on handles that).
+  2. Redirects a signed-in user whose *only* role is `vaktmastare` to
      `/todo` (see `lib/roles.ts`'s `isRestrictedToTodo`).
-- `app/page.tsx` — the home page (`/`), behind
-  `auth0.withPageAuthRequired`. Shows a welcome header and `NavGrid`
+- `app/page.tsx` — the home page (`/`). Calls `await auth.protect()` as its
+  first line, then shows a welcome header and `NavGrid`
   (`app/_components/nav-grid.tsx`, built from `lib/nav-links.tsx`).
-- Every other feature route under `app/*/page.tsx` is also wrapped in
-  `auth0.withPageAuthRequired` and follows the same shape — see "Major
-  components" below.
+- Every other feature route under `app/*/page.tsx` also calls
+  `auth.protect()` as its first line and follows the same shape — see
+  "Major components" below. Two Client-Component pages that fetch their
+  data via API routes instead of server-side data fetching (`/mallar`,
+  `/planritningar`) can't call `auth.protect()` directly (server-only);
+  they're wrapped in `components/RequireSignedIn.tsx` instead (Clerk's
+  documented client-side equivalent — redirects a signed-out visitor,
+  their underlying API routes independently enforce the real auth check
+  either way).
 
 ## Major components (routes)
 
@@ -99,7 +107,10 @@ of its own — pure derived queries over `tenants`/`apartments`),
 `lib/statistik.ts` (pure aggregation over already-fetched arrays, no
 queries of its own), `lib/nation-settings.ts` (`nations` +
 `nation_role_permissions` — see below),
-`lib/app-users.ts` (talks to the Auth0 Management API, not the database).
+`lib/app-users.ts` (talks to Clerk's Backend SDK — `@clerk/nextjs/server`'s
+`clerkClient()` — not the database; a nation's Clerk Organization is looked
+up by matching its `public_metadata.nationsId`, not stored as a foreign
+key anywhere in Postgres).
 
 Also `server-only`, not tied to one table:
 - `lib/permissions.ts` — `requirePermission(permissionKey, errorMessage)`,
@@ -109,16 +120,17 @@ Also `server-only`, not tied to one table:
   the caller's active nationsId, fetches that nation's saved
   `nation_role_permissions` rows (React `cache()`-deduped per request), and
   checks against `lib/roles.ts`'s `hasPermission`.
-- `lib/active-nation.ts` — cookie-backed resolution of which nation a
-  multi-nation user (array-shaped nationsID claim — Tier 1.2) is currently
-  operating in: `getActiveNationsId`/`requireActiveNationsId`/
-  `requireActiveNationsIdOrRedirect`/`setActiveNation`. Deliberately kept
-  separate from `lib/nations.ts` (which stays client-safe) specifically so
-  `next/headers` never ends up in `NavBar.tsx`'s client bundle. Every
-  `page.tsx`/`actions.ts`/`app/api/**/route.ts` resolves nationsId through
-  this file now, not `lib/nations.ts`'s plain `requireNationsId`/
-  `requireNationsIdOrRedirect` directly (those still exist, used internally
-  by `lib/active-nation.ts` and by `lib/nations.ts`'s own pure helpers).
+- `lib/active-nation.ts` — server-only reads of Clerk's session claims
+  (`@clerk/nextjs/server`'s `auth()`/`currentUser()`, each wrapped in
+  React's `cache()` to dedupe the many calls one request's render tree
+  makes): `getActiveNationsId`/`requireActiveNationsId`/
+  `requireActiveNationsIdOrRedirect` (the `nations_id` claim),
+  `getSessionRoles` (the `roles` claim, `lib/roles.ts`'s
+  `normalizeRoles`-shaped), `getCurrentUserId`, `getCurrentUserDisplayName`.
+  No cookie, no multi-nation switching logic — Clerk's own active-
+  organization mechanism (native to Organizations) is what used to be
+  hand-rolled here before the Auth0→Clerk migration; see
+  `docs/DECISIONS.md`.
 
 Not server-only (imported by client components too):
 - `lib/table-columns.ts` — pure types + defaults + resolver helpers for
@@ -140,22 +152,19 @@ Not server-only (imported by client components too):
   `saveEnabledFeatures`, `saveCurrencyLocale`, `getNationRolePermissions`,
   `saveNationRolePermissions`) and re-exports the pure pieces so callers
   only need one import path server-side.
-- `lib/roles.ts` — reads the Auth0 roles claim (`hasRole`/`hasAnyRole`/
-  `getUserRoles`, used both in Server Components/Actions and client
-  components e.g. `NavBar`) and also now defines the permission model:
-  `PERMISSIONS` (the fixed set of role-gated actions),
-  `DEFAULT_PERMISSION_ROLES` (the hardcoded fallback — `LND`'s current
-  behavior, used when a nation has no saved `nation_role_permissions`
-  rows), and pure `hasPermission(user, permissionKey, savedRoles)`. Admin
-  itself is never routed through this table — `hasRole`'s superuser bypass
-  stays hardcoded, deliberately not nation-configurable.
-- `lib/nations.ts` — reads the Auth0 nationsID claim. `getNationsId`
-  returns the first available nation (string or array claim, either way);
-  `getAvailableNations` returns all of them. `requireNationsId`/
-  `requireNationsIdOrRedirect` are the pure single-nation guards; prefer
-  `lib/active-nation.ts`'s active-nation-aware equivalents in app code (see
-  above) — these still exist because `lib/active-nation.ts` is built on
-  top of them.
+- `lib/roles.ts` — pure functions over a plain `string[]` roles array
+  (`hasRole`/`hasAnyRole`/`isRestrictedToTodo`/`requireAdminOrRedirect`/
+  `normalizeRoles`), deliberately provider-agnostic (no Clerk/Auth0 import)
+  so it stays client-importable (`NavBar.tsx` et al. call it with an array
+  read from Clerk's client-side `useAuth().sessionClaims.roles`; server
+  call sites use `lib/active-nation.ts`'s `getSessionRoles()`). Also
+  defines the permission model: `PERMISSIONS` (the fixed set of role-gated
+  actions), `DEFAULT_PERMISSION_ROLES` (the hardcoded fallback — `LND`'s
+  current behavior, used when a nation has no saved
+  `nation_role_permissions` rows), and pure
+  `hasPermission(roles, permissionKey, savedRoles)`. Admin itself is never
+  routed through this table — `hasRole`'s superuser bypass stays hardcoded,
+  deliberately not nation-configurable.
 - `lib/nav-links.tsx` — the nav structure (`app/_components/nav-grid.tsx`,
   `components/NavBar.tsx`); each `NavLink` can carry a `featureKey` that
   hides it when a nation has that feature disabled.
@@ -167,8 +176,8 @@ Not server-only (imported by client components too):
 
 ## Data flow
 
-1. A route's `page.tsx` (Server Component, wrapped in
-   `auth0.withPageAuthRequired`) calls
+1. A route's `page.tsx` (Server Component) calls `await auth.protect()`
+   (`@clerk/nextjs/server`) as its first line, then
    `requireActiveNationsIdOrRedirect` (`lib/active-nation.ts`), then
    fetches everything the page needs in parallel via `Promise.all`,
    resolving admin-configured settings against `DEFAULT_*` fallbacks.
@@ -202,16 +211,20 @@ Only the parsed, already-validated JSON rows are sent to a Server Action.
 - **Every nation-scoped table has a `nations_id text references
   nations(nations_id)` column**, filtered explicitly in every query
   (`.eq("nations_id", nationsId)`) *and* independently enforced by Postgres
-  Row Level Security (`supabase/migrations/20260812231542_rls.sql`) — a
-  fail-closed backstop: a query that somehow omitted the filter would return
-  zero rows, not another tenant's data. `gmail_tokens` is the one exception,
-  scoped by `user_id` (Auth0 `sub`) instead — it's per-user, not per-nation.
-- RLS policies read `nations_id`/role claims out of `auth.jwt()`, populated
-  by forwarding the Auth0 ID token to Supabase's Data API via a Third-Party
-  Auth integration (`lib/supabase-server.ts`) — Auth0 remains the identity
-  system of record, Supabase never runs its own native auth flow. RLS
-  enforces tenant isolation only; role/permission checks stay entirely in
-  `app/*/actions.ts` (see `docs/DECISIONS.md` for why they weren't
+  Row Level Security (`supabase/migrations/20260812231542_rls.sql`, claim
+  path updated by `supabase/migrations/20260814020000_clerk_claims.sql`) —
+  a fail-closed backstop: a query that somehow omitted the filter would
+  return zero rows, not another tenant's data. `gmail_tokens` is the one
+  exception, scoped by `user_id` (Clerk's user ID — was Auth0's `sub`
+  before the migration; existing rows keyed on the old format would need
+  re-keying if any had existed, see `docs/DECISIONS.md`) instead — it's
+  per-user, not per-nation.
+- RLS policies read `nations_id`/`roles` claims out of `auth.jwt()`,
+  populated by forwarding Clerk's session token to Supabase's Data API via
+  a Third-Party Auth integration (`lib/supabase-server.ts`) — Clerk is the
+  identity system of record, Supabase never runs its own native auth flow.
+  RLS enforces tenant isolation only; role/permission checks stay entirely
+  in `app/*/actions.ts` (see `docs/DECISIONS.md` for why they weren't
   duplicated into RLS policies).
 - `todos.subtasks` (an embedded array in the old Mongo model) is normalized
   into a `todo_subtasks` child table with a real foreign key. The parent
@@ -246,23 +259,20 @@ Only the parsed, already-validated JSON rows are sent to a Server Action.
   null/absent means "everything enabled" / `"kr"` / `"sv-SE"` respectively,
   `LND`'s exact behavior today, same "saved ?? default" convention as every
   other `NationSettings` field.
-- The **active-nation cookie** (`active-nations-id`, set by
-  `lib/active-nation.ts`) is the one other piece of client-visible
-  persistent state besides `lib/use-column-visibility.ts` — but unlike that
-  one, it's read server-side (`next/headers`'s `cookies()`) to resolve
-  which of a multi-nation user's nations is "active" for data scoping, and
-  every read re-validates it against the user's real Auth0 claim rather
-  than trusting it blindly.
 
 ## APIs and external services
 
-- **Auth0** — authentication (`@auth0/nextjs-auth0` v4, `lib/auth0.ts`) and,
-  separately, the **Auth0 Management API** via M2M client credentials
-  (`lib/app-users.ts`) for the admin page's user/role/nationsID assignment
-  UI (list users, assign roles, assign nationsID, delete user).
-- **A second, independent Auth0 tenant** for laundry-room account
-  provisioning (`lib/laundry-account.ts`, `LAUNDRY_AUTH0_*` env vars) — not
-  the same tenant used for app login. Creates/replaces a laundry-system user
+- **Clerk** — authentication and identity (`@clerk/nextjs`, `proxy.ts`,
+  `lib/active-nation.ts`) and, separately, the **Clerk Backend SDK**
+  (`clerkClient()`) for the admin page's user/role/nationsID assignment UI
+  (`lib/app-users.ts`: list Organization members, assign a user to a
+  nation's Organization, assign roles via `publicMetadata`, delete user).
+  Nations map 1:1 to Clerk Organizations (matched by
+  `public_metadata.nationsId`); see `docs/DECISIONS.md`.
+- **A separate Auth0 tenant** for laundry-room account provisioning
+  (`lib/laundry-account.ts`, `LAUNDRY_AUTH0_*` env vars) — entirely
+  unrelated to app login (which is Clerk, above); untouched by the
+  Auth0→Clerk migration. Creates/replaces a laundry-system user
   account per tenant, keyed by lägenhetsnummer, with a building code
   (`GH`/`NH`/`FH`/`A`–`D`) resolved from the apartment's `fastighet` string.
   `Needs verification`: as of the last check in this repo's history, the
@@ -279,40 +289,49 @@ Only the parsed, already-validated JSON rows are sent to a Server Action.
   `gmail_tokens`; outgoing mail is sent through a `nodemailer` transport
   configured with those OAuth2 credentials (`app/api/send-mail/route.ts`).
 - **Supabase** — Postgres database, Row Level Security, and Storage (see
-  "State and persistence" above), plus Third-Party Auth (accepts Auth0's ID
-  token as a bearer token, verified against Auth0's JWKS — configured in the
-  Supabase dashboard, not version-controlled in this repo). Applying schema
-  migrations or bypassing RLS for admin/bulk scripts requires a direct
-  Postgres connection (`SUPABASE_DB_URL`) or the secret key
-  (`SUPABASE_SECRET_KEY`) — normal app request paths use only the
+  "State and persistence" above), plus Third-Party Auth (accepts Clerk's
+  session token as a bearer token, verified against Clerk's JWKS —
+  configured in the Supabase dashboard, not version-controlled in this
+  repo). Applying schema migrations or bypassing RLS for admin/bulk scripts
+  requires a direct Postgres connection (`SUPABASE_DB_URL`) or the secret
+  key (`SUPABASE_SECRET_KEY`) — normal app request paths use only the
   publishable key (`NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`) plus the
-  forwarded Auth0 token.
+  forwarded Clerk token. `Needs verification`: `service_role` (the secret
+  key's Postgres role) appears to be missing `SELECT` grants on at least
+  `gmail_tokens` and `todos` — found via a permission-denied error while
+  checking migration data, not yet fixed; see `docs/TODO.md`.
 
 ## Authentication and authorization
 
-- Login/session: Auth0 (`lib/auth0.ts`). A custom `beforeSessionSaved` hook
-  is required to keep two custom ID-token claims from being stripped by the
-  SDK's default allowlist — see the code comment there. Without it, roles
-  and nationsID silently disappear from `session.user`.
-- **Multi-tenancy claim**: `NATIONS_ID_CLAIM` (`lib/nations.ts`) —
-  `https://lnd-housing-dashboard/nationsID`. Set by an Auth0 Action (not in
-  this repo), as either a single string (every user today) or an array (an
-  operator account managing more than one nation — added 2026-08-13, no
-  real user has this yet since the Action hasn't been changed to emit it).
-  `lib/nations.ts`'s `getNationsId`/`getAvailableNations` are the pure,
-  client-safe reads. App code resolves the *active* nation (for a
-  multi-nation user, whichever one their session cookie says, always
-  re-validated against their real claim) via `lib/active-nation.ts`'s
-  `getActiveNationsId`/`requireActiveNationsId`/
-  `requireActiveNationsIdOrRedirect` — every `page.tsx`/`actions.ts`/
-  `app/api/**/route.ts` uses these, not `lib/nations.ts`'s plain
-  `requireNationsId`/`requireNationsIdOrRedirect` directly.
-- **Roles claim**: `ROLES_CLAIM` (`lib/roles.ts`) —
-  `https://lnd-housing-dashboard/roles`. Known roles: `ekonomi`, `admin`,
-  `husvd`, `husforman`, `vaktmastare`. `admin` satisfies every `hasRole`
-  check (superuser). `vaktmastare` is access-*restricting*
-  (`isRestrictedToTodo`) — enforced only in `proxy.ts` and reflected in nav
-  visibility, not re-checked on every page.
+- Login/session: Clerk (`@clerk/nextjs`, `proxy.ts`). `proxy.ts` wraps
+  everything in `clerkMiddleware()` for session syncing, but does **not**
+  gate access itself — Clerk deprecated middleware-based route protection
+  (see `docs/DECISIONS.md`); every protected `page.tsx` calls
+  `await auth.protect()` itself as its first line instead (see "Entry
+  points" above).
+- **Multi-tenancy claim**: `nations_id`, a plain top-level session-token
+  claim (Clerk instance config: `session.claims.nations_id =
+  "{{org.public_metadata.nationsId}}"`, not version-controlled in this
+  repo — configured via `clerk config patch`, same caveat as the old Auth0
+  Action). Each nation is a Clerk Organization; `nationsId` lives in that
+  Organization's `public_metadata`, set when the Organization is created
+  (`lib/app-users.ts`'s `findOrCreateNationOrg`, called from
+  `lib/nation-settings.ts`'s `createNation`). App code reads it via
+  `lib/active-nation.ts`'s `getActiveNationsId`/`requireActiveNationsId`/
+  `requireActiveNationsIdOrRedirect` server-side, or the client's
+  `useAuth().sessionClaims.nations_id` directly (`NavBar.tsx`). No cookie,
+  no custom "active nation" logic — a user's active Organization (and
+  therefore active nation) is Clerk's own native session state.
+- **Roles claim**: `roles`, also a plain top-level session-token claim
+  (`session.claims.roles = "{{user.public_metadata.roles}}"`) — a per-user
+  grant, not a per-Organization-membership one (deliberately not using
+  Clerk's Organization custom-roles feature, which needs a paid add-on
+  past its two free defaults — see `docs/DECISIONS.md`). Known roles:
+  `ekonomi`, `admin`, `husvd`, `husforman`, `vaktmastare`
+  (`lib/roles.ts`'s `ROLES`). `admin` satisfies every `hasRole` check
+  (superuser). `vaktmastare` is access-*restricting* (`isRestrictedToTodo`)
+  — enforced only in `proxy.ts` and reflected in nav visibility, not
+  re-checked on every page.
 - **Permission model** (added 2026-08-13): which role can do what, beyond
   the coarse role check above, is now per-nation-configurable rather than
   hardcoded per action. `lib/roles.ts`'s `PERMISSIONS` enumerates the fixed
@@ -323,9 +342,11 @@ Only the parsed, already-validated JSON rows are sent to a Server Action.
   `admin` itself is never routed through this table — that bypass stays
   hardcoded in `hasRole`, deliberately not nation-configurable (a nation
   shouldn't be able to grant itself cross-tenant superuser access).
-- Page-level guards: `auth0.withPageAuthRequired` (must be logged in) +
-  `requireActiveNationsIdOrRedirect` (must have a nationsID) +, for
-  admin-only pages, `requireAdminOrRedirect`.
+- Page-level guards: `await auth.protect()` (must be logged in, first line
+  of every protected `page.tsx`) + `requireActiveNationsIdOrRedirect` (must
+  have a nationsID) +, for admin-only pages, `requireAdminOrRedirect`. Two
+  Client-Component pages that can't call `auth.protect()` server-side use
+  `components/RequireSignedIn.tsx` instead (see "Entry points" above).
 - Action-level guards: `lib/permissions.ts`'s `requirePermission(permissionKey,
   errorMessage)` is the single shared guard for anything gated by the
   permission model above — it replaced ~10 independently hand-written
@@ -346,17 +367,24 @@ Only the parsed, already-validated JSON rows are sent to a Server Action.
 ## Configuration and environment variables (names only)
 
 See `.env.local.example` and the "Security and data-handling rules" section
-of `AGENTS.md` for the full, verified list. Grouped by service: Auth0 app
-login (`APP_BASE_URL`, `AUTH0_DOMAIN`, `AUTH0_CLIENT_ID`,
-`AUTH0_CLIENT_SECRET`, `AUTH0_SECRET`), Auth0 Management API
-(`AUTH0_M2M_CLIENT_ID`, `AUTH0_M2M_CLIENT_SECRET`), Supabase
-(`NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` — used
-in normal app request paths; `SUPABASE_DB_URL`, `SUPABASE_SECRET_KEY` —
-admin/migration only, never used inside a Server Action or Route Handler),
-Gmail (`GMAIL_CLIENT_ID`, `GMAIL_CLIENT_SECRET` — **not** currently in
-`.env.local.example`, a verified documentation gap), laundry Auth0 tenant
-(`LAUNDRY_AUTH0_DOMAIN`, `LAUNDRY_AUTH0_MGMT_CLIENT_ID`,
-`LAUNDRY_AUTH0_MGMT_CLIENT_SECRET`, `LAUNDRY_AUTH0_CONNECTION`).
+of `AGENTS.md` for the full, verified list. Grouped by service: Clerk
+(`NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`, `CLERK_SECRET_KEY`,
+`NEXT_PUBLIC_CLERK_SIGN_IN_URL`, `NEXT_PUBLIC_CLERK_SIGN_IN_FALLBACK_REDIRECT_URL`,
+`NEXT_PUBLIC_CLERK_SIGN_UP_URL`, `NEXT_PUBLIC_CLERK_SIGN_UP_FALLBACK_REDIRECT_URL`
+— written by `clerk init`), Supabase (`NEXT_PUBLIC_SUPABASE_URL`,
+`NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` — used in normal app request paths;
+`SUPABASE_DB_URL`, `SUPABASE_SECRET_KEY` — admin/migration only, never used
+inside a Server Action or Route Handler), Gmail (`GMAIL_CLIENT_ID`,
+`GMAIL_CLIENT_SECRET` — **not** currently in `.env.local.example`, a
+verified documentation gap), laundry Auth0 tenant (`LAUNDRY_AUTH0_DOMAIN`,
+`LAUNDRY_AUTH0_MGMT_CLIENT_ID`, `LAUNDRY_AUTH0_MGMT_CLIENT_SECRET`,
+`LAUNDRY_AUTH0_CONNECTION` — unrelated to app login, see "APIs and external
+services" above). `APP_BASE_URL` is still read, just no longer for Auth0 —
+`app/api/auth/gmail/callback/route.ts`/`connect/route.ts` use it to build
+the Gmail OAuth redirect URI. The six `AUTH0_*`/`AUTH0_M2M_*` app-login
+variables from the pre-Clerk setup are no longer read by any code as of
+the Auth0→Clerk migration but may still be present in `.env.local` —
+harmless if left, safe to remove.
 
 ## Error handling
 
@@ -421,14 +449,17 @@ held open per server instance.
   see "APIs and external services" above and `docs/TODO.md`. Verified
   broken for any fastighet other than the one whose lookup has a
   string-`.includes()` fallback.
-- The Auth0 Action that sets the `nationsID`/`roles` custom claims is not
-  version-controlled — it can only be inspected/changed in the Auth0
-  dashboard, and its exact current script is `Needs verification` from the
-  repo alone (code comments document the *expected* shape, not a guarantee
-  it matches what's actually deployed in Auth0). It also does not yet emit
-  an array-shaped `nationsID` for any user — `lib/nations.ts`'s
-  multi-nation support (see "Authentication and authorization") exists in
-  the app but has never been exercised by a real session.
+- Clerk's session-token claim customization (`session.claims.nations_id`/
+  `.roles`) is not version-controlled — it can only be inspected/changed
+  via `clerk config pull`/`clerk config patch` or the Clerk dashboard, not
+  from a file in this repo (same class of gap the old Auth0 Action had).
+  Multi-nation support (a user belonging to more than one Organization) is
+  no longer implemented in-app at all — the Auth0-era hand-rolled
+  cookie-based active-nation switcher was deliberately removed rather than
+  ported during the Auth0→Clerk migration, since it had never been
+  exercised by a real session; rebuild via Clerk's native
+  `<OrganizationSwitcher />` if a real multi-nation operator account is
+  ever needed (see `docs/DECISIONS.md`).
 - Nation-aware currency/locale formatting (`lib/table-columns.ts`'s
   `getCurrency`/`getLocale`/`formatCurrency`) is only threaded through
   `StatistikOverview.tsx`, `ApartmentFormDialog.tsx`,

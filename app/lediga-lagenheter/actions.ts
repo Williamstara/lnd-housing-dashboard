@@ -1,11 +1,10 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { getCachedSession } from "@/lib/auth0";
-import { requireActiveNationsId } from "@/lib/active-nation";
+import { getCurrentUserDisplayName, getCurrentUserId, requireActiveNationsId } from "@/lib/active-nation";
 import { getFastighetNamn } from "@/lib/fastigheter";
 import { requirePermission } from "@/lib/permissions";
-import { PERMISSIONS, getUserDisplayName } from "@/lib/roles";
+import { PERMISSIONS } from "@/lib/roles";
 import {
   archiveByLedigFrom,
   assignTenantAndSendToContract,
@@ -37,11 +36,11 @@ import {
 type Actor = { nationsId: string; userName: string };
 
 async function requireUser(): Promise<Actor> {
-  const session = await getCachedSession();
-  if (!session?.user) {
+  const userId = await getCurrentUserId();
+  if (!userId) {
     throw new Error("Unauthorized");
   }
-  return { nationsId: await requireActiveNationsId(session.user), userName: getUserDisplayName(session.user) };
+  return { nationsId: await requireActiveNationsId(), userName: await getCurrentUserDisplayName() };
 }
 
 async function requireEkonomiRole(): Promise<Actor> {

@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { getCachedSession } from "@/lib/auth0";
+import { getCurrentUserId, getSessionRoles } from "@/lib/active-nation";
 import { ROLES, hasRole } from "@/lib/roles";
 import { assignNationsId, assignRoles, deleteUser, getAvailableRoles, type AppRole } from "@/lib/app-users";
 import {
@@ -26,8 +26,9 @@ import {
 } from "@/lib/nation-settings";
 
 async function requireAdmin(): Promise<void> {
-  const session = await getCachedSession();
-  if (!session?.user || !hasRole(session.user, ROLES.ADMIN)) {
+  const userId = await getCurrentUserId();
+  const roles = await getSessionRoles();
+  if (!userId || !hasRole(roles, ROLES.ADMIN)) {
     throw new Error("Endast administratörer har åtkomst.");
   }
 }

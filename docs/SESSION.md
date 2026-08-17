@@ -5,175 +5,137 @@ milestone changes; durable reasoning belongs in `docs/DECISIONS.md`.
 
 ## Current milestone
 
-**Complete (implementation + static verification).** Full implementation of
-`docs/SAAS-READINESS-ROADMAP.md`'s "configuration infrastructure" scope,
-following a plan-mode session that re-audited the roadmap with `graphify`
-and then discussed scope directly with the user (see
-`docs/DECISIONS.md`'s "SaaS-readiness roadmap: build configuration
-infrastructure now, defer the two biggest architectural bets" entry for the
-full reasoning). This is a separate, later milestone from the previous
-Auth0/Supabase performance-audit session (summarized below it in this same
-file since they landed close together and share validation state).
+**Complete, live-verified in a real browser.** Post-Clerk-migration follow-up:
+added a real public landing page at `/` for signed-out visitors (explains the
+app, "Logga in" CTA), since the prior state simply redirected `/` straight
+into Clerk's `/sign-in` widget rendered inside the full dashboard chrome
+(NavBar sidebar) — the user described this as "still a skeleton page of the
+app". See `docs/DECISIONS.md`'s "Public landing page" entry for the layout
+approach and why `NavBar` had to move out of the always-on root layout.
+
+## Previous milestone
+
+**Complete (implementation + live-verified in a real browser, not just
+statically).** Migrated authentication off Auth0 onto Clerk — user-initiated
+(future per-MAU pricing, and Clerk Organizations map naturally onto this
+app's per-`nationsID` multi-tenant model). This is a separate, later
+milestone from the SaaS-readiness and Mongo→Supabase milestones summarized
+below; see `docs/DECISIONS.md`'s "Auth0 → Clerk migration" entry for the
+full reasoning behind every non-obvious call made this session.
 
 ## User problem being solved
 
-Several real Swedish student nations are now interested in this app, beyond
-`LND`. The user's explicit goal: as little as possible hardcoded between
-nations, configured in the admin dashboard instead, with actual per-nation
-workflow differences worked out through conversation with each nation
-rather than guessed at in code. Two roadmap items (Tier 1.1 property
-hierarchy, Tier 3.1 workflow state machine) were explicitly *not* built
-this session for exactly that reason — see the DECISIONS.md entry above.
+The user wanted to move off Auth0 before this repo (and a second, related
+repo with the same nationID-per-tenant shape) grows past the point where
+Auth0's steeper per-user overage pricing starts to matter, and to adopt
+Clerk Organizations as a cleaner fit for the existing multi-tenant model
+than the hand-rolled Auth0-claim approach. This repo was the deliberate
+pilot — explicitly the smaller of the two apps by user count.
 
-## Implemented scope (6 batches, all complete)
+## Implemented scope (6 phases, all complete)
 
-1. **Roadmap re-audit + doc updates.** Graphify-assisted sweep found two
-   gaps: Tier 6.2's localization scope was undercounted ~7x (40 sites/18
-   files, not "6+"), and a new Tier 3.4 (duplicated Excel cell-parsing
-   helpers, already known in `docs/ARCHITECTURE.md` but never carried into
-   the roadmap). Both added to `docs/SAAS-READINESS-ROADMAP.md`.
-2. **Batch 1 — Role-guard cleanup + per-nation permission model** (Tier 2.1,
-   all 3 steps). New `nation_role_permissions` table + RLS
-   (`supabase/migrations/20260813140000_nation_role_permissions.sql`,
-   applied). `lib/roles.ts` gained `PERMISSIONS`/`DEFAULT_PERMISSION_ROLES`/
-   `hasPermission`; new `lib/permissions.ts`'s `requirePermission()`
-   replaces the ~10 independently hand-written `requireXRole()` functions
-   across `app/*/actions.ts`. New "Behörigheter" tab in `/admin`. A nation
-   with no saved rows behaves exactly like `LND` does today (verified via
-   the fallback logic).
-3. **Batch 2 — Multi-nation support for the operator** (Tier 1.2).
-   `lib/nations.ts`'s `getNationsId`/new `getAvailableNations` handle an
-   array-shaped nationsID claim (backward-compatible — every user today has
-   a string claim, unaffected). New `lib/active-nation.ts` (server-only,
-   kept separate from `lib/nations.ts` specifically so `next/headers` never
-   reaches `NavBar.tsx`'s client bundle) — cookie-backed active-nation
-   resolution, always re-validated against the user's real claim. Nation
-   switcher in `NavBar.tsx` (invisible until a real array claim exists — no
-   Auth0 Action change has been made yet, that's external to this repo).
-   Swept all 11 `page.tsx` files, every `actions.ts` guard, `lib/permissions.ts`,
-   and all 9 `app/api/**/route.ts` handlers onto the active-nation-aware
-   path.
-4. **Batch 3 — Feature flags** (Tier 3.2 + 5.2's flag half + 7.1).
-   `enabled_features` column on `nations`
-   (`supabase/migrations/20260813150000_nation_features.sql`, applied).
-   `FEATURES`/`isFeatureEnabled` in `lib/table-columns.ts`. Gates `/epost`+
-   `/mallar` nav entries, the laundry-account buttons
-   (`TenantsTable`/`AndrahandsgasterTable`), and the key-handover toggles
-   (`ApartmentsTable`). New "Funktioner" tab in `/admin`.
-5. **Batch 4 — Admin config coverage** (Tier 4.1 + 4.2). `TableKey` extended
-   to `tenants`/`andrahandsgaster`/`arkiv`/`uppsagning`/`todo`, each with a
-   `DEFAULT_*_COLUMNS` array and a `ColumnConfigEditor` instance (new
-   `allowCustomFields` prop, off for these 5 since none of their row types
-   has a `custom` bag). `ApartmentFormDialog`/`RentalObjectFormDialog` now
-   respect the same column config (hidden fields disappear from the
-   add/edit form too). **`TenantFormDialog`/`AndrahandsgastFormDialog`
-   deliberately left unwired** — their server-side sanitizers blanket-require
-   every field non-blank, so client-side field-hiding alone would make
-   every save with a hidden field silently fail; needs the server check
-   fixed too, tracked in `docs/TODO.md`.
-6. **Batch 5 — Currency & locale** (Tier 6.1 + 6.2, scoped). `currency`/
-   `locale` columns on `nations`
-   (`supabase/migrations/20260813160000_nation_currency_locale.sql`,
-   applied). `getCurrency`/`getLocale`/`formatCurrency`/
-   `formatCurrencyWithUnit` in `lib/table-columns.ts`. Wired through the
-   roadmap's literal named examples (`StatistikOverview.tsx`,
-   `ApartmentFormDialog.tsx`, `RentalObjectFormDialog.tsx`) plus their host
-   tables and `MissedRentTable.tsx`. **Deliberately not threaded** through
-   ~6 more bare-formatter files or the 26 Swedish-locale search/sort sites
-   — every nation in discussion is Swedish/SEK, so near-zero near-term
-   value for real mechanical cost; documented in the roadmap for later.
-7. **Batch 6 — Excel cell-parser consolidation** (Tier 3.4, scoped
-   narrower than originally written). Only `cellStr` was actually
-   byte-identical across all 4 importer dialogs — now in
-   `lib/table-columns.ts`. `cellNum`/`cellDate`/besiktningar's
-   `parseNumber`/`formatDateCell` turned out to have different signatures
-   and, for besiktningar, real importer-specific logic (merged-cell
-   inheritance, YYMMDD fallback) — left local rather than force a
-   premature shared abstraction. Verified this distinction by reading each
-   file, not by assuming from matching function names.
+1. **Phase 1 — Install & verify Clerk standalone.** `clerk init` scaffolded
+   `@clerk/nextjs`; `clerk init`'s own edits to `app/layout.tsx` (mangled
+   indentation) and the scaffolded sign-in/sign-up pages (Tailwind classes,
+   against this repo's MUI-only convention) were hand-reconciled rather
+   than accepted as-is. Verified via a real `/sign-up` render in the
+   browser before proceeding.
+2. **Phase 2 — Org/tenant model.** Nations map to Clerk Organizations via
+   `public_metadata.nationsId`; `nations_id` exposed as a session-token
+   claim. `lib/supabase-server.ts` switched Supabase's Third-Party Auth
+   bearer token from Auth0's ID token to Clerk's session token. New RLS
+   migration (`20260814020000_clerk_claims.sql`) re-pointing every
+   tenant-isolation policy's claim path. Verified end-to-end with a real
+   Clerk token against the live Supabase REST API (correct row returned,
+   not an empty/anon-fallback result) before trusting it.
+3. **Phase 3 — Roles.** `roles` exposed as a session-token claim from
+   `user.publicMetadata.roles`. `lib/roles.ts` rewritten to pure
+   `string[]`-based checks (provider-agnostic, still client-importable).
+4. **Phase 4 — Admin tooling.** `lib/app-users.ts` fully rewritten against
+   Clerk's Backend SDK (was Auth0's Management API) — verified against the
+   live Clerk API via a throwaway script (deleted after) before trusting
+   it, not just type-checked.
+5. **Phase 5 — Auth0 removal.** `@auth0/nextjs-auth0` uninstalled,
+   `lib/auth0.ts` deleted, all 15 protected pages converted from
+   `auth0.withPageAuthRequired` to Clerk's `await auth.protect()`.
+   Live-verified in a real browser: home page, `/admin` (both tabs),
+   `/besiktningar` (55 real rows through the full Clerk→RLS→Supabase
+   chain) — zero console errors.
+6. **Phase 6 — Deprecation fix + data migration.** Mid-session, Clerk
+   flagged `createRouteMatcher`-in-middleware as deprecated (security
+   reasoning: middleware can be bypassed at the framework level; Server
+   Actions are invoked by ID, not path). Migrated to the current
+   resource-based pattern (`auth.protect()` moved into every page;
+   `proxy.ts` kept only for session syncing + non-auth UX redirects) —
+   confirmed via the actual migration guide fetched live, not memory.
+   Data-migration check: `gmail_tokens` had zero rows for the real user
+   (nothing to re-key); `todos.tilldelad_till` had 3 rows pointing at a
+   different, not-yet-Clerk-signed-up person — left as-is per the user's
+   explicit decision.
 
 ## Validation status
 
-- `npx tsc --noEmit`: clean after every batch.
-- `npm run lint`: unchanged baseline (7 `react-hooks/set-state-in-effect`
-  errors + 1 unused-arg warning) after every batch — verified explicitly
-  each time, not assumed.
-- All 3 new migrations applied to the live Supabase project and confirmed
-  via `supabase migration list` / a fresh `db push`.
-- Dev server (already running across sessions, `/tmp/lnd-dev-server.log`)
-  hot-reloaded every change; every route touched this session returns the
-  expected `307` (redirect to login, unauthenticated) with no new server
-  errors. One unrelated `/planritningar` 500 (`JWT expired`) appeared from
-  a stale browser session's expired token — not caused by, or related to,
-  any change this session; `/planritningar` was never touched.
-- **Not done**: a live authenticated pass (real login, exercising the new
-  admin tabs, a real Excel import to confirm the batched-write fallback
-  behavior). See `docs/TODO.md`'s "Next" section — this needs the user
-  present since it touches real `LND` data and can't be exercised via curl.
+- `npx tsc --noEmit`: clean after every phase.
+- `npm run lint`: at (and briefly better than) the documented baseline
+  throughout — 7 pre-existing `react-hooks/set-state-in-effect` errors, 0
+  warnings (the old `lib/auth0.ts` unused-arg warning is gone, that file no
+  longer exists).
+- Live-verified repeatedly in a real Chrome browser via `claude-in-chrome`,
+  not just curl/tsc: real sign-up, real sign-in, home page, `/admin` (both
+  tabs), `/besiktningar` (real data), `/mallar` (the `RequireSignedIn`
+  client-wrapper path). Console checked for errors at each step.
+- Three real bugs found and fixed mid-migration, not just "it compiled":
+  (1) a JWT-template vs. session-claims mistake, self-corrected before
+  relying on it; (2) `proxy.ts` blocking `/sign-in`/`/sign-up` themselves
+  (lockout, since nationsID now depends on having a Clerk session);
+  (3) the `createRouteMatcher` deprecation.
+- One pre-existing, unrelated bug found and flagged, not fixed this
+  session: `service_role` missing `SELECT` grants on `gmail_tokens`/
+  `todos` — see `docs/TODO.md`.
 
 ## Acceptance criteria
 
-- [x] Roadmap re-audited with graphify; 2 new findings added.
-- [x] Batch 1 — permission model, zero behavior change for `LND` by default.
-- [x] Batch 2 — multi-nation support, zero behavior change for single-nation
-      users (everyone today).
-- [x] Batch 3 — feature flags, zero behavior change when unset (everything
-      enabled by default).
-- [x] Batch 4 — 5 more tables get admin column config; 2 of 4 form dialogs
-      respect it (2 correctly deferred, documented why).
-- [x] Batch 5 — currency/locale infrastructure + roadmap's named examples
-      wired (rest deliberately scoped out, documented why).
-- [x] Batch 6 — Excel parser consolidation (scoped to what was genuinely
-      duplicated).
-- [x] `npx tsc --noEmit` and `npm run lint` clean against the baseline,
-      verified after every single batch, not just at the end.
-- [ ] Live authenticated verification (see "Validation status" above).
+- [x] Phase 1 — Clerk installed, independently verified.
+- [x] Phase 2 — org/tenant model, RLS bridge, live-verified against
+      Supabase.
+- [x] Phase 3 — roles ported, pure/provider-agnostic.
+- [x] Phase 4 — admin tooling rewritten, live-verified against Clerk.
+- [x] Phase 5 — Auth0 fully removed, live-verified in a real browser.
+- [x] Phase 6 — deprecation warning resolved via Clerk's current
+      documented pattern; data-migration check complete (nothing to
+      migrate; one item deliberately deferred per user decision).
+- [x] `npx tsc --noEmit` and `npm run lint` clean against baseline,
+      verified after every phase.
 
 ## Out-of-milestone notes
 
-- Mid-session, a chained `git stash && npm run lint && git stash pop`
-  command timed out during the `lint` step, leaving the entire session's
-  work (Batches 1-3 at that point) sitting in the stash instead of the
-  working tree. Caught immediately, `git stash pop` run separately,
-  verified restored correctly via `tsc`/lint/dev-server checks before
-  continuing. Avoid chaining `git stash` with slow commands in future
-  sessions — stash and pop as separate, quick operations.
-- Carried over from the earlier performance-audit milestone, still
-  unresolved: MongoDB Atlas database user (password printed to tool output
-  during the original Mongo→Supabase migration) should be rotated/deleted
-  if that hasn't happened yet; a dev server has been running in the
-  background across multiple sessions now — check whether it's still
-  needed.
+- The Clerk-side setup (org creation, session-claims config, JWT-template
+  cleanup, role/nationsId metadata) was done via the `clerk` CLI
+  (`npx clerk ...`, global install failed on this machine due to npm
+  permissions — `npx` worked fine as the fallback), with `--dry-run`
+  previewed before every mutation against the live Clerk app.
+- `npm uninstall` while the dev server was still running left Turbopack's
+  module cache in a bad state (one cold 404 on `/`) — resolved by killing
+  the server, clearing `.next/`, and restarting clean. Not a code bug;
+  avoid uninstalling packages with a dev server live in future sessions.
 
 ---
 
-# Previous milestone (same day, earlier session): Auth0/Supabase performance audit
+# Previous milestones (earlier sessions, summarized)
 
-**Complete.** Performance audit of Auth0/Supabase call patterns, requested
-after the Mongo→Supabase migration to check for unnecessary calls to either
-service before real traffic exists to expose them. Investigated using
-`graphify` plus direct source reads; cross-referenced against the SaaS
-roadmap, but every roadmap item investigated there turned out to be a
-correctness/maintainability concern rather than a performance driver — this
-milestone implemented four independently-found issues instead:
-
-1. **`auth0.getSession()` deduped per request** via new `getCachedSession`
-   (`lib/auth0.ts`, React `cache()`-wrapped) — cut a single page load's
-   redundant session-cookie decrypts from ~7 to ~2. See
-   `docs/DECISIONS.md`'s corresponding entry.
-2. **Bulk-write batching** for the 2 of 5 bulk importers that actually
-   needed it (`bulkUpsertApartments`, `bulkUpsertBesiktningar`) — chunked
-   into batches of 50 with per-row fallback on chunk failure. The other 3
-   were already correctly batched; an initial grep-based assumption that
-   all 5 needed fixing was caught and corrected before any code was
-   touched.
-3. **`importApartmentsFromExcelAction`** no longer re-fetches the fastighet
-   list once per row.
-4. **Realtime-client construction overhead** — investigated, not fixed (no
-   clean way to disable it in the installed `@supabase/supabase-js`
-   version); documented rather than worked around.
-
-Validation: `tsc`/lint clean, batching logic verified with an isolated
-non-network throwaway script (deleted after), dev server confirmed
-compiling. Live authenticated end-to-end verification was not done in that
-session either — folded into this session's "Next step" above.
+- **SaaS-readiness configuration infrastructure** (2026-08-13) — per-nation
+  permission model, multi-nation operator support (the array-shaped-claim
+  half was never exercised and was later deleted during the Clerk
+  migration above), feature flags, admin column config extended to 5 more
+  tables, currency/locale settings (scoped), Excel cell-parser
+  consolidation (scoped). Full detail in git history; durable decisions in
+  `docs/DECISIONS.md`.
+- **Auth0/Supabase performance audit** (2026-08-13) — `getCachedSession()`
+  request-level caching (the caching *pattern* carried forward into
+  `lib/active-nation.ts`'s Clerk-based equivalents above; the Auth0-specific
+  function itself is gone), bulk-import write batching, an apartments-importer
+  N+1 fix.
+- **MongoDB → Supabase migration** (2026-08-12 to 2026-08-13) — full
+  migration, documented in `docs/DECISIONS.md` and this repo's memory
+  files. Its "Auth0 stays" decision is superseded by the Clerk migration
+  above.

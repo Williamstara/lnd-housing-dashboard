@@ -1,12 +1,11 @@
+import { ClerkProvider } from "@clerk/nextjs";
 import type { Metadata } from "next";
 import { Montserrat } from "next/font/google";
 import { AppRouterCacheProvider } from "@mui/material-nextjs/v16-appRouter";
 import CssBaseline from "@mui/material/CssBaseline";
 import Box from "@mui/material/Box";
 import { ThemeProvider } from "@mui/material/styles";
-import { Auth0Provider } from "@auth0/nextjs-auth0";
-import { getCachedSession } from "@/lib/auth0";
-import { getActiveNationsId } from "@/lib/active-nation";
+import { getActiveNationsId, getCurrentUserId } from "@/lib/active-nation";
 import { getNationSettings } from "@/lib/nation-settings";
 import theme from "@/lib/theme";
 import NavBar from "@/components/NavBar";
@@ -19,8 +18,7 @@ const montserrat = Montserrat({
 });
 
 export async function generateMetadata(): Promise<Metadata> {
-  const session = await getCachedSession();
-  const nationsId = await getActiveNationsId(session?.user);
+  const nationsId = await getActiveNationsId();
   return {
     title: `${nationsId ?? "LND"} Housing Dashboard`,
     description: "Dashboard för hyresgästhantering",
@@ -32,17 +30,16 @@ export default async function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  const session = await getCachedSession();
-  const nationsId = await getActiveNationsId(session?.user);
+  const [userId, nationsId] = await Promise.all([getCurrentUserId(), getActiveNationsId()]);
   const settings = nationsId ? await getNationSettings(nationsId) : null;
 
   return (
     <html lang="sv" className={montserrat.variable}>
       <body>
-        <AppRouterCacheProvider options={{ key: "mui" }}>
-          <ThemeProvider theme={theme}>
-            <CssBaseline />
-            <Auth0Provider user={session?.user}>
+        <ClerkProvider>
+          <AppRouterCacheProvider options={{ key: "mui" }}>
+            <ThemeProvider theme={theme}>
+              <CssBaseline />
               <Box sx={{ display: "flex", minHeight: "100dvh", bgcolor: "background.default" }}>
                 <Box
                   component="a"
@@ -63,19 +60,19 @@ export default async function RootLayout({
                 >
                   Hoppa till innehåll
                 </Box>
-                <NavBar enabledFeatures={settings?.enabledFeatures} />
+                {userId ? <NavBar enabledFeatures={settings?.enabledFeatures} /> : null}
                 <Box
                   component="main"
                   id="main-content"
                   tabIndex={-1}
-                  sx={{ flex: 1, minWidth: 0, pt: { xs: 8, md: 0 }, bgcolor: "background.default" }}
+                  sx={{ flex: 1, minWidth: 0, pt: { xs: userId ? 8 : 0, md: 0 }, bgcolor: "background.default" }}
                 >
                   {children}
                 </Box>
               </Box>
-            </Auth0Provider>
-          </ThemeProvider>
-        </AppRouterCacheProvider>
+            </ThemeProvider>
+          </AppRouterCacheProvider>
+        </ClerkProvider>
       </body>
     </html>
   );

@@ -1,6 +1,6 @@
 "use client";
 
-import { useUser } from "@auth0/nextjs-auth0";
+import { useAuth } from "@clerk/nextjs";
 import Box from "@mui/material/Box";
 import List from "@mui/material/List";
 import ListItemButton from "@mui/material/ListItemButton";
@@ -11,15 +11,16 @@ import Typography from "@mui/material/Typography";
 import { alpha } from "@mui/material/styles";
 import Link from "next/link";
 import { NAV_GROUPS, navLinks } from "@/lib/nav-links";
-import { ROLES, hasRole, isRestrictedToTodo } from "@/lib/roles";
+import { ROLES, hasRole, isRestrictedToTodo, normalizeRoles } from "@/lib/roles";
 import { isFeatureEnabled } from "@/lib/table-columns";
 
 type NavGridProps = { enabledFeatures?: string[] };
 
 export default function NavGrid({ enabledFeatures }: NavGridProps) {
-  const { user } = useUser();
-  const isAdmin = hasRole(user, ROLES.ADMIN);
-  const restrictedToTodo = isRestrictedToTodo(user);
+  const { sessionClaims } = useAuth();
+  const roles = normalizeRoles(sessionClaims?.roles);
+  const isAdmin = hasRole(roles, ROLES.ADMIN);
+  const restrictedToTodo = isRestrictedToTodo(roles);
 
   return (
     <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", lg: "repeat(3, 1fr)" }, gap: 2 }}>

@@ -19,6 +19,7 @@ import UploadFileIcon from "@mui/icons-material/UploadFile";
 import FloorPlanCard from "@/components/email/FloorPlanCard";
 import RenamePlanDialog from "@/components/email/RenamePlanDialog";
 import UploadConfirmDialog from "@/components/email/UploadConfirmDialog";
+import RequireSignedIn from "@/components/RequireSignedIn";
 
 interface FloorPlan { id: string; aptName: string }
 
@@ -102,6 +103,7 @@ export default function PlanritningarPage() {
   }
 
   return (
+    <RequireSignedIn>
     <Container maxWidth={false} sx={{ py: { xs: 3, md: 4 } }}>
       <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 3 }}>
         <Typography variant="h4" sx={{ fontWeight: 600 }}>Planritningar</Typography>
@@ -172,5 +174,6 @@ export default function PlanritningarPage() {
         </DialogActions>
       </Dialog>
     </Container>
+    </RequireSignedIn>
   );
 }

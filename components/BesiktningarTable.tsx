@@ -1,6 +1,6 @@
 "use client";
 
-import { useUser } from "@auth0/nextjs-auth0";
+import { useAuth } from "@clerk/nextjs";
 import { useMemo, useState, useTransition, type ChangeEvent, type ReactNode } from "react";
 import dynamic from "next/dynamic";
 import AddIcon from "@mui/icons-material/Add";
@@ -51,7 +51,7 @@ import SegmentedBar from "@/components/charts/SegmentedBar";
 import { STATUS } from "@/components/charts/palette";
 import { exportRowsToXlsx } from "@/lib/export-xlsx";
 import type { Besiktning, BesiktningEditInput, BesiktningImportInput } from "@/lib/besiktningar";
-import { ARCHIVE_ROLES, ROLES, hasAnyRole, hasRole } from "@/lib/roles";
+import { ARCHIVE_ROLES, ROLES, hasAnyRole, hasRole, normalizeRoles } from "@/lib/roles";
 import type { ImportFieldConfig } from "@/lib/table-columns";
 import { useColumnVisibility } from "@/lib/use-column-visibility";
 
@@ -159,14 +159,15 @@ function emptyAddForm(): AddForm {
 }
 
 export default function BesiktningarTable({ besiktningar, importMapping }: Props) {
-  const { user } = useUser();
+  const { sessionClaims } = useAuth();
+  const roles = normalizeRoles(sessionClaims?.roles);
   // Archiving besiktningar is husvd/admin only — ekonomi lost this right,
   // unlike every other "archive" feature in the app, which still shares
   // ARCHIVE_ROLES (ekonomi/husvd/admin). Deleting is unaffected and still
   // uses the broader set.
-  const canArchive = hasRole(user, ROLES.HUSVD);
-  const canDelete = hasAnyRole(user, ARCHIVE_ROLES);
-  const canManagePayment = hasRole(user, ROLES.HUSVD) || hasRole(user, ROLES.EKONOMI);
+  const canArchive = hasRole(roles, ROLES.HUSVD);
+  const canDelete = hasAnyRole(roles, ARCHIVE_ROLES);
+  const canManagePayment = hasRole(roles, ROLES.HUSVD) || hasRole(roles, ROLES.EKONOMI);
 
   const [search, setSearch] = useState("");
   const [orderBy, setOrderBy] = useState<ColumnKey>("besiktningsdatum");

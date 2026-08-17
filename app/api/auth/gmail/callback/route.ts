@@ -1,17 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { google } from "googleapis";
-import { getCachedSession } from "@/lib/auth0";
+import { getCurrentUserId } from "@/lib/active-nation";
 import { upsertGmailToken } from "@/lib/gmail-tokens";
 
 export async function GET(request: NextRequest) {
-  const session = await getCachedSession();
+  const userId = await getCurrentUserId();
   const baseUrl = process.env.APP_BASE_URL ?? "http://localhost:3000";
 
-  if (!session?.user)
+  if (!userId)
     return NextResponse.redirect(`${baseUrl}/profil?gmail_error=unauthorized`);
 
-  const userId = session.user.sub as string;
   const { searchParams } = new URL(request.url);
   const code = searchParams.get("code");
   const state = searchParams.get("state");

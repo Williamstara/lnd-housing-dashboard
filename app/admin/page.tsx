@@ -1,36 +1,32 @@
 import Container from "@mui/material/Container";
 import Typography from "@mui/material/Typography";
-import { auth0, getCachedSession } from "@/lib/auth0";
+import { auth } from "@clerk/nextjs/server";
+import { getSessionRoles } from "@/lib/active-nation";
 import { requireAdminOrRedirect } from "@/lib/roles";
 import { listAllNationIds } from "@/lib/nation-settings";
 import { getAvailableRoles, getUsersWithoutNation } from "@/lib/app-users";
 import AdminShell from "@/components/AdminShell";
 
-const Admin = auth0.withPageAuthRequired(
-  async function Admin() {
-    const session = await getCachedSession();
-    requireAdminOrRedirect(session?.user);
+export default async function Admin() {
+  await auth.protect();
+  requireAdminOrRedirect(await getSessionRoles());
 
-    const [nationIds, usersWithoutNation, availableRoles] = await Promise.all([
-      listAllNationIds(),
-      getUsersWithoutNation(),
-      getAvailableRoles(),
-    ]);
+  const [nationIds, usersWithoutNation, availableRoles] = await Promise.all([
+    listAllNationIds(),
+    getUsersWithoutNation(),
+    getAvailableRoles(),
+  ]);
 
-    return (
-      <Container maxWidth="lg" sx={{ py: 6 }}>
-        <Typography variant="h4" component="h1" sx={{ fontWeight: 600, mb: 3 }}>
-          Admin
-        </Typography>
-        <AdminShell
-          initialNationIds={nationIds}
-          initialUsers={usersWithoutNation}
-          availableRoles={availableRoles}
-        />
-      </Container>
-    );
-  },
-  { returnTo: "/admin" }
-);
-
-export default Admin;
+  return (
+    <Container maxWidth="lg" sx={{ py: 6 }}>
+      <Typography variant="h4" component="h1" sx={{ fontWeight: 600, mb: 3 }}>
+        Admin
+      </Typography>
+      <AdminShell
+        initialNationIds={nationIds}
+        initialUsers={usersWithoutNation}
+        availableRoles={availableRoles}
+      />
+    </Container>
+  );
+}

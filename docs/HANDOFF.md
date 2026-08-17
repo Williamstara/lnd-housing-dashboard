@@ -5,132 +5,109 @@ were verified immediately before writing this file.
 
 ## Current objective
 
-None — the SaaS-readiness configuration-infrastructure implementation (all
-6 batches of `docs/SAAS-READINESS-ROADMAP.md`'s "build now" scope) is
-complete and statically verified. The one remaining piece is a live,
-authenticated pass through the app (see "Remaining work" below), which
-needs the user present since it involves real `LND` data. The next
-objective otherwise is whatever the user asks for next.
+None — the public landing page (see `docs/SESSION.md`/`docs/DECISIONS.md`)
+is complete and live-verified in a real browser. The next objective is
+whatever the user asks for next.
 
 ## Completed this session
 
-Full detail and reasoning: `docs/SESSION.md` (current milestone section)
-and `docs/DECISIONS.md`'s 2026-08-13 entries. Summary:
+Full detail: `docs/DECISIONS.md`'s "Public landing page at `/`" entry.
+Summary:
 
-1. **Batch 1**: per-nation permission model. New `nation_role_permissions`
-   table (migration applied), `lib/permissions.ts`'s `requirePermission()`
-   replaces ~10 duplicated `requireXRole()` guards, new admin
-   "Behörigheter" tab.
-2. **Batch 2**: multi-nation operator support. New `lib/active-nation.ts`
-   (cookie-backed, validated against the real Auth0 claim every time), nav
-   switcher (invisible until an Auth0 Action change makes nationsID an
-   array — external to this repo, not done). Every page/action/API route
-   swept onto it.
-3. **Batch 3**: feature flags (`enabled_features` column, migration
-   applied). Gates Gmail nav entries, laundry buttons, key-handover
-   toggles. New admin "Funktioner" tab.
-4. **Batch 4**: admin column config extended to 5 more tables + 2 of 4 form
-   dialogs. **`TenantFormDialog`/`AndrahandsgastFormDialog` intentionally
-   NOT wired** — see "Important gotchas" below, this is the single most
-   important thing not to accidentally "fix" without reading the reasoning
-   first.
-5. **Batch 5**: currency/locale settings (`currency`/`locale` columns,
-   migration applied) — wired through the roadmap's named examples only,
-   not exhaustively. See `docs/TODO.md`'s "Later" section for the
-   deliberately-deferred remainder.
-6. **Batch 6**: Excel cell-parser consolidation — only `cellStr` (the one
-   genuinely duplicated helper), not `cellNum`/`cellDate` (those turned out
-   to differ per file on closer reading).
+1. `app/layout.tsx` no longer renders `NavBar` unconditionally — it's gated
+   on `getCurrentUserId()` (`lib/active-nation.ts`), so signed-out routes
+   (`/`, `/sign-in`, `/sign-up`, `/nationsid-saknas`) no longer show the
+   dashboard sidebar chrome around them.
+2. `app/page.tsx` dropped `auth.protect()`; it now branches itself —
+   signed-out renders new `app/_components/landing-page.tsx` (explains the
+   app, feature highlights from `lib/nav-links.tsx`, "Logga in" CTA to
+   `/sign-in`); signed-in renders the exact same dashboard overview as
+   before, unchanged. Same URL (`/`) for both.
+3. Fixed a real bug hit along the way: `LandingPage` had to be a Client
+   Component (`"use client"`) — MUI's `Button` with `component={Link}` fails
+   with "Functions cannot be passed directly to Client Components" when
+   rendered from a Server Component, same reason `NavGrid` is already
+   `"use client"`.
+
+This also incidentally fixes the sign-out UX complaint from the prior
+session (skeleton dashboard chrome behind the Clerk sign-in card) — `/sign-in`
+no longer renders inside `NavBar`'s shell at all now, regardless of the
+earlier hard-navigation fix in `NavBar.tsx`'s `handleSignOut`.
 
 ## Validation status
 
 - `npx tsc --noEmit` — clean.
-- `npm run lint` — unchanged baseline (7 `react-hooks/set-state-in-effect`
-  errors + 1 unused-arg warning), verified after every batch individually.
-- 3 new Supabase migrations applied to the live project and confirmed via
-  `supabase migration list`:
-  `20260813140000_nation_role_permissions.sql`,
-  `20260813150000_nation_features.sql`,
-  `20260813160000_nation_currency_locale.sql`.
-- Dev server hot-reloaded every change; every touched route returns the
-  expected `307` with no new server errors (one pre-existing, unrelated
-  `/planritningar` 500 from a stale browser JWT — not caused by this
-  session, that route was never touched).
-- **Not done**: live authenticated verification. See "Remaining work" (1).
+- `npm run lint` — at the documented baseline: 7 pre-existing
+  `react-hooks/set-state-in-effect` errors, 0 warnings. Nothing new.
+- Live-verified in a real Chrome browser via `claude-in-chrome`: signed-out
+  `/` renders the new landing page (hero + 3 feature-highlight cards, no
+  NavBar), clicking "Logga in" navigates to a clean `/sign-in` (Clerk's card
+  centered on a bare background, no dashboard chrome behind it), console
+  clean at every step. **Not verified**: the full signed-in round-trip
+  (landing → sign-in → dashboard overview) — the browser session reached
+  Google's real account-chooser screen (two real personal Google accounts)
+  and stopped there deliberately, since picking an account to authenticate
+  with is the user's call, not something to click through unattended. The
+  signed-in branch of `app/page.tsx` is unchanged code (copied verbatim from
+  the prior working version), so this is a low-risk gap, but a real
+  click-through by the user (or a future agent once signed in) would close
+  it fully.
+- Mobile viewport check was attempted but `resize_window` didn't visibly
+  affect the captured screenshot in this session's browser tool (known
+  flakiness, not a code issue) — the landing page reuses the exact same
+  responsive grid pattern (`gridTemplateColumns: { xs: "1fr", md: ... }`)
+  already proven working elsewhere in this app (`NavGrid`), so this is a low
+  risk, not a confirmed-working mobile check. Worth a real mobile check next
+  session if the user wants full confidence.
 
 ## Important gotchas for the next agent
 
-1. **Do not wire `TenantFormDialog.tsx`/`AndrahandsgastFormDialog.tsx` to
-   admin column visibility without also fixing
-   `app/hyresgastlista/actions.ts`'s `sanitizeInput`/
-   `sanitizeAndrahandsgastInput` first.** Both blanket-require every field
-   non-blank server-side (`Object.values(trimmed).some((value) => value === "")`).
-   `ApartmentFormDialog`/`RentalObjectFormDialog` didn't have this problem
-   (their server-side checks only hard-require a few specific fields), which
-   is why only those two got wired this session. Doing the client half
-   alone here would make every save with a hidden field silently fail.
-2. **`bulkUpsertTenants`, `bulkUpsertAndrahandsgaster`, `bulkUpsertRentalObjects`
-   are already correctly batched** (one composite-key `.upsert()` call) —
-   from the earlier performance-audit session. Don't "fix" them again.
-3. **Locale/currency formatting is deliberately incomplete** — see
-   `docs/TODO.md`'s "Later" section for the exact list of what's still
-   hardcoded to `"sv-SE"`/`"kr"` and why that was a conscious call, not an
-   oversight.
-4. **Avoid chaining `git stash` with slow commands** (e.g.
-   `git stash && npm run lint && git stash pop` in one Bash call) — this
-   happened mid-session, the `lint` step ran long, the tool call timed out,
-   and `git stash pop` never ran, leaving the whole session's work sitting
-   in the stash. Caught and recovered, but do stash/pop as separate calls
-   going forward.
+1. **`NavBar` is now conditional on `getCurrentUserId()` in
+   `app/layout.tsx`, not path-based.** If a new route needs to show/hide the
+   dashboard chrome independent of auth state, this conditional won't cover
+   it — see the "Consequences" note in `docs/DECISIONS.md`'s landing-page
+   entry for when to revisit a proper route-group split instead.
+2. **Passing `component={Link}` (or any function) as a prop into an MUI
+   component from a Server Component throws at runtime, not at type-check
+   time** — `npx tsc --noEmit` stayed clean through this exact bug. Any new
+   Server Component that wants `<Button component={Link}>` /
+   `<ListItemButton component={Link}>` etc. must be `"use client"`, matching
+   `NavGrid.tsx` and now `landing-page.tsx`.
+3. Everything from the prior Clerk-migration handoff still applies (Clerk
+   session-claims not JWT templates, `auth.protect()` per-page not
+   middleware, `lib/active-nation.ts` as the one shared home for
+   server-side Clerk reads) — see git history / `docs/DECISIONS.md`'s
+   "Auth0 → Clerk migration" entry if touching auth code again.
 
 ## Current Git and working-tree state
 
-Nothing from this session (or the two prior sessions — the migration and
-the performance audit) has been committed. Run `git status` for the exact
-list. New untracked files from this session: `lib/active-nation.ts`,
-`lib/permissions.ts`, `app/actions.ts`, and the 3 new migration files under
-`supabase/migrations/`. Modified files span most of `lib/*.ts`, most of
-`app/*/page.tsx` and `app/*/actions.ts`, most of `app/api/**/route.ts`,
-`components/AdminPage.tsx`, `components/NavBar.tsx`,
-`components/ApartmentsTable.tsx`, `components/RentalObjectsTable.tsx`,
-`components/TenantsTable.tsx`, `components/AndrahandsgasterTable.tsx`,
-`components/ArchiveTable.tsx`, `components/UppsagningTable.tsx`,
-`components/TodoList.tsx`, `components/StatistikOverview.tsx`,
-`components/MissedRentTable.tsx`, `components/ApartmentFormDialog.tsx`,
-`components/RentalObjectFormDialog.tsx`, all 4 Excel-import dialogs, and
-the shared docs.
+Nothing from this session (or any prior session, going back through the
+Clerk migration and earlier) has been committed — check `git status` for the
+exact list. Confirm with the user how they want this split into commits
+before running `git add`/`git commit`.
 
 ## Remaining work
 
-1. **Live authenticated verification** — do this with the user present.
-   Concretely: exercise the new admin tabs (Behörigheter, Funktioner, the 5
-   new Kolumner entries) against real `LND` data; run a real Excel import
-   through `/lediga-lagenheter` and/or `/besiktningar` including a
-   deliberately-bad row to confirm the (earlier session's) batched-write
-   fallback still isolates it correctly; the nation switcher can't be
-   exercised without an Auth0 Action change (external to this repo) first.
-2. Re-run `/graphify --update` so the graph reflects this session's new
-   files/functions.
-3. Everything in `docs/TODO.md` remains outstanding — see that file for
-   the full "Next"/"Later" breakdown, including the two items this session
-   specifically deferred (Tenant/Andrahandsgast form field-hiding, the
-   remaining currency/locale sites).
-4. MongoDB Atlas user rotation/deletion (carried over from the original
-   migration session) — check whether this has happened yet.
-5. Commit the working tree — only when the user explicitly asks. Given the
-   scale (3 sessions' worth of uncommitted work: the migration, the
-   performance audit, and this SaaS-readiness implementation), confirm with
-   the user how they want this split into commits before running `git add`/
-   `git commit`.
+1. **Close the signed-in round-trip verification gap** noted above — have
+   the user (or a future agent, once signed in) click through
+   landing → `/sign-in` → dashboard overview once, to fully confirm the
+   signed-in branch renders exactly as before.
+2. Everything already listed in the prior Clerk-migration handoff remains
+   outstanding and unrelated to this session's work: real second-user
+   verification (`husforman@lundsnation.se`), `service_role` grants gap on
+   `gmail_tokens`/`todos`, `AUTH0_*` env var cleanup, the second sister app's
+   Clerk migration.
+3. Everything already in `docs/TODO.md` from before this session remains
+   outstanding.
+4. Commit the working tree — only when the user explicitly asks.
 
 ## Blockers
 
-None — the one open item (live verification) is a deliberate "needs the
-user present" pause, not a blocker.
+None.
 
 ## Timestamp
 
-2026-08-13 (local, per this session's clock)
+2026-08-14 (local, per this session's clock)
 
 ## Current agent
 

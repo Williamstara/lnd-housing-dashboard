@@ -1,6 +1,6 @@
 "use client";
 
-import { useUser } from "@auth0/nextjs-auth0";
+import { useAuth } from "@clerk/nextjs";
 import { useMemo, useState } from "react";
 import FileDownloadIcon from "@mui/icons-material/FileDownload";
 import Box from "@mui/material/Box";
@@ -25,7 +25,7 @@ import type { Uppsagning } from "@/lib/uppsagningar";
 import type { Tenant } from "@/lib/tenants";
 import ColumnVisibilityMenu from "@/components/ColumnVisibilityMenu";
 import ConfirmUppsagningDialog from "@/components/ConfirmUppsagningDialog";
-import { ROLES, hasRole } from "@/lib/roles";
+import { ROLES, hasRole, normalizeRoles } from "@/lib/roles";
 import type { TableColumnConfig } from "@/lib/table-columns";
 import { useColumnVisibility } from "@/lib/use-column-visibility";
 
@@ -53,8 +53,9 @@ function matchesSearch(u: Uppsagning, query: string): boolean {
 }
 
 export default function UppsagningTable({ uppsagningar, tenants, columnSettings }: Props) {
-  const { user } = useUser();
-  const isEkonomi = hasRole(user, ROLES.EKONOMI);
+  const { sessionClaims } = useAuth();
+  const roles = normalizeRoles(sessionClaims?.roles);
+  const isEkonomi = hasRole(roles, ROLES.EKONOMI);
 
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [search, setSearch] = useState("");

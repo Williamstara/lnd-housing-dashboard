@@ -1,7 +1,6 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { getCachedSession } from "@/lib/auth0";
 import {
   createManualMissedRent,
   createManualMissedRentFromRentalObject,
@@ -9,14 +8,14 @@ import {
   updateMissedRent,
   type MissedRentUpdateInput,
 } from "@/lib/missed-rent";
-import { requireActiveNationsId } from "@/lib/active-nation";
+import { getCurrentUserId, requireActiveNationsId } from "@/lib/active-nation";
 import { requirePermission } from "@/lib/permissions";
 import { PERMISSIONS } from "@/lib/roles";
 
 async function requireUser(): Promise<string> {
-  const session = await getCachedSession();
-  if (!session?.user) throw new Error("Unauthorized");
-  return await requireActiveNationsId(session.user);
+  const userId = await getCurrentUserId();
+  if (!userId) throw new Error("Unauthorized");
+  return await requireActiveNationsId();
 }
 
 export async function createManualMissedRentAction(apartmentId: string) {

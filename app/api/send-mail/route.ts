@@ -2,18 +2,17 @@ import { NextRequest } from "next/server";
 import nodemailer from "nodemailer";
 import type Mail from "nodemailer/lib/mailer";
 import { google } from "googleapis";
-import { getCachedSession } from "@/lib/auth0";
 import { getMailTemplates, getTemplateAttachment } from "@/lib/mail-templates";
 import { getFloorPlanByAptName } from "@/lib/floor-plans";
 import { getGmailToken } from "@/lib/gmail-tokens";
 import { formatForEmail } from "@/lib/mail-utils";
-import { requireActiveNationsId } from "@/lib/active-nation";
+import { getCurrentUserId, requireActiveNationsId } from "@/lib/active-nation";
 
 async function requireAuth() {
-  const session = await getCachedSession();
-  if (!session?.user) return Response.json({ error: "Unauthorized" }, { status: 401 });
+  const userId = await getCurrentUserId();
+  if (!userId) return Response.json({ error: "Unauthorized" }, { status: 401 });
   try {
-    return { userId: session.user.sub as string, nationsId: await requireActiveNationsId(session.user) };
+    return { userId, nationsId: await requireActiveNationsId() };
   } catch (err) {
     return Response.json({ error: err instanceof Error ? err.message : "Unauthorized" }, { status: 403 });
   }

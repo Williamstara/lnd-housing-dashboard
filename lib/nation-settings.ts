@@ -1,5 +1,6 @@
 import "server-only";
 import { createSupabaseServerClient } from "@/lib/supabase-server";
+import { findOrCreateNationOrg } from "@/lib/app-users";
 import type { PermissionKey } from "@/lib/roles";
 import type {
   FastighetAlias,
@@ -116,12 +117,20 @@ export async function saveEnabledFeatures(nationsId: string, features: string[])
   if (error) throw error;
 }
 
+// "A nation exists" now means two things kept in sync: a Postgres row (the
+// tenant-scoping foreign key every table references) and a Clerk
+// Organization (the identity-provider side of the same tenant — see
+// lib/app-users.ts's findOrCreateNationOrg). Both are idempotent, so this
+// stays safe to call from both createNationAction (standalone) and
+// assignNationsIdAction (assigning a user to a nation that may not exist
+// yet).
 export async function createNation(nationsId: string): Promise<void> {
   const supabase = createSupabaseServerClient();
   const { error } = await supabase
     .from("nations")
     .upsert({ nations_id: nationsId }, { onConflict: "nations_id", ignoreDuplicates: true });
   if (error) throw error;
+  await findOrCreateNationOrg(nationsId);
 }
 
 // tables/imports are JSONB objects keyed by table/import name — Mongo could

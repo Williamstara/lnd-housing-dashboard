@@ -1,5 +1,5 @@
 import Container from "@mui/material/Container";
-import { auth0, getCachedSession } from "@/lib/auth0";
+import { auth } from "@clerk/nextjs/server";
 import { getLedigaLagenheter } from "@/lib/apartments";
 import { getApartmentsAvailableForManualEntry, getMissedRentRows, syncMissedRent } from "@/lib/missed-rent";
 import { requireActiveNationsIdOrRedirect } from "@/lib/active-nation";
@@ -19,45 +19,40 @@ import {
 import MissedRentTable from "@/components/MissedRentTable";
 import StatistikOverview from "@/components/StatistikOverview";
 
-const StatistikPage = auth0.withPageAuthRequired(
-  async function StatistikPage() {
-    const session = await getCachedSession();
-    const nationsId = await requireActiveNationsIdOrRedirect(session?.user);
-    await syncMissedRent(nationsId);
+export default async function StatistikPage() {
+  await auth.protect();
+  const nationsId = await requireActiveNationsIdOrRedirect();
+  await syncMissedRent(nationsId);
 
-    const [rows, rentalObjects, vacantApartments, availableApartments, tenants, andrahandsgaster, nationSettings] =
-      await Promise.all([
-        getMissedRentRows(nationsId),
-        getRentalObjects(nationsId),
-        getLedigaLagenheter(nationsId),
-        getApartmentsAvailableForManualEntry(nationsId),
-        getTenants(nationsId),
-        getAndrahandsgaster(nationsId),
-        getNationSettings(nationsId),
-      ]);
+  const [rows, rentalObjects, vacantApartments, availableApartments, tenants, andrahandsgaster, nationSettings] =
+    await Promise.all([
+      getMissedRentRows(nationsId),
+      getRentalObjects(nationsId),
+      getLedigaLagenheter(nationsId),
+      getApartmentsAvailableForManualEntry(nationsId),
+      getTenants(nationsId),
+      getAndrahandsgaster(nationsId),
+      getNationSettings(nationsId),
+    ]);
 
-    return (
-      <Container maxWidth={false} sx={{ py: { xs: 3, md: 4 } }}>
-        <StatistikOverview
-          skick={getGenerelltSkick(rentalObjects)}
-          totalaIntakter={getTotalaIntakter(rentalObjects)}
-          uthyrningsgrad={getUthyrningsgrad(rentalObjects, vacantApartments, rows)}
-          missedIncomeByYear={getMissedIncomeByYear(rows)}
-          missedRentByAnsvarig={getMissedRentByAnsvarig(rows)}
-          bestandsoversikt={getBestandsoversikt(rentalObjects, tenants, andrahandsgaster)}
-          lagenheterPerStatus={getLagenheterPerStatus(vacantApartments)}
-          nationSettings={nationSettings}
-        />
-        <MissedRentTable
-          rows={rows}
-          availableApartments={availableApartments}
-          rentalObjects={rentalObjects}
-          nationSettings={nationSettings}
-        />
-      </Container>
-    );
-  },
-  { returnTo: "/statistik" }
-);
-
-export default StatistikPage;
+  return (
+    <Container maxWidth={false} sx={{ py: { xs: 3, md: 4 } }}>
+      <StatistikOverview
+        skick={getGenerelltSkick(rentalObjects)}
+        totalaIntakter={getTotalaIntakter(rentalObjects)}
+        uthyrningsgrad={getUthyrningsgrad(rentalObjects, vacantApartments, rows)}
+        missedIncomeByYear={getMissedIncomeByYear(rows)}
+        missedRentByAnsvarig={getMissedRentByAnsvarig(rows)}
+        bestandsoversikt={getBestandsoversikt(rentalObjects, tenants, andrahandsgaster)}
+        lagenheterPerStatus={getLagenheterPerStatus(vacantApartments)}
+        nationSettings={nationSettings}
+      />
+      <MissedRentTable
+        rows={rows}
+        availableApartments={availableApartments}
+        rentalObjects={rentalObjects}
+        nationSettings={nationSettings}
+      />
+    </Container>
+  );
+}

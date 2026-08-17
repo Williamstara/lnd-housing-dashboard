@@ -1,17 +1,16 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { getCachedSession } from "@/lib/auth0";
 import { getApartmentById, markAddedToHyresgastlista } from "@/lib/apartments";
-import { requireActiveNationsId } from "@/lib/active-nation";
+import { getCurrentUserId, requireActiveNationsId } from "@/lib/active-nation";
 import { upsertTenantByLagenhetsnummer } from "@/lib/tenants";
 
 async function requireUser(): Promise<string> {
-  const session = await getCachedSession();
-  if (!session?.user) {
+  const userId = await getCurrentUserId();
+  if (!userId) {
     throw new Error("Unauthorized");
   }
-  return await requireActiveNationsId(session.user);
+  return await requireActiveNationsId();
 }
 
 // Pushes an archived apartment's tenant over to hyresgästlistan. If that

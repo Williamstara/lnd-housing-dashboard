@@ -1,13 +1,11 @@
-import { getCachedSession } from "@/lib/auth0";
-import { redirect } from "next/navigation";
-import { getFastighetNamn } from "@/lib/fastigheter";
+import { auth } from "@clerk/nextjs/server";
 import { requireActiveNationsIdOrRedirect } from "@/lib/active-nation";
+import { getFastighetNamn } from "@/lib/fastigheter";
 import SendMailClient from "@/components/email/SendMailClient";
 
 export default async function EpostPage() {
-  const session = await getCachedSession();
-  if (!session?.user) redirect("/auth/login");
-  const nationsId = await requireActiveNationsIdOrRedirect(session.user);
+  await auth.protect();
+  const nationsId = await requireActiveNationsIdOrRedirect();
   const fastigheter = await getFastighetNamn(nationsId);
   return <SendMailClient fastigheter={fastigheter} />;
 }

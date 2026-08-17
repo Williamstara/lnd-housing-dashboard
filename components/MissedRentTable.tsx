@@ -1,6 +1,6 @@
 "use client";
 
-import { useUser } from "@auth0/nextjs-auth0";
+import { useAuth } from "@clerk/nextjs";
 import { useMemo, useState, useTransition, type ChangeEvent, type ReactNode } from "react";
 import AddIcon from "@mui/icons-material/Add";
 import DeleteIcon from "@mui/icons-material/Delete";
@@ -42,7 +42,7 @@ import ColumnVisibilityMenu from "@/components/ColumnVisibilityMenu";
 import { exportRowsToXlsx } from "@/lib/export-xlsx";
 import type { MissedRentRow } from "@/lib/missed-rent";
 import type { RentalObject } from "@/lib/rentalobjects";
-import { ROLES, hasRole } from "@/lib/roles";
+import { ROLES, hasRole, normalizeRoles } from "@/lib/roles";
 import { formatCurrency, getCurrency, type NationSettings } from "@/lib/table-columns";
 import { useColumnVisibility } from "@/lib/use-column-visibility";
 
@@ -138,8 +138,9 @@ type EditForm = {
 };
 
 export default function MissedRentTable({ rows, availableApartments, rentalObjects, nationSettings }: Props) {
-  const { user } = useUser();
-  const isHusforman = hasRole(user, ROLES.HUSFORMAN);
+  const { sessionClaims } = useAuth();
+  const roles = normalizeRoles(sessionClaims?.roles);
+  const isHusforman = hasRole(roles, ROLES.HUSFORMAN);
 
   const [search, setSearch] = useState("");
   const [orderBy, setOrderBy] = useState<ColumnKey>("ledigFrom");

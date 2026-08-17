@@ -12,6 +12,10 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Vendored skill packages (npx skills) — third-party reference/template
+    // content, not application code.
+    ".agents/skills/**",
+    ".claude/skills/**",
   ]),
 ]);
 

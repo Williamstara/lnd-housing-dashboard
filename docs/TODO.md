@@ -5,6 +5,35 @@ state and the exact next step.
 
 ## Next
 
+- **Verify the signed-in landing→dashboard round-trip.** Added 2026-08-14:
+  `/` now branches on auth state (`app/page.tsx`, see `docs/DECISIONS.md`'s
+  "Public landing page at `/`" entry) — signed-out renders the new
+  `app/_components/landing-page.tsx`, signed-in renders the unchanged
+  dashboard overview. The signed-out path and the `/sign-in` transition are
+  live-verified; the actual signed-in render was not, since verification
+  stopped at Google's real account-chooser screen rather than picking an
+  account unattended. Low risk (the signed-in branch is unchanged code), but
+  a real click-through would close the gap.
+- **Reassign 3 orphaned todos once husförman signs up via Clerk.**
+  Found 2026-08-14 during the Auth0→Clerk migration's data-migration check:
+  `todos.tilldelad_till` has 3 rows pointing at old Auth0 IDs
+  (`google-oauth2|100135078417478789388` x2, `auth0|6a70b57515160a2a0c6b36b5`
+  x1) that both resolve to `husforman@lundsnation.se` (case-differing
+  duplicate old Auth0 accounts for the same role) — not the current Clerk
+  user. Deliberately left as-is (user's call, not a code fix): no data
+  loss, just shows "no assignee" in the edit dialog until reassigned
+  through the normal Todo UI once that person has a real Clerk account in
+  `LND`.
+- **Grant `service_role` SELECT on `gmail_tokens` and `todos`.** Found
+  2026-08-14 while checking migration data with `SUPABASE_SECRET_KEY` —
+  both tables reject the secret key with `permission denied`
+  (`GRANT SELECT ON public.<table> TO service_role` per Postgres's own
+  hint), the same "SQL-migration-created tables don't get default grants"
+  gap `docs/DECISIONS.md` already documents for `authenticated`, just not
+  yet fixed for `service_role` on these two tables specifically. Not
+  blocking anything today (worked around via an authenticated Clerk token
+  instead), but will bite the next one-off admin script that expects the
+  secret key to see everything.
 - **Live-verify this session's SaaS-readiness config work** (see
   `docs/HANDOFF.md`) — a real authenticated pass through the new admin
   tabs (Behörigheter, Funktioner, the 5 new Kolumner entries), the nation
@@ -50,9 +79,10 @@ state and the exact next step.
   `.env.local.example`.** They are read by the Gmail OAuth routes but absent
   from the example.
 - **Clean up the pre-existing lint baseline:** 7
-  `react-hooks/set-state-in-effect` errors and the unused `_idToken` warning
-  in `lib/auth0.ts`. Unchanged throughout this session — verified still
-  exactly 7 errors + 1 warning after every batch.
+  `react-hooks/set-state-in-effect` errors, all in files unrelated to the
+  Clerk migration. (The former 8th item, an unused `_idToken` warning in
+  `lib/auth0.ts`, is gone — that file no longer exists as of the Auth0→Clerk
+  migration, 2026-08-14.)
 - **Thread `formatCurrency`/`getLocale` through the remaining ~6 files**
   with bare `currency.format(x)` calls, and the 26
   `toLocaleLowerCase("sv")`/`localeCompare(..., "sv", ...)` search/sort
@@ -77,6 +107,16 @@ state and the exact next step.
 
 ## Completed recently
 
+- **Auth0 → Clerk migration** (2026-08-14) — full replacement of
+  `@auth0/nextjs-auth0` with Clerk across identity/session, multi-tenant
+  nationsID (now a Clerk org's public_metadata, read as a `nations_id`
+  session claim), roles (now `user.publicMetadata.roles`, a `roles` session
+  claim), admin user/role management (`lib/app-users.ts` rewritten against
+  Clerk's Backend SDK), and Supabase's Third-Party Auth issuer. Every page
+  now calls `auth.protect()` itself (Clerk's current resource-based
+  protection model — deprecated `createRouteMatcher`-in-middleware pattern
+  intentionally not used). See `docs/DECISIONS.md` for the full reasoning
+  and `docs/ARCHITECTURE.md` for the current auth architecture.
 - **Full SaaS-readiness configuration-infrastructure implementation**
   (2026-08-13) — see `docs/SESSION.md` for the complete breakdown: per-nation
   permission model, multi-nation operator support, feature flags, admin

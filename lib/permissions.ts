@@ -1,14 +1,13 @@
 import "server-only";
 import { cache } from "react";
-import { getCachedSession } from "@/lib/auth0";
-import { requireActiveNationsId } from "@/lib/active-nation";
+import { getCurrentUserDisplayName, getCurrentUserId, getSessionRoles, requireActiveNationsId } from "@/lib/active-nation";
 import { getNationRolePermissions } from "@/lib/nation-settings";
-import { getUserDisplayName, hasPermission, type PermissionKey } from "@/lib/roles";
+import { hasPermission, type PermissionKey } from "@/lib/roles";
 
 // Cached per request — an action gated by more than one permission check
 // (or that also needs nationsId elsewhere) reuses the same fetch instead of
 // re-querying nation_role_permissions each time. Same pattern as
-// lib/auth0.ts's getCachedSession.
+// lib/active-nation.ts's getActiveNationsId.
 const getCachedNationPermissions = cache((nationsId: string) => getNationRolePermissions(nationsId));
 
 // The single shared guard every app/*/actions.ts should use for a
@@ -22,12 +21,13 @@ export async function requirePermission(
   permissionKey: PermissionKey,
   errorMessage: string
 ): Promise<{ nationsId: string; userName: string }> {
-  const session = await getCachedSession();
-  if (!session?.user) throw new Error("Unauthorized");
-  const nationsId = await requireActiveNationsId(session.user);
+  const userId = await getCurrentUserId();
+  if (!userId) throw new Error("Unauthorized");
+  const nationsId = await requireActiveNationsId();
+  const roles = await getSessionRoles();
   const saved = await getCachedNationPermissions(nationsId);
-  if (!hasPermission(session.user, permissionKey, saved[permissionKey])) {
+  if (!hasPermission(roles, permissionKey, saved[permissionKey])) {
     throw new Error(errorMessage);
   }
-  return { nationsId, userName: getUserDisplayName(session.user) };
+  return { nationsId, userName: await getCurrentUserDisplayName() };
 }

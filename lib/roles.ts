@@ -1,19 +1,16 @@
 import { redirect } from "next/navigation";
-import type { User } from "@auth0/nextjs-auth0/types";
 
-// Auth0 doesn't put custom roles on the session by default — an Auth0
-// Action (Dashboard > Actions > Flows > Login) has to add them to the ID
-// token as a custom claim, e.g.:
-//
-//   exports.onExecutePostLogin = async (event, api) => {
-//     const roles = event.authorization?.roles ?? [];
-//     api.idToken.setCustomClaim("https://lnd-housing-dashboard/roles", roles);
-//   };
-//
-// If your Action uses a different claim name, update ROLES_CLAIM below to
-// match. This file has no "server-only" import since NavBar reads it
-// client-side too.
-export const ROLES_CLAIM = "https://lnd-housing-dashboard/roles";
+// Roles come from Clerk's session token (a `roles` claim sourced from the
+// user's public_metadata.roles). Every check below is a pure function over
+// a plain roles array rather than a provider-specific "user" object, so it
+// works identically whether the array came from a server auth() call or a
+// client useAuth() hook — extract it with normalizeRoles() first at the
+// call site. Display-name lookup lives in lib/active-nation.ts's
+// getCurrentUserDisplayName (needs a live Clerk API call, not just a pure
+// check, so it doesn't belong in this client-importable file).
+export function normalizeRoles(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((role): role is string => typeof role === "string") : [];
+}
 
 export const ROLES = {
   EKONOMI: "ekonomi",
@@ -27,29 +24,15 @@ export const ROLES = {
 // keep them all pointed at this one list rather than repeating it.
 export const ARCHIVE_ROLES: string[] = [ROLES.EKONOMI, ROLES.HUSVD, ROLES.ADMIN];
 
-export function getUserRoles(user: User | null | undefined): string[] {
-  if (!user) return [];
-  const roles = user[ROLES_CLAIM];
-  return Array.isArray(roles)
-    ? roles.filter((role): role is string => typeof role === "string")
-    : [];
-}
-
 // Admin is a superuser: it satisfies every role check, not just its own —
 // this is how a single "admin" grant gives access to everything else too.
-export function hasRole(
-  user: User | null | undefined,
-  role: string
-): boolean {
-  const roles = getUserRoles(user);
-  return roles.includes(role) || roles.includes(ROLES.ADMIN);
+export function hasRole(roles: string[] | null | undefined, role: string): boolean {
+  const list = roles ?? [];
+  return list.includes(role) || list.includes(ROLES.ADMIN);
 }
 
-export function hasAnyRole(
-  user: User | null | undefined,
-  roles: string[]
-): boolean {
-  return roles.some((role) => hasRole(user, role));
+export function hasAnyRole(roles: string[] | null | undefined, wanted: string[]): boolean {
+  return wanted.some((role) => hasRole(roles, role));
 }
 
 // Every distinct role-gated action in the app (docs/SAAS-READINESS-ROADMAP.md
@@ -105,43 +88,33 @@ export const DEFAULT_PERMISSION_ROLES: Record<PermissionKey, string[]> = {
 };
 
 // Pure check — takes the nation's saved role list for this permission (or
-// null/empty to use the default) so this file stays DB-free and importable
-// client-side. lib/permissions.ts composes this with the actual Supabase
-// fetch + session read for use in Server Actions.
+// null/empty to use the default) so this file stays provider-free and
+// importable client-side.
 export function hasPermission(
-  user: User | null | undefined,
+  roles: string[] | null | undefined,
   permissionKey: PermissionKey,
   savedRoles: string[] | null | undefined
 ): boolean {
   const allowedRoles = savedRoles && savedRoles.length > 0 ? savedRoles : DEFAULT_PERMISSION_ROLES[permissionKey];
-  return hasAnyRole(user, allowedRoles);
+  return hasAnyRole(roles, allowedRoles);
 }
 
 // vaktmästare is the one role that *narrows* access instead of adding to
 // it — a user whose only role is vaktmästare gets nothing but the todo
 // list (enforced in proxy.ts, and reflected in the nav in NavBar/NavGrid).
 // Holding any other role alongside it means normal full access applies
-// instead; this deliberately reads the raw roles claim rather than going
+// instead; this deliberately checks the raw roles list rather than going
 // through hasRole(), so admin's superuser bypass doesn't apply here.
-export function isRestrictedToTodo(user: User | null | undefined): boolean {
-  const roles = getUserRoles(user);
-  return roles.length > 0 && roles.every((role) => role === ROLES.VAKTMASTARE);
+export function isRestrictedToTodo(roles: string[] | null | undefined): boolean {
+  const list = roles ?? [];
+  return list.length > 0 && list.every((role) => role === ROLES.VAKTMASTARE);
 }
 
 // Page-level counterpart to requireNationsIdOrRedirect in lib/nations.ts —
 // the admin page shows cross-nation data, so anyone without the admin role
 // gets bounced rather than seeing it.
-export function requireAdminOrRedirect(user: User | null | undefined): void {
-  if (!hasRole(user, ROLES.ADMIN)) {
+export function requireAdminOrRedirect(roles: string[] | null | undefined): void {
+  if (!hasRole(roles, ROLES.ADMIN)) {
     redirect("/");
   }
-}
-
-// Human-readable identifier for audit trails (e.g. "who pressed this
-// button") — prefers name, then falls back to something always present.
-export function getUserDisplayName(user: User | null | undefined): string {
-  if (!user) return "Okänd användare";
-  if (typeof user.name === "string" && user.name) return user.name;
-  if (typeof user.email === "string" && user.email) return user.email;
-  return user.sub ?? "Okänd användare";
 }

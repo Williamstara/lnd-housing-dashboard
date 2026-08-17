@@ -1,5 +1,5 @@
 import Container from "@mui/material/Container";
-import { auth0, getCachedSession } from "@/lib/auth0";
+import { auth } from "@clerk/nextjs/server";
 import { requireActiveNationsIdOrRedirect } from "@/lib/active-nation";
 import { DEFAULT_UPPSAGNING_COLUMNS, getNationSettings, resolveColumns } from "@/lib/nation-settings";
 import { getUppsagningar } from "@/lib/uppsagningar";
@@ -9,24 +9,19 @@ import UppsagningTable from "@/components/UppsagningTable";
 // Open to every logged-in user — only the "Bekräfta uppsägning" action
 // itself is restricted to the ekonomi role (enforced both in the UI and
 // server-side in app/uppsagning/actions.ts).
-const UppsagningPage = auth0.withPageAuthRequired(
-  async function UppsagningPage() {
-    const session = await getCachedSession();
-    const nationsId = await requireActiveNationsIdOrRedirect(session?.user);
-    const [uppsagningar, tenants, nationSettings] = await Promise.all([
-      getUppsagningar(nationsId),
-      getTenants(nationsId),
-      getNationSettings(nationsId),
-    ]);
-    const columnSettings = resolveColumns(DEFAULT_UPPSAGNING_COLUMNS, nationSettings?.tables.uppsagning);
+export default async function UppsagningPage() {
+  await auth.protect();
+  const nationsId = await requireActiveNationsIdOrRedirect();
+  const [uppsagningar, tenants, nationSettings] = await Promise.all([
+    getUppsagningar(nationsId),
+    getTenants(nationsId),
+    getNationSettings(nationsId),
+  ]);
+  const columnSettings = resolveColumns(DEFAULT_UPPSAGNING_COLUMNS, nationSettings?.tables.uppsagning);
 
-    return (
-      <Container maxWidth={false} sx={{ py: { xs: 3, md: 4 } }}>
-        <UppsagningTable uppsagningar={uppsagningar} tenants={tenants} columnSettings={columnSettings} />
-      </Container>
-    );
-  },
-  { returnTo: "/uppsagning" }
-);
-
-export default UppsagningPage;
+  return (
+    <Container maxWidth={false} sx={{ py: { xs: 3, md: 4 } }}>
+      <UppsagningTable uppsagningar={uppsagningar} tenants={tenants} columnSettings={columnSettings} />
+    </Container>
+  );
+}

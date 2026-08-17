@@ -1,13 +1,12 @@
 import { NextRequest } from "next/server";
-import { getCachedSession } from "@/lib/auth0";
 import { deleteMailTemplate, setStarredTemplate, updateMailTemplate } from "@/lib/mail-templates";
-import { requireActiveNationsId } from "@/lib/active-nation";
+import { getCurrentUserId, requireActiveNationsId } from "@/lib/active-nation";
 
 async function requireAuth() {
-  const session = await getCachedSession();
-  if (!session?.user) return Response.json({ error: "Unauthorized" }, { status: 401 });
+  const userId = await getCurrentUserId();
+  if (!userId) return Response.json({ error: "Unauthorized" }, { status: 401 });
   try {
-    return { userId: session.user.sub as string, nationsId: await requireActiveNationsId(session.user) };
+    return { userId, nationsId: await requireActiveNationsId() };
   } catch (err) {
     return Response.json({ error: err instanceof Error ? err.message : "Unauthorized" }, { status: 403 });
   }

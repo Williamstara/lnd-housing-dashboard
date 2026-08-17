@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { useUser } from "@auth0/nextjs-auth0";
+import { useAuth } from "@clerk/nextjs";
 import AddIcon from "@mui/icons-material/Add";
 import DeleteIcon from "@mui/icons-material/Delete";
 import EditIcon from "@mui/icons-material/Edit";
@@ -26,13 +26,14 @@ import {
   updateFastighetAction,
 } from "@/app/fastigheter/actions";
 import type { Fastighet } from "@/lib/fastigheter";
-import { ROLES, hasRole } from "@/lib/roles";
+import { ROLES, hasRole, normalizeRoles } from "@/lib/roles";
 
 type Props = { fastigheter: Fastighet[] };
 
 export default function FastigheterTable({ fastigheter }: Props) {
-  const { user } = useUser();
-  const isHusforman = hasRole(user, ROLES.HUSFORMAN);
+  const { sessionClaims } = useAuth();
+  const roles = normalizeRoles(sessionClaims?.roles);
+  const isHusforman = hasRole(roles, ROLES.HUSFORMAN);
 
   const [newNamn, setNewNamn] = useState("");
   const [newPrefixes, setNewPrefixes] = useState("");
