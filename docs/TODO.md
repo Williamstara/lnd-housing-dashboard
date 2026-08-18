@@ -5,6 +5,15 @@ state and the exact next step.
 
 ## Next
 
+- **Live-verify Bostadskarta with authenticated users.** Migration is applied;
+  service-role CRUD and anon denial pass. Verify matching-nation CRUD and
+  cross-nation denial with real Clerk tokens. In a signed-in browser, verify
+  Fastigheter → Planmallar and `/bostadskarta` at desktop/tablet/mobile widths:
+  mouse/touch/keyboard movement, collision rejection, one-cell inspector,
+  label editing, duplication, save/reload, template application, apartment
+  binding and empty/error/pending/success/regeneration flows. No controllable
+  browser was available during delivery.
+
 - **Verify the signed-in landing→dashboard round-trip.** Added 2026-08-14:
   `/` now branches on auth state (`app/page.tsx`, see `docs/DECISIONS.md`'s
   "Public landing page at `/`" entry) — signed-out renders the new
@@ -24,16 +33,6 @@ state and the exact next step.
   loss, just shows "no assignee" in the edit dialog until reassigned
   through the normal Todo UI once that person has a real Clerk account in
   `LND`.
-- **Grant `service_role` SELECT on `gmail_tokens` and `todos`.** Found
-  2026-08-14 while checking migration data with `SUPABASE_SECRET_KEY` —
-  both tables reject the secret key with `permission denied`
-  (`GRANT SELECT ON public.<table> TO service_role` per Postgres's own
-  hint), the same "SQL-migration-created tables don't get default grants"
-  gap `docs/DECISIONS.md` already documents for `authenticated`, just not
-  yet fixed for `service_role` on these two tables specifically. Not
-  blocking anything today (worked around via an authenticated Clerk token
-  instead), but will bite the next one-off admin script that expects the
-  secret key to see everything.
 - **Live-verify this session's SaaS-readiness config work** (see
   `docs/HANDOFF.md`) — a real authenticated pass through the new admin
   tabs (Behörigheter, Funktioner, the 5 new Kolumner entries), the nation
@@ -107,6 +106,20 @@ state and the exact next step.
 
 ## Completed recently
 
+- **Grant `service_role` base table privileges** (2026-08-17) —
+  `supabase/migrations/20260817120000_service_role_grants.sql`. The
+  previously-filed version of this item undersold the scope: live-testing
+  with `SUPABASE_SECRET_KEY` against the REST API showed *every* table
+  (not just `gmail_tokens`/`todos`) rejected `service_role` with
+  `42501 permission denied` — the same "SQL-migration-created tables don't
+  get Supabase's default dashboard grants" gap `docs/DECISIONS.md` already
+  documents for `authenticated`, just never fixed for `service_role`.
+  Mirrors `20260813001732_grants.sql`'s pattern exactly (`grant usage`,
+  `grant select/insert/update/delete on all tables`, `alter default
+  privileges` for future tables), scoped to `service_role`. Applied via
+  `supabase db push` and re-verified live (`gmail_tokens`, `todos`,
+  `nations`, `tenants` all now return `200` with the secret key); confirmed
+  `anon`'s grants are untouched (still correctly gets nothing).
 - **Auth0 → Clerk migration** (2026-08-14) — full replacement of
   `@auth0/nextjs-auth0` with Clerk across identity/session, multi-tenant
   nationsID (now a Clerk org's public_metadata, read as a `nations_id`

@@ -6,6 +6,81 @@ code/history or from direct work done in an agent session are recorded here
 — no invented historical rationale. See `AGENTS.md` for how this file is
 maintained.
 
+## Bostadskarta uses one floor table and CSS perspective
+
+- **Date**: 2026-08-18
+- **Status**: accepted
+- **Decision**: Store floors directly below existing `fastigheter`, with
+  number-series input and generated room placement as validated JSONB. Render
+  with MUI/DOM/CSS perspective and gate mutations with `fastigheter.manage`.
+- **Reason**: Fastigheter already own building identity and prefixes. A second
+  building model or 3D engine would duplicate data and add weight without
+  improving this schematic operational view.
+- **Consequences**: Regeneration resets manual placement; concurrent edits are
+  last-write-wins. Resident contact/personal data is neither stored in floor
+  configuration nor serialized to the client.
+- **Files**: `supabase/migrations/20260818120000_building_floors.sql`,
+  `lib/building-floor-logic.ts`, `lib/building-floors.ts`,
+  `app/bostadskarta/**`, `components/Bostadskarta.tsx`.
+
+## Floor drawings use a constrained block grid and nation-scoped templates
+
+- **Date**: 2026-08-18
+- **Status**: accepted
+- **Decision**: Add an optional 12-column `layout_blocks` JSONB canvas to each
+  floor and a separate RLS-protected `building_floor_templates` table. Support
+  apartment, common-space, corridor, blocked-area and empty-room blocks.
+- **Reason**: Real corridors are L-shaped and cannot be represented truthfully
+  by the straight corridor renderer. A snap grid provides free composition and
+  reusable layouts without the complexity of a CAD/polygon engine.
+- **Consequences**: Old floors retain the corridor renderer until first edited.
+  Templates store geometry but strip apartment numbers, so applying one cannot
+  copy residents or silently link another floor's apartments. Template
+  authoring lives under Fastigheter → Planmallar; Bostadskarta only applies
+  templates to a selected floor. Rectangular blocks may not overlap; both the
+  shared editor and server validation enforce this. Editing controls live in a
+  selected-block inspector so they remain usable regardless of block size.
+  Duplication chooses the first free grid position, and numbered apartment
+  blocks cannot be duplicated on an actual floor.
+- **Files**: `20260818140000_floor_block_layouts.sql`,
+  `lib/building-floor-logic.ts`, `lib/building-floor-templates.ts`,
+  `lib/building-floors.ts`, `app/bostadskarta/**`, `app/fastigheter/**`,
+  `components/Bostadskarta.tsx`, `components/FloorTemplateManager.tsx`.
+
+---
+
+## `service_role` base table grants: gap was every table, not just two
+
+- **Date**: 2026-08-17
+- **Status**: accepted
+- **Context**: `docs/TODO.md` had a filed item claiming `service_role`
+  (`SUPABASE_SECRET_KEY`) rejected `SELECT` on just `gmail_tokens` and
+  `todos`, found during the Clerk migration's data-migration check. Before
+  fixing it, live-tested the actual current scope via direct REST calls
+  against several tables (`gmail_tokens`, `todos`, `nations`, `tenants`)
+  using the real secret key — every one returned `42501 permission denied`,
+  not just the two originally suspected. Postgres's own error hint named
+  the exact missing grant each time (`GRANT SELECT ON public.<table> TO
+  service_role`).
+- **Decision**: New migration
+  `supabase/migrations/20260817120000_service_role_grants.sql`, mirroring
+  `20260813001732_grants.sql`'s exact pattern (`grant usage on schema
+  public`, `grant select/insert/update/delete on all tables`, `alter
+  default privileges` so future `create table` migrations don't need to
+  repeat it) but for `service_role` instead of `authenticated`.
+- **Reason**: This is the same root cause `20260813001732_grants.sql`
+  already documents for `authenticated` — tables created via a plain SQL
+  migration (`supabase db push`) don't get the base grants Supabase's
+  dashboard gives tables created through it. It had simply never been
+  applied for `service_role`, and nobody had tried the secret key against
+  more than two tables before, so the gap looked narrower than it was.
+- **Consequences**: Re-verified live after applying — `gmail_tokens`,
+  `todos`, `nations`, `tenants` all now return `200` with the secret key.
+  Confirmed `anon`'s grants are untouched (still correctly gets nothing —
+  this app has no anonymous access anywhere). No app-code path uses
+  `service_role` today (it's for one-off admin scripts only), so this was
+  a zero-risk additive grant, not a behavior change for the running app.
+
 ---
 
 ## Public landing page at `/`: NavBar moved out of the always-on root layout
@@ -169,11 +244,9 @@ maintained.
   deleted. `AUTH0_*`/`AUTH0_M2M_*` env vars are no longer read by any code
   (harmless if still present in `.env.local`). `LAUNDRY_AUTH0_*` and
   `lib/laundry-account.ts` are untouched — a separate, unrelated Auth0
-  tenant. A pre-existing, unrelated bug was found and fixed along the way:
-  `service_role` is missing `SELECT` grants on `gmail_tokens` and `todos`
-  (same "SQL-migration-created tables don't get default grants" class of
-  gap already documented elsewhere in this file) — not yet fixed, tracked
-  in `docs/TODO.md`.
+  tenant. A pre-existing, unrelated `service_role` grant gap was found during
+  this migration and subsequently fixed for all tables by
+  `20260817120000_service_role_grants.sql`; see the later decision entry.
 - **Files**: `proxy.ts`, `app/layout.tsx`, all 15 protected `page.tsx`
   files, `lib/active-nation.ts` (rewritten), `lib/roles.ts` (rewritten to
   pure array-based checks), `lib/app-users.ts` (rewritten against Clerk's

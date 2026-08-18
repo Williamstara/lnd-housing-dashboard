@@ -5,6 +5,29 @@ Items that couldn't be confirmed from the repository alone are marked
 `Needs verification`. See `AGENTS.md` for conventions and constraints;
 this file describes *what exists*, not *how to write more of it*.
 
+## Bostadskarta
+
+`/bostadskarta` fetches fastigheter, `building_floors`, rental objects and
+both resident collections in parallel. It joins residents server-side by
+building and apartment number (exact first, then configured prefix removed)
+and sends no contact details or personal numbers to the client.
+
+`building_floors` stores name/order, placement mode, number series and room
+placement plus an optional 12-column block layout as JSONB. Every query and
+its Postgres RLS are nation-scoped. `building_floor_templates` stores reusable
+nation-scoped block geometry; apartment template slots contain no resident
+data. Managers edit templates under Fastigheter → Planmallar; Bostadskarta
+binds their apartment slots to the selected floor when applied.
+Mutations use Server Actions guarded by `fastigheter.manage`. The visual view
+uses MUI/DOM/CSS perspective for legacy floors and a grid block canvas for
+drawn floors. The shared grid editor uses Pointer Events for direct mouse, pen
+and touch movement anywhere on its 12-column canvas, and also supports
+arrow-key movement, resizing and
+apartment/common/corridor/blocked/empty block types. Blocks cannot overlap;
+the same invariant is checked before server-side persistence. A selected-block
+inspector owns label editing, resizing, duplication and deletion rather than
+placing controls inside the drawn block.
+
 ## Responsive application shell
 
 - `app/layout.tsx` renders a flex application shell with a skip link and a
@@ -80,7 +103,7 @@ client components. Swedish label shown in the app's nav is in parentheses.
 | `app/redo-for-kontrakt` | Apartments in the "sent to contract" stage. `components/ContractsReadyTable.tsx`. |
 | `app/arkiv` | Signed/archived contracts. `components/ArchiveTable.tsx`. |
 | `app/uppsagning` | Tenant notice/termination flow. `components/ConfirmUppsagningDialog.tsx`, `components/UppsagningTable.tsx`. |
-| `app/fastigheter` | Buildings ("Fastigheter") — the registry every other feature's `fastighet` field is validated against. `components/FastigheterTable.tsx`. |
+| `app/fastigheter` | Buildings ("Fastigheter") and reusable nation-scoped block-plan templates under Planmallar. `components/FastigheterTable.tsx`, `components/FloorTemplateManager.tsx`. |
 | `app/statistik` | Missed-rent and other statistics: housing/tenant totals, occupancy form, homes per building, homes per `typ`, vacant apartments per leasing-pipeline status, occupancy, missed rent, condition, revenue. `components/StatistikOverview.tsx`, `components/charts/*` (`BarChart`, `DonutChart`, `StatTile`). |
 | `app/mallar` | Email templates. `components/email/TemplateEditorDialog.tsx`. |
 | `app/epost` | Compose/send email to a recipient group. `components/email/SendMailClient.tsx`, `RecipientGroupPicker.tsx`. |
@@ -296,10 +319,9 @@ Only the parsed, already-validated JSON rows are sent to a Server Action.
   requires a direct Postgres connection (`SUPABASE_DB_URL`) or the secret
   key (`SUPABASE_SECRET_KEY`) — normal app request paths use only the
   publishable key (`NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`) plus the
-  forwarded Clerk token. `Needs verification`: `service_role` (the secret
-  key's Postgres role) appears to be missing `SELECT` grants on at least
-  `gmail_tokens` and `todos` — found via a permission-denied error while
-  checking migration data, not yet fixed; see `docs/TODO.md`.
+  forwarded Clerk token. `service_role` base grants were added by
+  `20260817120000_service_role_grants.sql` and live-verified against multiple
+  tables; normal request paths still never use the secret key.
 
 ## Authentication and authorization
 

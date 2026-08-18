@@ -102,6 +102,13 @@ export const navLinks: NavLink[] = [
     group: "husforman",
   },
   {
+    href: "/bostadskarta",
+    label: "Bostadskarta",
+    description: "Se våningar, bostäder och registrerade boende.",
+    icon: MapIcon,
+    group: "husforman",
+  },
+  {
     href: "/statistik",
     label: "Statistik",
     description: "Missade hyror och annan statistik.",

@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "check:statistik": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types scripts/check-statistik.mjs"
+    "check:statistik": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types scripts/check-statistik.mjs",
+    "check:bostadskarta": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types scripts/check-bostadskarta.mjs"
   },
   "dependencies": {
     "@clerk/nextjs": "^7.7.5",

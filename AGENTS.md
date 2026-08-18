@@ -40,7 +40,7 @@ Swedish; this file and the rest of `docs/` are in English.
   `import "server-only"` and own exactly one Postgres table (e.g.
   `lib/tenants.ts` ↔ `tenants` table). A few files are deliberately
   **not** server-only because client components import them directly for
-  pure logic: `lib/table-columns.ts`, `lib/roles.ts`, `lib/nations.ts`,
+  pure logic: `lib/table-columns.ts`, `lib/roles.ts`,
   `lib/nav-links.tsx`, `lib/mail-utils.ts`, `lib/use-column-visibility.ts`.
 - `scripts/` — One-off Node migration/data-quality scripts run manually
   (`backfill-nations-id.mjs`, `fix-data-quality.mjs`). Not part of the build.
@@ -72,15 +72,21 @@ Swedish; this file and the rest of `docs/` are in English.
   applied via `npx supabase db push --db-url "$SUPABASE_DB_URL"`. Tenant
   isolation is enforced by Postgres Row Level Security, not just app-layer
   filtering — see "Architectural constraints" below.
-- **Auth0** (`@auth0/nextjs-auth0` v4) for authentication — this is the
-  identity/roles/tenant system of record; Supabase is registered as a
-  Third-Party Auth issuer for Auth0 and never runs its own native auth flow.
-  Custom claims for roles and nationsID (multi-tenant scope) are injected by
-  an Auth0 Action configured in the Auth0 tenant dashboard, **not
-  version-controlled in this repository** — see `lib/roles.ts` and
-  `lib/nations.ts` for the exact claim names and the expected Action shape
-  (documented in code comments there). That same Action must also set a
-  plain, non-namespaced `role: "authenticated"` claim for Supabase's
+- **Clerk** (`@clerk/nextjs`) for authentication — this is the
+  identity/roles/tenant system of record (migrated off Auth0 2026-08-14, see
+  `docs/DECISIONS.md`'s "Auth0 → Clerk migration" entry); Supabase is
+  registered as a Third-Party Auth issuer for Clerk and never runs its own
+  native auth flow. Nations map 1:1 to **Clerk Organizations**; roles are a
+  plain array on a user's `publicMetadata.roles` (not Clerk's paid
+  custom-org-roles feature). Both are exposed as plain top-level claims on
+  Clerk's default session token — `nations_id` (sourced from the active
+  org's `public_metadata.nationsId`) and `roles` — configured via
+  `clerk config patch` on the Clerk instance, **not version-controlled in
+  this repository** (same caveat the old Auth0 Action had). Read them with
+  `sessionClaims?.nations_id`/`sessionClaims?.roles` (see
+  `lib/active-nation.ts`, `lib/roles.ts`'s `normalizeRoles`) — there's no
+  named claim constant to import. That same session-claims config must also
+  set a plain, non-namespaced `role: "authenticated"` claim for Supabase's
   Third-Party Auth to map requests to the `authenticated` Postgres role
   instead of silently falling back to `anon` — see `docs/DECISIONS.md`.
 - **xlsx (SheetJS, ^0.18.5)** — all Excel import/export happens client-side
@@ -88,8 +94,9 @@ Swedish; this file and the rest of `docs/` are in English.
   Action as plain JSON, not as a file upload to the server.
 - **nodemailer + googleapis** — outgoing mail is sent via a Gmail OAuth2
   transport (`app/api/send-mail/route.ts`); refresh tokens are stored in the
-  `gmail_tokens` table (`lib/gmail-tokens.ts`), keyed by Auth0 `sub`
-  (per-user, not per-nation — the one table with no `nations_id`).
+  `gmail_tokens` table (`lib/gmail-tokens.ts`), keyed by Clerk's user ID
+  (was Auth0's `sub` pre-migration; per-user, not per-nation — the one table
+  with no `nations_id`).
 
 ## Setup, development, test, lint, type-check, and build commands
 
@@ -119,12 +126,12 @@ for this codebase is:
    browser — do not claim a UI change works from reading JSX alone.
 
 As of the last verified run in this repository: `npx tsc --noEmit` is clean,
-and `npm run lint` reports **7 pre-existing errors + 1 pre-existing warning**,
-all `react-hooks/set-state-in-effect` (a stricter rule flagging
-`setState()` calls made synchronously inside `useEffect`) plus one unused-arg
-warning in `lib/auth0.ts`. None of these were introduced by the work
-described in `docs/SESSION.md`/`docs/HANDOFF.md`. See `docs/HANDOFF.md` for
-the exact file/line list at the time of the last handoff.
+and `npm run lint` reports **7 pre-existing errors**, all
+`react-hooks/set-state-in-effect` (a stricter rule flagging `setState()`
+calls made synchronously inside `useEffect`). None of these were introduced
+by the work described in `docs/SESSION.md`/`docs/HANDOFF.md`. See
+`docs/HANDOFF.md` for the exact file/line list at the time of the last
+handoff.
 
 ## Coding conventions
 
@@ -149,9 +156,8 @@ the exact file/line list at the time of the last handoff.
   dashboard-created tables do; see `docs/DECISIONS.md`).
 - Server Actions live in `app/<route>/actions.ts`, marked `"use server"`.
   Pattern: resolve/require the caller's active `nationsId` first via
-  `lib/active-nation.ts`'s `requireActiveNationsId` (not `lib/nations.ts`'s
-  plain `requireNationsId` directly — the active-nation layer additionally
-  resolves which nation a multi-nation user is currently working in); for
+  `lib/active-nation.ts`'s `requireActiveNationsId` (reads Clerk's
+  `nations_id` session claim); for
   an action restricted to specific roles, use `lib/permissions.ts`'s
   `requirePermission(permissionKey, errorMessage)` rather than a
   hand-written per-file role check (see `lib/roles.ts`'s `PERMISSIONS` for
@@ -200,24 +206,26 @@ the exact file/line list at the time of the last handoff.
 ## Architectural constraints
 
 - **Multi-tenant by `nationsID`.** A logged-in user's `nationsID` comes from
-  a custom Auth0 ID-token claim (`NATIONS_ID_CLAIM` in `lib/nations.ts`),
-  either a single string (every user today) or an array (an operator
-  account belonging to more than one nation — no Auth0 Action currently
-  emits this, so no real session has it yet). `proxy.ts` blocks any
-  authenticated user without that claim from reaching app pages (redirects
-  to `/nationsid-saknas`), except `/api/**`, `/auth/**`, `/nationsid-saknas`,
-  and `/admin` (an admin's own account may have no nationsID, since they
-  manage every nation). Never bypass this scoping in new code. In app
-  code, resolve nationsId via `lib/active-nation.ts`'s
-  `requireActiveNationsId`/`requireActiveNationsIdOrRedirect` (which
-  resolves a multi-nation user's *active* nation from a validated cookie),
-  not `lib/nations.ts`'s plain `requireNationsId`/`requireNationsIdOrRedirect`
-  directly. Enforced twice: explicitly in every `lib/*.ts` query (app-layer
-  convention above) and independently by Postgres Row Level Security
-  policies keyed on the same claim, forwarded to Supabase via the Auth0 ID
-  token (`lib/supabase-server.ts`) — see "Supabase / Postgres" below.
-- **Role-based access** via a custom Auth0 claim (`ROLES_CLAIM` in
-  `lib/roles.ts`). `admin` is a superuser role that satisfies every other
+  Clerk's `nations_id` session-token claim, sourced from their active Clerk
+  Organization's `public_metadata.nationsId` (nations map 1:1 to Clerk
+  Organizations — no real account has ever belonged to more than one nation,
+  so the old multi-nation "active nation" cookie-switching logic was removed
+  outright rather than ported; rebuild via Clerk's `<OrganizationSwitcher />`
+  if that's ever needed). `proxy.ts` blocks any authenticated user without
+  that claim from reaching app pages (redirects to `/nationsid-saknas`),
+  except `/api/**`, `/sign-in`, `/sign-up`, `/nationsid-saknas`, and `/admin`
+  (an admin's own account may have no nationsID, since they manage every
+  nation). Never bypass this scoping in new code. In app code, resolve
+  nationsId via `lib/active-nation.ts`'s
+  `requireActiveNationsId`/`requireActiveNationsIdOrRedirect` (reads
+  `sessionClaims?.nations_id`, cached per request). Enforced twice:
+  explicitly in every `lib/*.ts` query (app-layer convention above) and
+  independently by Postgres Row Level Security policies keyed on the same
+  claim, forwarded to Supabase via Clerk's session token
+  (`lib/supabase-server.ts`) — see "Supabase / Postgres" below.
+- **Role-based access** via Clerk's `roles` session-token claim (sourced
+  from a user's `publicMetadata.roles`, read with `lib/roles.ts`'s
+  `normalizeRoles`). `admin` is a superuser role that satisfies every other
   role check (`hasRole`) and is never routed through the permission model
   below (a nation should never be able to grant itself cross-tenant
   superuser access). Beyond that coarse role check, *which* role can
@@ -231,9 +239,19 @@ the exact file/line list at the time of the last handoff.
   rather than grants — a user whose only role is `vaktmastare` is redirected
   to `/todo` and confined there (`isRestrictedToTodo`, enforced in
   `proxy.ts`).
-- Both custom claims depend on an Auth0 Action configured outside this
-  repository. If a claim appears missing/wrong in practice, that Action is
+- Both claims depend on Clerk instance session-claims config
+  (`clerk config patch` / the Clerk dashboard) configured outside this
+  repository. If a claim appears missing/wrong in practice, that config is
   the first place to check — it cannot be inspected from the repo itself.
+  `lib/app-users.ts` (Clerk Backend SDK, `clerkClient()`) is where
+  `/admin`'s user/role/nationsID assignment UI writes the underlying Clerk
+  org membership and `publicMetadata` that these claims are sourced from.
+- `proxy.ts` wraps every request in `clerkMiddleware()` (required for
+  Clerk's session syncing) but deliberately does **not** call
+  `auth.protect()` there — Clerk deprecated middleware-based route
+  protection in favor of resource-based checks. Each protected `page.tsx`
+  calls `await auth.protect()` itself as its first line instead; that's the
+  real authentication boundary, not `proxy.ts`.
 - **Supabase / Postgres.** No ORM — `lib/*.ts` files call
   `createSupabaseServerClient()` (a fresh per-request client, not
   module-cached — see the comment in `lib/supabase-server.ts` for why) and
@@ -247,10 +265,10 @@ the exact file/line list at the time of the last handoff.
   Security is enabled on every table (`supabase/migrations/20260812231542_rls.sql`)
   and enforces tenant isolation only — role/permission checks stay entirely
   in `app/*/actions.ts`, not duplicated into RLS policies (see
-  `docs/DECISIONS.md` for the reasoning). Auth0 is registered as a
+  `docs/DECISIONS.md` for the reasoning). Clerk is registered as a
   Third-Party Auth issuer in the Supabase dashboard (not version-controlled,
-  same caveat as the Auth0 Action above) — this is what lets `auth.jwt()` in
-  RLS policies read the Auth0 token's claims at all.
+  same caveat as the Clerk session-claims config above) — this is what lets
+  `auth.jwt()` in RLS policies read Clerk's token claims at all.
 - Binary files (floor plans, uppsägning documents, mail-template
   attachments) live in Supabase Storage, not the database — three private
   buckets (`floor-plans`, `uppsagningar-dokument`, `mail-template-attachments`),
@@ -286,13 +304,20 @@ Before considering any change complete:
 ## Security and data-handling rules
 
 - Never commit `.env*` files (already `.gitignore`d) or paste real secret
-  values into code, commits, or any file under `docs/`. `.env.local.example`
-  lists required variable **names** only, with placeholder values.
+  values into code, commits, or any file under `docs/`. **No
+  `.env.local.example` file currently exists in this repository** — a real,
+  verified gap (not just missing a couple of vars); a new setup has no
+  in-repo reference for required variable names. Consider creating one
+  before onboarding another environment.
 - Known environment variables actually read by the code (verified via
-  `grep -r process.env`): `APP_BASE_URL`, `AUTH0_DOMAIN`, `AUTH0_CLIENT_ID`,
-  `AUTH0_CLIENT_SECRET`, `AUTH0_SECRET` (read implicitly by the Auth0 SDK),
-  `AUTH0_M2M_CLIENT_ID`, `AUTH0_M2M_CLIENT_SECRET` (Management API, via
-  `requireEnv()` in `lib/app-users.ts`), `NEXT_PUBLIC_SUPABASE_URL`,
+  `grep -r process.env` plus the actual key names present in the local
+  `.env.local`, names only — never its values): `APP_BASE_URL`,
+  `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`, `CLERK_SECRET_KEY` (read implicitly
+  by the Clerk SDK), `NEXT_PUBLIC_CLERK_SIGN_IN_URL`,
+  `NEXT_PUBLIC_CLERK_SIGN_UP_URL`,
+  `NEXT_PUBLIC_CLERK_SIGN_IN_FALLBACK_REDIRECT_URL`,
+  `NEXT_PUBLIC_CLERK_SIGN_UP_FALLBACK_REDIRECT_URL` (Clerk's own routing
+  config, also read implicitly by the SDK), `NEXT_PUBLIC_SUPABASE_URL`,
   `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` (used by every `lib/*.ts` file via
   `createSupabaseServerClient()`), `SUPABASE_DB_URL` and
   `SUPABASE_SECRET_KEY` (admin-only: applying schema migrations and
@@ -301,9 +326,13 @@ Before considering any change complete:
   `LAUNDRY_AUTH0_DOMAIN`, `LAUNDRY_AUTH0_MGMT_CLIENT_ID`,
   `LAUNDRY_AUTH0_MGMT_CLIENT_SECRET`, `LAUNDRY_AUTH0_CONNECTION` (a separate
   Auth0 tenant used only for laundry account provisioning,
-  `lib/laundry-account.ts`). **`GMAIL_CLIENT_ID` / `GMAIL_CLIENT_SECRET` are
-  used in code but not currently listed in `.env.local.example`** — a real,
-  verified gap; do not assume they're documented elsewhere.
+  `lib/laundry-account.ts` — unrelated to app login, untouched by the
+  Auth0→Clerk migration). **`AUTH0_DOMAIN`, `AUTH0_CLIENT_ID`,
+  `AUTH0_CLIENT_SECRET`, `AUTH0_SECRET`, `AUTH0_M2M_CLIENT_ID`,
+  `AUTH0_M2M_CLIENT_SECRET` are still present in the local `.env.local` but
+  no longer read by any code** (the Auth0→Clerk migration removed every
+  caller) — dead leftovers, a cleanup candidate (also noted in
+  `docs/HANDOFF.md`), not a sign the app still depends on Auth0 for login.
 - Every database query against a nation-scoped table must filter by
   `nations_id`. Treat any query without it as a bug — RLS backstops this at
   the database layer, but the explicit filter is still required (see
@@ -320,8 +349,9 @@ Before considering any change complete:
   import against a real user-supplied spreadsheet, keep that verification
   in a throwaway script/output, not in committed files.
 - Gmail OAuth refresh tokens (`gmail_tokens` table), `SUPABASE_SECRET_KEY`,
-  and Auth0 M2M credentials are credentials — never log or persist them
-  outside their existing storage. **A MongoDB connection string with an
+  `CLERK_SECRET_KEY`, and the laundry tenant's Auth0 M2M credentials
+  (`LAUNDRY_AUTH0_MGMT_CLIENT_SECRET`) are credentials — never log or
+  persist them outside their existing storage. **A MongoDB connection string with an
   embedded password was accidentally printed into an agent's tool output
   during the migration session (2026-08-13) — the corresponding Atlas
   database user should be rotated or deleted if that hasn't happened yet.**
@@ -508,6 +538,24 @@ explicitly instructed otherwise. `supabase` and `supabase-postgres-best-practice
 are vendored under `.agents/skills/`, tracked by `skills-lock.json`, sourced
 from `supabase/agent-skills`.
 
+When doing Clerk work (auth, sessions, organizations/multi-tenancy, roles
+via `publicMetadata`, or the admin user-management UI in
+`lib/app-users.ts`):
+
+- Use `clerk` as the entry point — it routes to the more specific Clerk
+  skill for the task.
+- Use `clerk-nextjs-patterns` for anything touching `proxy.ts`,
+  `middleware`/`clerkMiddleware()`, `auth.protect()` in a `page.tsx`, or
+  Server Actions that read Clerk session state.
+- Use `clerk-orgs` for anything touching the nations↔Clerk-Organizations
+  mapping, `public_metadata`, or org membership (`lib/app-users.ts`,
+  `lib/active-nation.ts`).
+
+Applied automatically, same as the other skills. These three (plus ~20
+other Clerk skills for platforms this app doesn't use — mobile, other
+frameworks, billing) are vendored under `.agents/skills/`, tracked by
+`skills-lock.json`, sourced from `clerk/skills`.
+
 ## UI completion criteria
 
 For meaningful UI changes:
@@ -519,3 +567,16 @@ For meaningful UI changes:
 5. Run available accessibility checks.
 6. Use `web-design-guidelines` to audit the result.
 7. Fix meaningful findings before declaring completion.
+
+## graphify
+
+This project has a knowledge graph at graphify-out/ with god nodes, community structure, and cross-file relationships.
+
+When the user types `/graphify`, use the installed graphify skill or instructions before doing anything else.
+
+Rules:
+- For codebase questions, first run `graphify query "<question>"` when graphify-out/graph.json exists. Use `graphify path "<A>" "<B>"` for relationships and `graphify explain "<concept>"` for focused concepts. These return a scoped subgraph, usually much smaller than GRAPH_REPORT.md or raw grep output.
+- Dirty graphify-out/ files are expected after hooks or incremental updates; dirty graph files are not a reason to skip graphify. Only skip graphify if the task is about stale or incorrect graph output, or the user explicitly says not to use it.
+- If graphify-out/wiki/index.md exists, use it for broad navigation instead of raw source browsing.
+- Read graphify-out/GRAPH_REPORT.md only for broad architecture review or when query/path/explain do not surface enough context.
+- After modifying code, run `graphify update .` to keep the graph current (AST-only, no API cost).

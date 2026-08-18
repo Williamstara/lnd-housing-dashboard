@@ -2,6 +2,8 @@
 
 import { revalidatePath } from "next/cache";
 import { createFastighet, deleteFastighet, updateFastighet } from "@/lib/fastigheter";
+import { validateLayoutBlocks } from "@/lib/building-floor-logic";
+import { deleteBuildingFloorTemplate, saveBuildingFloorTemplate } from "@/lib/building-floor-templates";
 import { requirePermission } from "@/lib/permissions";
 import { PERMISSIONS } from "@/lib/roles";
 
@@ -39,4 +41,21 @@ export async function deleteFastighetAction(id: string) {
   const nationsId = await requireHusformanRole();
   await deleteFastighet(nationsId, id);
   revalidatePath("/fastigheter");
+}
+
+export async function saveFloorTemplateAction(name: string, blocksValue: unknown) {
+  const nationsId = await requireHusformanRole();
+  const cleanName = name.trim();
+  if (!cleanName || cleanName.length > 80) throw new Error("Ange ett mallnamn med högst 80 tecken.");
+  const blocks = validateLayoutBlocks(blocksValue).map((block) => block.type === "apartment" ? { ...block, lagenhetsnummer: undefined } : block);
+  await saveBuildingFloorTemplate(nationsId, cleanName, blocks);
+  revalidatePath("/fastigheter");
+  revalidatePath("/bostadskarta");
+}
+
+export async function deleteFloorTemplateAction(id: string) {
+  const nationsId = await requireHusformanRole();
+  await deleteBuildingFloorTemplate(nationsId, id);
+  revalidatePath("/fastigheter");
+  revalidatePath("/bostadskarta");
 }

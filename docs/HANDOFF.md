@@ -1,114 +1,89 @@
 # Handoff
 
-Short-lived handoff for the next coding agent. Repository state and validation
-were verified immediately before writing this file.
-
 ## Current objective
 
-None — the public landing page (see `docs/SESSION.md`/`docs/DECISIONS.md`)
-is complete and live-verified in a real browser. The next objective is
-whatever the user asks for next.
+Verify and polish the implemented Bostadskarta/block-plan milestone. The code,
+database migrations and pure checks are complete; authenticated rendered UI and
+cross-nation RLS verification remain.
 
-## Completed this session
+## What exists
 
-Full detail: `docs/DECISIONS.md`'s "Public landing page at `/`" entry.
-Summary:
+- New protected route and nav item: `/bostadskarta`.
+- Floor CRUD, ordering, series regeneration and block-layout persistence,
+  guarded by `fastigheter.manage`.
+- Nation-scoped `building_floors` and `building_floor_templates`, with Clerk
+  claim RLS, explicit grants, bounds/JSON constraints and fastighet cascade.
+- Resident/rental-object matching without storing PII in layouts or templates.
+- Shared 12-column block editor with:
+  - apartment/common/corridor/blocked/empty blocks;
+  - direct mouse, pen and touch movement using Pointer Events;
+  - arrow-key movement and visible focus;
+  - collision prevention in the UI and server validation;
+  - selected-block inspector for label, size, duplicate and delete;
+  - automatic collision-free placement of duplicates;
+  - unique apartment-number enforcement on real floors.
+- Fastigheter → Planmallar owns named template creation/edit/delete.
+  Bostadskarta only applies templates to floors and rebinds generic apartment
+  slots to the target floor's actual numbers.
+- Legacy floors still render the earlier corridor until first converted.
 
-1. `app/layout.tsx` no longer renders `NavBar` unconditionally — it's gated
-   on `getCurrentUserId()` (`lib/active-nation.ts`), so signed-out routes
-   (`/`, `/sign-in`, `/sign-up`, `/nationsid-saknas`) no longer show the
-   dashboard sidebar chrome around them.
-2. `app/page.tsx` dropped `auth.protect()`; it now branches itself —
-   signed-out renders new `app/_components/landing-page.tsx` (explains the
-   app, feature highlights from `lib/nav-links.tsx`, "Logga in" CTA to
-   `/sign-in`); signed-in renders the exact same dashboard overview as
-   before, unchanged. Same URL (`/`) for both.
-3. Fixed a real bug hit along the way: `LandingPage` had to be a Client
-   Component (`"use client"`) — MUI's `Button` with `component={Link}` fails
-   with "Functions cannot be passed directly to Client Components" when
-   rendered from a Server Component, same reason `NavGrid` is already
-   `"use client"`.
+## Main files
 
-This also incidentally fixes the sign-out UX complaint from the prior
-session (skeleton dashboard chrome behind the Clerk sign-in card) — `/sign-in`
-no longer renders inside `NavBar`'s shell at all now, regardless of the
-earlier hard-navigation fix in `NavBar.tsx`'s `handleSignOut`.
+- `app/bostadskarta/page.tsx`, `actions.ts`, `loading.tsx`, `error.tsx`
+- `components/Bostadskarta.tsx`
+- `components/FloorBlockGridEditor.tsx`
+- `components/FloorTemplateManager.tsx`
+- `app/fastigheter/page.tsx`, `actions.ts`
+- `components/FastigheterTable.tsx`
+- `lib/building-floor-logic.ts`
+- `lib/building-floors.ts`
+- `lib/building-floor-templates.ts`
+- `scripts/check-bostadskarta.mjs`
+- `supabase/migrations/20260818120000_building_floors.sql`
+- `supabase/migrations/20260818140000_floor_block_layouts.sql`
 
-## Validation status
+## Live database status
 
-- `npx tsc --noEmit` — clean.
-- `npm run lint` — at the documented baseline: 7 pre-existing
-  `react-hooks/set-state-in-effect` errors, 0 warnings. Nothing new.
-- Live-verified in a real Chrome browser via `claude-in-chrome`: signed-out
-  `/` renders the new landing page (hero + 3 feature-highlight cards, no
-  NavBar), clicking "Logga in" navigates to a clean `/sign-in` (Clerk's card
-  centered on a bare background, no dashboard chrome behind it), console
-  clean at every step. **Not verified**: the full signed-in round-trip
-  (landing → sign-in → dashboard overview) — the browser session reached
-  Google's real account-chooser screen (two real personal Google accounts)
-  and stopped there deliberately, since picking an account to authenticate
-  with is the user's call, not something to click through unattended. The
-  signed-in branch of `app/page.tsx` is unchanged code (copied verbatim from
-  the prior working version), so this is a low-risk gap, but a real
-  click-through by the user (or a future agent once signed in) would close
-  it fully.
-- Mobile viewport check was attempted but `resize_window` didn't visibly
-  affect the captured screenshot in this session's browser tool (known
-  flakiness, not a code issue) — the landing page reuses the exact same
-  responsive grid pattern (`gridTemplateColumns: { xs: "1fr", md: ... }`)
-  already proven working elsewhere in this app (`NavGrid`), so this is a low
-  risk, not a confirmed-working mobile check. Worth a real mobile check next
-  session if the user wants full confidence.
+- Both Bostadskarta migrations are already applied. Do not push them again.
+- Service-role floor/template CRUD passed; temporary rows were removed.
+- Anon access was denied with 401.
+- Missing verification: authenticated same-nation CRUD and authenticated
+  cross-nation denial with real Clerk tokens.
 
-## Important gotchas for the next agent
+## Last validation
 
-1. **`NavBar` is now conditional on `getCurrentUserId()` in
-   `app/layout.tsx`, not path-based.** If a new route needs to show/hide the
-   dashboard chrome independent of auth state, this conditional won't cover
-   it — see the "Consequences" note in `docs/DECISIONS.md`'s landing-page
-   entry for when to revisit a proper route-group split instead.
-2. **Passing `component={Link}` (or any function) as a prop into an MUI
-   component from a Server Component throws at runtime, not at type-check
-   time** — `npx tsc --noEmit` stayed clean through this exact bug. Any new
-   Server Component that wants `<Button component={Link}>` /
-   `<ListItemButton component={Link}>` etc. must be `"use client"`, matching
-   `NavGrid.tsx` and now `landing-page.tsx`.
-3. Everything from the prior Clerk-migration handoff still applies (Clerk
-   session-claims not JWT templates, `auth.protect()` per-page not
-   middleware, `lib/active-nation.ts` as the one shared home for
-   server-side Clerk reads) — see git history / `docs/DECISIONS.md`'s
-   "Auth0 → Clerk migration" entry if touching auth code again.
+- `npm run check:bostadskarta`: clean.
+- `npx tsc --noEmit`: clean.
+- Targeted ESLint on changed feature files: clean.
+- `npm run lint`: exactly the known 7 unrelated baseline errors, 0 warnings.
+- Production compilation: clean with a 4 GB Node heap.
+- `git diff --check`: clean.
+- `graphify update .`: complete.
 
-## Current Git and working-tree state
+## Next actions
 
-Nothing from this session (or any prior session, going back through the
-Clerk migration and earlier) has been committed — check `git status` for the
-exact list. Confirm with the user how they want this split into commits
-before running `git add`/`git commit`.
+1. Open a signed-in browser and test Fastigheter → Planmallar:
+   create/edit/delete a template; add every block type; drag by mouse and touch;
+   move by keyboard; edit labels; shrink to one cell; duplicate; attempt
+   collision; save and reload.
+2. Test `/bostadskarta`: empty building, building without floors, range
+   `GH1001–GH1017`, multiple series, apply a template, apartment-number binding,
+   save/reload, primary/secondary/roommate details and unmatched database number.
+3. Check desktop, tablet and phone widths plus loading, empty, error, pending and
+   success states. Inspect focus order, contrast and reduced motion.
+4. Use Clerk tokens from two organizations to prove same-nation CRUD and
+   cross-nation denial for both floor tables.
+5. If stored layouts created before collision prevention exist, open and repair
+   overlaps before saving; the server now correctly rejects overlapping JSON.
 
-## Remaining work
+## Deliberately deferred
 
-1. **Close the signed-in round-trip verification gap** noted above — have
-   the user (or a future agent, once signed in) click through
-   landing → `/sign-in` → dashboard overview once, to fully confirm the
-   signed-in branch renders exactly as before.
-2. Everything already listed in the prior Clerk-migration handoff remains
-   outstanding and unrelated to this session's work: real second-user
-   verification (`husforman@lundsnation.se`), `service_role` grants gap on
-   `gmail_tokens`/`todos`, `AUTH0_*` env var cleanup, the second sister app's
-   Clerk migration.
-3. Everything already in `docs/TODO.md` from before this session remains
-   outstanding.
-4. Commit the working tree — only when the user explicitly asks.
+- Rotation, multi-select, undo/redo and arbitrary polygon/CAD geometry.
+- Special handling for simultaneous edits; last write wins.
+- Additional dependencies; the editor is MUI + native DOM/Pointer Events.
 
-## Blockers
+## Working tree
 
-None.
-
-## Timestamp
-
-2026-08-14 (local, per this session's clock)
-
-## Current agent
-
-Claude Code
+The repository is dirty and feature files are mostly untracked. Existing
+changes belong to the user. Preserve `AGENTS.md`, `.codex/`, docs, graphify
+output and unrelated migrations; never reset the worktree wholesale.

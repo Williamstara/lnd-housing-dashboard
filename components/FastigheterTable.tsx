@@ -1,11 +1,11 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { useAuth } from "@clerk/nextjs";
 import AddIcon from "@mui/icons-material/Add";
 import DeleteIcon from "@mui/icons-material/Delete";
 import EditIcon from "@mui/icons-material/Edit";
 import Alert from "@mui/material/Alert";
+import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
 import Dialog from "@mui/material/Dialog";
 import DialogActions from "@mui/material/DialogActions";
@@ -18,6 +18,8 @@ import ListItem from "@mui/material/ListItem";
 import ListItemText from "@mui/material/ListItemText";
 import Paper from "@mui/material/Paper";
 import Stack from "@mui/material/Stack";
+import Tab from "@mui/material/Tab";
+import Tabs from "@mui/material/Tabs";
 import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
 import {
@@ -26,15 +28,13 @@ import {
   updateFastighetAction,
 } from "@/app/fastigheter/actions";
 import type { Fastighet } from "@/lib/fastigheter";
-import { ROLES, hasRole, normalizeRoles } from "@/lib/roles";
+import FloorTemplateManager from "@/components/FloorTemplateManager";
+import type { BuildingFloorTemplate } from "@/lib/building-floor-templates";
 
-type Props = { fastigheter: Fastighet[] };
+type Props = { fastigheter: Fastighet[]; templates: BuildingFloorTemplate[]; canManage: boolean };
 
-export default function FastigheterTable({ fastigheter }: Props) {
-  const { sessionClaims } = useAuth();
-  const roles = normalizeRoles(sessionClaims?.roles);
-  const isHusforman = hasRole(roles, ROLES.HUSFORMAN);
-
+export default function FastigheterTable({ fastigheter, templates, canManage }: Props) {
+  const [tab, setTab] = useState(0);
   const [newNamn, setNewNamn] = useState("");
   const [newPrefixes, setNewPrefixes] = useState("");
   const [editing, setEditing] = useState<Fastighet | null>(null);
@@ -104,6 +104,15 @@ export default function FastigheterTable({ fastigheter }: Props) {
         lägenheter, hyresgäster och databasen.
       </Typography>
 
+      <Box sx={{ borderBottom: 1, borderColor: "divider", mb: 3 }}>
+        <Tabs value={tab} onChange={(_, value) => setTab(value)} aria-label="Fastighetsinställningar">
+          <Tab label="Fastigheter" />
+          <Tab label="Planmallar" />
+        </Tabs>
+      </Box>
+
+      {tab === 0 ? <>
+
       {error && (
         <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError(null)}>
           {error}
@@ -122,7 +131,7 @@ export default function FastigheterTable({ fastigheter }: Props) {
                 key={f.id}
                 divider
                 secondaryAction={
-                  isHusforman ? (
+                  canManage ? (
                     <Stack direction="row">
                       <IconButton
                         aria-label="Byt namn"
@@ -152,7 +161,7 @@ export default function FastigheterTable({ fastigheter }: Props) {
         </List>
       </Paper>
 
-      {isHusforman && (
+      {canManage && (
         <Stack direction={{ xs: "column", sm: "row" }} sx={{ gap: 1, mt: 2 }}>
           <TextField
             label="Namn"
@@ -236,6 +245,7 @@ export default function FastigheterTable({ fastigheter }: Props) {
           </Button>
         </DialogActions>
       </Dialog>
+      </> : <FloorTemplateManager templates={templates} canManage={canManage} />}
     </>
   );
 }
